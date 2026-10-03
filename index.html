@@ -513,15 +513,18 @@ function showEl(zoom){
 }
 map.on("singleclick", e=>{
   if(!task) return;
-  const f = map.forEachFeatureAtPixel(e.pixel, f=>f, {layerFilter:l=>l===elLayer, hitTolerance:12});
-  if(!f){ if(!$("pEl").hidden) select(null); return; }
-  if($("pEl").hidden){ select(f); return; }
-  // An element is open: taps add to or remove from the selection
-  if(selSet.has(f)){
+  const hits = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:12});
+  if(!hits.length){ if(!$("pEl").hidden) select(null); return; }
+  if($("pEl").hidden){ select(hits[0]); return; }
+  // An element is open: taps add to the selection, preferring what isn't selected yet (beds can overlap)
+  const add = hits.find(h=>!selSet.has(h));
+  if(add) selSet.add(add);
+  else {
+    const f = hits[0];
+    if(selSet.size === 1) return; // keep the last one; tap empty map to close
     selSet.delete(f);
-    if(!selSet.size){ select(null); return; }
     if(f===selected) selected = [...selSet][0];
-  } else selSet.add(f);
+  }
   elLayer.changed(); showEl(false);
 });
 document.querySelectorAll(".status [data-s]").forEach(b=>b.onclick=()=>{
