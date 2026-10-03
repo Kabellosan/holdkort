@@ -52,8 +52,6 @@ h2{font-size:19px;line-height:1.2;margin:0;text-wrap:balance}
 .btn.primary{background:var(--moss);border-color:var(--moss);color:#fff;font-weight:600}
 .btn.ghost{border-color:transparent;background:transparent;min-height:44px;padding:8px 10px;color:var(--ink2)}
 .btn.fill{flex:1}
-.btn.stop{justify-content:flex-start;gap:10px;border-style:dashed}
-.btn.stop.on{border-style:solid;border-color:var(--moss2);background:var(--paper);font-weight:600}
 .status{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .status button{border-radius:var(--r);border:2px solid var(--line);background:var(--card);min-height:56px;font-size:15px;font-weight:600;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
 .status button i{width:14px;height:14px;border-radius:50%}
@@ -133,7 +131,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <div class="grow"><div class="eyebrow" id="elCode"></div><h2 id="elTitle"></h2><div class="muted" id="elSub"></div></div>
       <button class="btn ghost" id="btnElClose" aria-label="Luk">✕</button>
     </div>
-    <button class="btn stop" id="btnGroup" hidden></button>
+    <div class="muted" id="multiHint">Tryk på flere elementer på kortet for at markere dem samtidig.</div>
     <div class="status">
       <button data-s="todo"><i style="background:var(--todo)"></i><span>Mangler</span></button>
       <button data-s="doing"><i style="background:var(--doing)"></i><span>I gang</span></button>
@@ -284,8 +282,7 @@ $("syncdot").className = "dot " + (sb ? "on" : "off");
 $("who").title = sb ? "Deles med holdet · tryk for at skifte navn" : "Kun på denne telefon · tryk for at skifte navn";
 
 let tasks = [], task = null, progress = new Map(), selected = null;
-let selSet = new Set(), groupMode = false, groupOf = new Map();
-const GROUP_M = 35; // elements this close to each other count as one stop
+let selSet = new Set();
 const statusOf = id => progress.get(id)?.status || "todo";
 
 async function loadTasks(){
@@ -429,7 +426,6 @@ async function openTask(t){
   }
   if(task !== t) return;
   elSrc.addFeatures(feats);
-  buildGroups();
   refresh();
   if(!feats.length) toast("Ingen elementer af den type i området", 4000);
 }
@@ -481,63 +477,33 @@ $("btnCreate").onclick = async ()=>{
 };
 
 // ================= ELEMENT VIEW =================
-// Stops: elements within GROUP_M of a seed element form one stop (seeded greedily, so a long street doesn't chain into one giant stop)
-function buildGroups(){
-  groupOf = new Map();
-  const all = elSrc.getFeatures().slice().sort((a,b)=>ol.extent.getCenter(a.getGeometry().getExtent())[0]-ol.extent.getCenter(b.getGeometry().getExtent())[0]);
-  for(const f of all){
-    if(groupOf.has(f.getId())) continue;
-    const c = ol.extent.getCenter(f.getGeometry().getExtent());
-    const near = elSrc.getFeaturesInExtent(ol.extent.buffer(ol.extent.boundingExtent([c]), GROUP_M))
-      .filter(g=>!groupOf.has(g.getId()) && distTo(g, c) <= GROUP_M);
-    if(!near.includes(f)) near.push(f);
-    near.forEach(g=>groupOf.set(g.getId(), near));
-  }
-}
-const stopOf = f => groupOf.get(f.getId()) || [f];
 function select(f){
-  selected = f; selSet = new Set();
-  if(f){
-    const open = stopOf(f).filter(g=>statusOf(g.getId())!=="done");
-    groupMode = open.length > 1 && statusOf(f.getId())!=="done"; // default to the whole stop when there's more than one left
-    selSet = new Set(groupMode ? [f, ...open] : [f]);
-  }
+  selected = f; selSet = new Set(f ? [f] : []);
   elLayer.changed();
   if(f) showEl(true); else pane("pWork");
-}
-function setGroupMode(on){
-  groupMode = on;
-  selSet = new Set(on ? [selected, ...stopOf(selected).filter(g=>statusOf(g.getId())!=="done")] : [selected]);
-  elLayer.changed(); showEl(true);
 }
 function showEl(zoom){
   pane("pEl");
   const fs = [...selSet], n = fs.length, f = selected;
-  const stop = stopOf(f);
   if(n > 1){
     const streets = [...new Set(fs.map(g=>g.get("vejnavn")||g.get("_street")).filter(Boolean))];
     const kinds = [...new Set(fs.map(g=>CODES[g.get("elementkode")]||g.get("elementkode")))];
-    $("elCode").textContent = `Stop · ${n} elementer`;
+    $("elCode").textContent = `${n} elementer valgt`;
     $("elTitle").textContent = `${kinds.join(" + ")}${streets.length ? " · " + streets.slice(0,2).join(", ") : ""}`;
     const area = fs.reduce((a,g)=>a+(g.get("geometri_areal")||0),0);
     $("elSub").textContent = area ? `${Math.round(area)} m² i alt` : "";
+    $("multiHint").textContent = "Tryk på et valgt element for at fjerne det.";
   } else {
     $("elCode").textContent = f.get("elementkode");
     $("elTitle").textContent = titleOf(f);
     $("elSub").textContent = subOf(f);
+    $("multiHint").textContent = "Tryk på flere elementer på kortet for at markere dem samtidig.";
   }
-  // Stop toggle: shown when there are neighbours to take along
-  const others = stop.filter(g=>g!==f).length;
-  $("btnGroup").hidden = others===0 && n===1;
-  $("btnGroup").classList.toggle("on", groupMode);
-  $("btnGroup").innerHTML = groupMode
-    ? `<b>✓</b><span class="grow" style="text-align:left">Hele stoppet: ${n} valgt</span><span class="muted">tryk på kortet for at tilføje</span>`
-    : `<b>+</b><span class="grow" style="text-align:left">Tag hele stoppet med (${stop.length} her)</span>`;
   const sts = new Set(fs.map(g=>statusOf(g.getId())));
   const s = sts.size===1 ? [...sts][0] : null;
   document.querySelectorAll(".status [data-s]").forEach(b=>b.classList.toggle("on", b.dataset.s===s));
   const p = progress.get(f.getId());
-  if(document.activeElement !== $("note")) $("note").value = p?.note || "";
+  if(document.activeElement !== $("note")) $("note").value = n>1 ? "" : (p?.note || "");
   const latest = fs.map(g=>progress.get(g.getId())).filter(Boolean).sort((a,b)=>a.updated_at<b.updated_at?1:-1)[0];
   $("elMeta").textContent = latest ? `${latest.worker||"?"} · ${ago(latest.updated_at)}` : (n>1 ? "Ingen har rørt dem endnu" : "Ingen har rørt den endnu");
   if(zoom){
@@ -545,16 +511,18 @@ function showEl(zoom){
     map.getView().fit(ext, {padding:[80,40,sheetPad(),40], maxZoom:12, duration:350});
   }
 }
-$("btnGroup").onclick = ()=>setGroupMode(!groupMode);
 map.on("singleclick", e=>{
   if(!task) return;
   const f = map.forEachFeatureAtPixel(e.pixel, f=>f, {layerFilter:l=>l===elLayer, hitTolerance:12});
-  if(f && groupMode && !$("pEl").hidden){ // in stop mode, taps add/remove elements
-    if(selSet.has(f) && selSet.size>1){ selSet.delete(f); if(f===selected) selected=[...selSet][0]; }
-    else selSet.add(f);
-    elLayer.changed(); showEl(false); return;
-  }
-  if(f) select(f); else if(!$("pEl").hidden) select(null);
+  if(!f){ if(!$("pEl").hidden) select(null); return; }
+  if($("pEl").hidden){ select(f); return; }
+  // An element is open: taps add to or remove from the selection
+  if(selSet.has(f)){
+    selSet.delete(f);
+    if(!selSet.size){ select(null); return; }
+    if(f===selected) selected = [...selSet][0];
+  } else selSet.add(f);
+  elLayer.changed(); showEl(false);
 });
 document.querySelectorAll(".status [data-s]").forEach(b=>b.onclick=()=>{
   const ids = [...selSet].map(g=>g.getId());
