@@ -69,6 +69,12 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .bar i{display:block;height:100%}
 .num{font-variant-numeric:tabular-nums}
 .big{font-size:28px;font-weight:700;line-height:1}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--paper);border-radius:var(--r);padding:4px}
+.seg button{border:0;border-radius:11px;background:transparent;min-height:44px;font-size:15px;font-weight:600;color:var(--ink2)}
+.seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 4px #0002}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
+.pill.none{background:#7c5cff}
 
 /* Full-screen panel for creating a task */
 .panel{position:absolute;inset:0;background:var(--card);display:flex;flex-direction:column;z-index:10}
@@ -123,7 +129,40 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <!-- Task list -->
   <div class="pane" id="pTasks">
     <div class="scroll" id="taskList"></div>
-    <button class="btn primary" id="btnNewTask" hidden>+ Ny opgave</button>
+    <div class="row" id="bossRow" hidden>
+      <button class="btn primary fill" id="btnNewTask">+ Ny opgave</button>
+      <button class="btn" id="btnOverview">▦ Overblik</button>
+    </div>
+  </div>
+
+  <!-- Drawing a task's area on the map -->
+  <div class="pane" id="pArea" hidden>
+    <div class="row"><h2 class="grow" id="areaTitle">Tegn opgavens område</h2><button class="btn ghost" id="btnAreaCancel">Annullér</button></div>
+    <div class="seg" role="group" aria-label="Form">
+      <button data-m="box">▭ Firkant</button>
+      <button data-m="draw">✎ Tegn frit</button>
+    </div>
+    <div class="muted" id="areaHint"></div>
+    <div class="row">
+      <span class="muted grow num" id="areaSize"></span>
+      <button class="btn" id="btnRedraw" hidden>Tegn igen</button>
+      <button class="btn primary" id="btnAreaOk">Videre ▸</button>
+    </div>
+  </div>
+
+  <!-- One element type across the whole kommune -->
+  <div class="pane" id="pOver" hidden>
+    <div class="row">
+      <button class="btn ghost" id="btnOverBack">‹ Opgaver</button>
+      <div class="grow"></div>
+      <button class="btn ghost" id="btnOverType">Skift type</button>
+    </div>
+    <div><div class="eyebrow" id="overCode"></div><h2 id="overName"></h2></div>
+    <div class="bar" id="overBar"></div>
+    <div class="legend" id="overLegend"></div>
+    <div class="row"><span class="muted grow" id="overAge"></span><button class="btn ghost" id="btnOverRefresh" style="min-height:36px;padding:4px 8px">Opdater</button></div>
+    <div class="scroll" id="overTasks"></div>
+    <button class="btn primary" id="btnOverNew">+ Ny opgave</button>
   </div>
 
   <!-- Working a task -->
@@ -131,6 +170,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="row">
       <button class="btn ghost" id="btnBack" aria-label="Tilbage til opgaver">‹ Opgaver</button>
       <div class="grow"></div>
+      <button class="btn ghost" id="btnEditArea" hidden>▭ Område</button>
       <button class="btn ghost" id="btnGps">◎ Min position</button>
     </div>
     <div class="row">
@@ -184,9 +224,19 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <input type="text" id="taskTitle" placeholder="Navn, fx 'Pur i Brande, uge 41'">
     <div class="section">Hvem skal lave den?</div>
     <div class="people" id="assignList"></div>
-    <div class="muted">Opgaven dækker det område, der var på kortet, da du trykkede Ny opgave.</div>
+    <div class="row"><span class="muted grow" id="newAreaInfo"></span><button class="btn ghost" id="btnNewArea">Ret område</button></div>
     <button class="btn primary" id="btnCreate">Opret opgave</button>
   </footer>
+</div>
+
+<!-- Pick a type for the overview, full screen -->
+<div class="panel" id="pType" hidden>
+  <header>
+    <div class="row"><h2 class="grow">Overblik: vælg type</h2><button class="btn ghost" id="btnTypeClose">Luk</button></div>
+    <input type="search" id="typeSearch" placeholder="Søg type: pur, fortov, græs …" autocomplete="off">
+  </header>
+  <div class="list" id="typeList"></div>
+  <footer><div class="muted">Viser alle elementer af typen i hele kommunen, og hvilke der er med i en opgave. Hentes fra kommunen højst én gang om dagen.</div></footer>
 </div>
 
 <!-- Place search, full screen -->
@@ -279,15 +329,15 @@ const ortoSrc = new ol.source.TileWMS({url:WMS_URL, tileGrid, projection:proj, t
   params:{SERVICE:"WMS",VERSION:"1.1.1",LAYERS:LAYER_ORTO,FORMAT:"image/jpeg",SERVICENAME:WMS_SERVICE,STYLES:""}});
 const ortoLayer = new ol.layer.Tile({source:ortoSrc, preload:2});
 
-const COLORS = {todo:"#d64545", doing:"#e8a317", done:"#2e9e5b"};
-const LABEL  = {todo:"Mangler", doing:"I gang", done:"Færdig"};
+const COLORS = {todo:"#d64545", doing:"#e8a317", done:"#2e9e5b", none:"#7c5cff"}; // none: not in any task (overview)
+const LABEL  = {todo:"Mangler", doing:"I gang", done:"Færdig", none:"Ikke i en opgave"};
 const elSrc = new ol.source.Vector();
 const styleCache = {};
-function elStyle(f, res){
-  const s = statusOf(f.getId()), sel = selSet.has(f);
-  const key = s + sel + (res > 3.2 ? "far" : "near");
+const elStyle = (f, res) => shapeStyle(statusOf(f.getId()), selSet.has(f), res > 3.2);
+function shapeStyle(s, sel, far){
+  const key = s + sel + (far ? "far" : "near");
   if(!styleCache[key]){
-    const c = COLORS[s], far = res > 3.2;
+    const c = COLORS[s];
     styleCache[key] = [
       new ol.style.Style({ // white halo so shapes pop on the aerial photo
         stroke:new ol.style.Stroke({color:"#ffffffcc", width: sel ? 9 : far ? 6 : 5}),
@@ -309,13 +359,35 @@ function elStyle(f, res){
   return styleCache[key];
 }
 const elLayer = new ol.layer.Vector({source:elSrc, style:elStyle, renderBuffer:200});
+const overSrc = new ol.source.Vector(); // overview: one type in the whole kommune
+const overLayer = new ol.layer.Vector({source:overSrc, style:(f,res)=>shapeStyle(f.get("_s")||"none", false, res > 3.2), renderBuffer:200});
 const areaSrc = new ol.source.Vector();
-const areaLayer = new ol.layer.Vector({source:areaSrc, style:new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffdd",width:2,lineDash:[10,8]})})});
+const areaDash = new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffdd",width:2,lineDash:[10,8]})});
+const areaLayer = new ol.layer.Vector({source:areaSrc, style:areaDash});
+const labelLayer = new ol.layer.Vector({source:areaSrc, declutter:true, style:f=>{ // task names in the overview, above the elements
+  const name = f.get("label"); if(!name) return null;
+  return new ol.style.Style({text:new ol.style.Text({text:name, font:"600 13px system-ui,sans-serif", overflow:true,
+    fill:new ol.style.Fill({color:"#fff"}), stroke:new ol.style.Stroke({color:"#000a",width:3})})});
+}});
+// The area being drawn or edited: a blue outline with round handles you can drag
+const EDIT = "#2b6cd4";
+const editShape = [
+  new ol.style.Style({stroke:new ol.style.Stroke({color:"#fff",width:7}), fill:new ol.style.Fill({color:"#2b6cd422"})}),
+  new ol.style.Style({stroke:new ol.style.Stroke({color:EDIT,width:3})})];
+const editVertex = new ol.style.Style({image:new ol.style.Circle({radius:5, fill:new ol.style.Fill({color:"#fff"}), stroke:new ol.style.Stroke({color:EDIT,width:2})}),
+  geometry:f=>new ol.geom.MultiPoint(f.getGeometry().getCoordinates()[0])});
+const editHandle = r => new ol.style.Style({image:new ol.style.Circle({radius:r, fill:new ol.style.Fill({color:"#fff"}), stroke:new ol.style.Stroke({color:EDIT,width:3})})});
+const handleBig = editHandle(12), handleSmall = editHandle(9);
+const editSrc = new ol.source.Vector();
+const editLayer = new ol.layer.Vector({source:editSrc, style:f=>{
+  const h = f.get("h"); if(h) return h.length===2 ? handleBig : handleSmall;
+  return areaEd?.mode==="draw" ? [...editShape, editVertex] : editShape;
+}});
 const gpsFeat = new ol.Feature();
 gpsFeat.setStyle(new ol.style.Style({image:new ol.style.Circle({radius:9,fill:new ol.style.Fill({color:"#2b6cd4"}),stroke:new ol.style.Stroke({color:"#fff",width:3})})}));
 const gpsLayer = new ol.layer.Vector({source:new ol.source.Vector({features:[gpsFeat]})});
 
-const map = new ol.Map({target:"map", layers:[ortoLayer, areaLayer, elLayer, gpsLayer],
+const map = new ol.Map({target:"map", layers:[ortoLayer, areaLayer, overLayer, elLayer, labelLayer, editLayer, gpsLayer],
   view:new ol.View({projection:proj, center:START_CENTER, zoom:START_ZOOM, resolutions:RES, constrainResolution:true}),
   controls: ol.control.defaults.defaults({attribution:false, rotate:false})});
 const store = {get(k,d){try{const v=localStorage.getItem(k);return v ? (JSON.parse(v) ?? d) : d}catch(e){return d}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
@@ -327,7 +399,8 @@ const sheetPad = () => $("sheet").offsetHeight + 20;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function toast(t, ms=2600){const el=$("toast"); el.textContent=t; el.classList.add("show"); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove("show"),ms);}
-const PANES = ["pTasks","pWork","pEl","pList"];
+const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver"];
+const curPane = () => PANES.find(p=>!$(p).hidden);
 function pane(id){ PANES.forEach(p=>$(p).hidden = p!==id); }
 // Only the day is ever shown, never the clock time
 function ago(ts){ if(!ts) return ""; const d=new Date(ts), t=new Date(); const day=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate());
@@ -344,7 +417,7 @@ async function sha(txt){ const b = await crypto.subtle.digest("SHA-256", new Tex
 function applyUser(){
   $("whoName").textContent = me || "Navn?";
   $("whoBadge").hidden = !isBoss();
-  $("btnNewTask").hidden = !isBoss();
+  $("bossRow").hidden = !isBoss();
   $("pLogin").hidden = !!user;
 }
 $("btnLogin").onclick = async ()=>{
@@ -421,8 +494,15 @@ async function loadTasks(){
   } else tasks = store.get("tasks",[]);
   renderTasks();
 }
+// Freehand areas live in tasks.area; until that column exists the task is saved with its rectangle (extent) only
+const noAreaCol = e => e && (e.code==="PGRST204" || /'area' column/.test(e.message||""));
+const AREA_FALLBACK = "Databasen kan ikke gemme frie former endnu. Området er gemt som firkant.";
 async function saveTask(t){
-  if(sb){ const {error} = await sb.from("tasks").insert(t); if(error){ toast("Opgaven blev ikke gemt: " + error.message); return false; } }
+  if(sb){
+    let {error} = await sb.from("tasks").insert(t);
+    if(noAreaCol(error)){ if(t.area) toast(AREA_FALLBACK, 5000); delete t.area; ({error} = await sb.from("tasks").insert(t)); }
+    if(error){ toast("Opgaven blev ikke gemt: " + error.message); return false; }
+  }
   tasks.unshift(t); store.set("tasks",tasks); return true;
 }
 // Closing a task deletes every individual mark; only the total is kept
@@ -457,13 +537,15 @@ const remoteBatch = {};
 if(sb){
   sb.channel("holdkort")
     .on("postgres_changes",{event:"*",schema:"public",table:"progress"},p=>{
-      const r = p.new; if(!task || !r || r.task_id!==task.id) return;
+      const r = p.new;
+      if(over && !task){ clearTimeout(over.t); over.t = setTimeout(overPaint, 1500); return; }
+      if(!task || !r || r.task_id!==task.id) return;
       progress.set(r.element_id, r); refresh();
       if(r.worker !== me){ const f = elSrc.getFeatureById(r.element_id);
         const k = r.worker + r.updated_at; remoteBatch[k] = (remoteBatch[k]||0) + 1; const n = remoteBatch[k];
         toast(`${isBoss() ? "Opdateret" : (r.worker||"Nogen")}: ${LABEL[r.status]}${n>1 ? ` · ${n} elementer` : f ? " · " + titleOf(f) : ""}`); }
     })
-    .on("postgres_changes",{event:"*",schema:"public",table:"tasks"},()=>{ if(!task) loadTasks(); })
+    .on("postgres_changes",{event:"*",schema:"public",table:"tasks"},()=>{ if(!task) loadTasks().then(()=>{ if(over) overPaint(); }); })
     .subscribe();
 }
 
@@ -479,19 +561,64 @@ function wfs(layer, extra){
     return fmt.readFeatures(txt);
   });
 }
-async function fetchElements(codes, extent){
-  const cql = `elementkode IN (${codes.map(c=>`'${c.replace(/'/g,"")}'`).join(",")}) AND BBOX(wkb_geometry,${extent.join(",")})`;
-  const cqlNoGeom = `elementkode IN (${codes.map(c=>`'${c.replace(/'/g,"")}'`).join(",")})`;
+// Each layer tries the CQL filters in order; keep() decides what stays
+async function fetchLayers(cqls, keep){
   const results = await Promise.allSettled(WFS_LAYERS.map(async layer=>{
-    // Ask the server to cut to the area; if the geometry column has another name, fall back to filtering here
-    let fs; try{ fs = await wfs(layer,{CQL_FILTER:cql}); }catch(e){ fs = await wfs(layer,{CQL_FILTER:cqlNoGeom}); }
+    let fs, err;
+    for(const cql of cqls){ try{ fs = await wfs(layer,{CQL_FILTER:cql}); break; }catch(e){ err = e; } }
+    if(!fs) throw err;
     const short = layer.replace("element_","").replace("_distribution","");
-    return fs.filter(f=>f.getGeometry() && f.getGeometry().intersectsExtent(extent))
+    return fs.filter(f=>f.getGeometry() && keep(f.getGeometry()))
              .map(f=>{ f.setId(short + ":" + (f.get("ogc_fid") ?? f.get("unik_id") ?? f.getId())); return f; });
   }));
   const ok = results.filter(r=>r.status==="fulfilled");
   if(!ok.length) throw new Error(results.map(r=>r.reason?.message).join("; "));
   return ok.flatMap(r=>r.value);
+}
+const codeIn = codes => `elementkode IN (${codes.map(c=>`'${c.replace(/'/g,"")}'`).join(",")})`;
+async function fetchElements(codes, extent, area){
+  // Ask the server to cut to the bounding box (if the geometry column has another name, fall back to filtering here),
+  // then keep only what touches the drawn shape
+  const shape = prepShape({extent, area});
+  return fetchLayers([`${codeIn(codes)} AND BBOX(wkb_geometry,${extent.join(",")})`, codeIn(codes)], g=>inShape(g, shape));
+}
+// Every element of one type in the whole kommune (overview)
+const fetchKommune = code => fetchLayers([codeIn([code])], ()=>true);
+
+// ---- Task areas: a rectangle (extent) or a freehand polygon (area, GeoJSON geometry in EPSG:25832) ----
+const shapeGeom = s => s.area ? new ol.geom.Polygon(s.area.coordinates) : ol.geom.Polygon.fromExtent(s.extent);
+const prepShape = s => ({extent:s.extent, poly: s.area ? new ol.geom.Polygon(s.area.coordinates) : null});
+const inShape = (g, s) => s.poly ? hitsArea(g, s.poly) : g.intersectsExtent(s.extent);
+const areaKey = t => JSON.stringify(t.area || t.extent);
+function paths(g){ // a geometry as lists of coordinates (lines and rings)
+  switch(g.getType()){
+    case "Point": return [[g.getCoordinates()]];
+    case "MultiPoint": return g.getCoordinates().map(c=>[c]);
+    case "LineString": return [g.getCoordinates()];
+    case "MultiLineString": case "Polygon": return g.getCoordinates();
+    case "MultiPolygon": return g.getCoordinates().flat();
+    case "GeometryCollection": return g.getGeometries().flatMap(paths);
+  }
+  return [];
+}
+function crosses(a, b, c, d){
+  const o = (p,q,r) => Math.sign((q[0]-p[0])*(r[1]-p[1]) - (q[1]-p[1])*(r[0]-p[0]));
+  return o(a,b,c)!==o(a,b,d) && o(c,d,a)!==o(c,d,b);
+}
+// Does an element touch the drawn polygon? A point inside, the polygon inside the element, or edges crossing
+function hitsArea(g, poly){
+  if(!g.intersectsExtent(poly.getExtent())) return false;
+  const ps = paths(g);
+  if(ps.some(p=>p.some(c=>poly.intersectsCoordinate(c)))) return true;
+  const ring = poly.getLinearRing(0).getCoordinates();
+  if(/Polygon/.test(g.getType()) && g.intersectsCoordinate(ring[0])) return true;
+  for(const p of ps) for(let i=1;i<p.length;i++) for(let j=1;j<ring.length;j++) if(crosses(p[i-1],p[i],ring[j-1],ring[j])) return true;
+  return false;
+}
+function fmtArea(m2){
+  if(m2 < 1e4) return `${Math.round(m2/10)*10} m²`;
+  if(m2 < 1e6) return `${(m2/1e4).toFixed(1).replace(".",",")} ha`;
+  return `${(m2/1e6).toFixed(1).replace(".",",")} km²`;
 }
 // Name each element after the nearest street, since pur and fortov have no street name in the data
 async function nameByStreet(feats, extent){
@@ -542,7 +669,7 @@ function renderTasks(){
   const L = $("taskList");
   if(!user){ L.innerHTML = ""; return; }
   if(!tasks.length){ L.innerHTML = isBoss()
-      ? `<h2>Opgaver</h2><p class="muted" style="margin:0">Ingen opgaver endnu. Zoom kortet ind på det område, holdet skal arbejde i, og tryk <b>Ny opgave</b>.</p>`
+      ? `<h2>Opgaver</h2><p class="muted" style="margin:0">Ingen opgaver endnu. Tryk <b>Ny opgave</b> og tegn området på kortet.</p>`
       : `<h2>Dine opgaver</h2><p class="muted" style="margin:0">Ingen opgaver lige nu. Når en chef giver dig en, dukker den op her.</p>`; return; }
   if(isBoss()) L.innerHTML = `<h2>Opgaver</h2>` + tasks.map(taskRow).join("");
   else {
@@ -560,10 +687,10 @@ function renderTasks(){
 const EL_CACHE = "elements-v1", DAY = 864e5;
 const elKey = id => new Request("https://holdkort.cache/elements/" + encodeURIComponent(id));
 async function elCacheGet(id){ try{ const r = await (await caches.open(EL_CACHE)).match(elKey(id)); return r ? await r.json() : null; }catch(e){ return null; } }
-async function elCachePut(id, feats){ try{ await (await caches.open(EL_CACHE)).put(elKey(id), new Response(JSON.stringify({saved:Date.now(), geojson:fmt.writeFeatures(feats)}))); }catch(e){} }
+async function elCachePut(id, feats, key){ try{ await (await caches.open(EL_CACHE)).put(elKey(id), new Response(JSON.stringify({saved:Date.now(), key, geojson:fmt.writeFeatures(feats)}))); }catch(e){} }
 async function elCacheDel(id){ try{ await (await caches.open(EL_CACHE)).delete(elKey(id)); }catch(e){} }
 const rushHour = () => { const h = new Date().getHours(); return h >= 6 && h < 9; };
-async function downloadElements(t){ const fs = await fetchElements(t.codes, t.extent); await nameByStreet(fs, t.extent); await elCachePut(t.id, fs); return fs; }
+async function downloadElements(t){ const fs = await fetchElements(t.codes, t.extent, t.area); await nameByStreet(fs, t.extent); await elCachePut(t.id, fs, areaKey(t)); return fs; }
 function showDataAge(saved){
   if(!saved){ $("dataAge").textContent = ""; return; }
   $("dataAge").textContent = `Kortdata hentet ${ago(new Date(saved).toISOString())} · gemt på telefonen`;
@@ -582,9 +709,11 @@ async function refreshElements(t, manual){
   catch(e){ console.error(e); if(manual){ toast("Kunne ikke hente fra kommunen. Prøv igen senere.", 4000); showDataAge((await elCacheGet(t.id))?.saved); } }
 }
 async function openTask(t){
+  closeOverview();
   task = t; selected = null; selSet.clear(); elSrc.clear(); areaSrc.clear(); clearTimeout(refreshTimer);
   geo.setTracking(true);
-  areaSrc.addFeature(new ol.Feature(ol.geom.Polygon.fromExtent(t.extent)));
+  areaSrc.addFeature(new ol.Feature(shapeGeom(t)));
+  $("btnEditArea").hidden = !isBoss();
   $("workName").textContent = t.name; $("workCodes").textContent = codeNames(t.codes);
   $("workCount").innerHTML = `<span class="spin"></span>`; $("bar").innerHTML = ""; $("dataAge").textContent = "";
   pane("pWork");
@@ -592,7 +721,9 @@ async function openTask(t){
   const seen = store.get("seen:"+t.id, false);
   if(!seen){ map.getView().fit(t.extent, {padding:[70,16,sheetPad(),16], duration:300}); store.set("seen:"+t.id, true); }
   await loadProgress(t.id);
-  const cached = await elCacheGet(t.id);
+  // Stored data only counts if it was fetched for the area the task has now (a boss may have redrawn it)
+  const stored = await elCacheGet(t.id);
+  const cached = stored && (stored.key ?? JSON.stringify(t.extent)) === areaKey(t) ? stored : null;
   let feats;
   if(cached){ feats = fmt.readFeatures(cached.geojson); showDataAge(cached.saved); }
   else {
@@ -623,7 +754,7 @@ function refresh(){
 }
 
 // ================= NEW TASK (full screen) =================
-let picked = new Set(), newExtent = null, assignees = new Set(), people = [];
+let picked = new Set(), newShape = null, assignees = new Set(), people = [];
 async function loadPeople(){
   if(sb){ const {data} = await sb.from("people").select("name,role").order("name"); if(data) people = data.filter(p=>p.role==="crew").map(p=>p.name); }
   else people = [...new Set(tasks.flatMap(t=>t.assignees||[]))];
@@ -652,22 +783,299 @@ function renderChosen(){
   $("chosen").innerHTML = [...picked].map(c=>`<span>${esc(CODES[c])}</span>`).join("") || `<span class="muted" style="background:none;color:var(--ink2);padding:0">Ingen typer valgt</span>`;
   if(!$("taskTitle").dataset.touched) $("taskTitle").value = codeNames([...picked]);
 }
-$("btnNewTask").onclick = ()=>{
-  if(map.getView().getResolution() > 12.8){ toast("Zoom ind på byen eller området først", 3500); return; }
-  newExtent = map.getView().calculateExtent(map.getSize()).map(Math.round);
-  picked = new Set(); $("codeSearch").value=""; $("taskTitle").value=""; delete $("taskTitle").dataset.touched;
-  assignees = new Set(); renderCodes(); renderChosen(); renderAssign(); $("pNew").hidden = false;
+// Step 1: draw the area on the map. Step 2: pick types and people.
+function beginNewTask(code){
+  picked = new Set(code ? [code] : []); $("codeSearch").value=""; $("taskTitle").value=""; delete $("taskTitle").dataset.touched;
+  assignees = new Set();
+  startArea({shape:null, done:s=>{ newShape = s; showNewPanel(); }});
+}
+function showNewPanel(){
+  $("newAreaInfo").textContent = `Område: ${fmtArea(shapeGeom(newShape).getArea())}${newShape.area ? ", tegnet frit" : ""}`;
+  renderCodes(); renderChosen(); renderAssign(); $("pNew").hidden = false;
   loadPeople().then(renderAssign);
-};
+}
+$("btnNewTask").onclick = ()=>beginNewTask(null);
+$("btnNewArea").onclick = ()=>{ $("pNew").hidden = true;
+  startArea({shape:newShape, done:s=>{ newShape = s; showNewPanel(); }, cancel:()=>{ $("pNew").hidden = false; }}); };
 $("codeSearch").oninput = renderCodes;
 $("taskTitle").oninput = ()=>$("taskTitle").dataset.touched = 1;
 $("btnNewCancel").onclick = ()=>{ $("pNew").hidden = true; };
 $("btnCreate").onclick = async ()=>{
   if(!picked.size){ toast("Vælg mindst én type"); return; }
   const t = {id:uuid(), name:$("taskTitle").value.trim() || codeNames([...picked]), codes:[...picked],
-    extent:newExtent, assignees:[...assignees], created_by:me, created_at:new Date().toISOString(), archived:false};
+    extent:newShape.extent, area:newShape.area, assignees:[...assignees], created_by:me, created_at:new Date().toISOString(), archived:false};
   if(await saveTask(t)){ $("pNew").hidden = true; openTask(t); }
 };
+
+// ================= DRAWING THE AREA =================
+// Rectangle: drag corners/edges to resize, the middle to move. Freehand: draw a ring with one finger, then drag its points.
+const MAX_AREA = 60e6; // bounding box, m²: keeps each task's request to the kommune small
+let areaEd = null, areaT = null;
+const shapeFeat = new ol.Feature();
+const handleFeats = ["sw","s","se","e","ne","n","nw","w"].map(h=>{ const f = new ol.Feature(); f.set("h", h); return f; });
+function boxHandles([x0,y0,x1,y1]){ const mx=(x0+x1)/2, my=(y0+y1)/2;
+  return {sw:[x0,y0], s:[mx,y0], se:[x1,y0], e:[x1,my], ne:[x1,y1], n:[mx,y1], nw:[x0,y1], w:[x0,my]}; }
+function paintBox(){
+  const hs = boxHandles(areaEd.ext);
+  shapeFeat.setGeometry(ol.geom.Polygon.fromExtent(areaEd.ext));
+  handleFeats.forEach(f=>f.setGeometry(new ol.geom.Point(hs[f.get("h")])));
+}
+function boxHit(px){
+  let best = null, bd = 26;
+  Object.entries(boxHandles(areaEd.ext)).forEach(([k,c])=>{ const p = map.getPixelFromCoordinate(c), d = Math.hypot(p[0]-px[0], p[1]-px[1]); if(d < bd){ bd = d; best = k; } });
+  return best || (ol.extent.containsCoordinate(areaEd.ext, map.getCoordinateFromPixel(px)) ? "move" : null);
+}
+const boxI = new ol.interaction.Pointer({
+  handleDownEvent(e){ // returning false lets the map pan as usual
+    if(areaEd?.mode!=="box") return false;
+    const h = boxHit(e.pixel); if(!h) return false;
+    areaEd.drag = {h, c:e.coordinate, ext:areaEd.ext.slice()}; return true;
+  },
+  handleDragEvent(e){
+    const d = areaEd?.drag; if(!d) return;
+    const dx = e.coordinate[0]-d.c[0], dy = e.coordinate[1]-d.c[1], m = 10;
+    let [x0,y0,x1,y1] = d.ext;
+    if(d.h==="move"){ x0+=dx; x1+=dx; y0+=dy; y1+=dy; }
+    else {
+      if(d.h.includes("w")) x0 = Math.min(x0+dx, x1-m);
+      if(d.h.includes("e")) x1 = Math.max(x1+dx, x0+m);
+      if(d.h.includes("s")) y0 = Math.min(y0+dy, y1-m);
+      if(d.h.includes("n")) y1 = Math.max(y1+dy, y0+m);
+    }
+    areaEd.ext = [x0,y0,x1,y1]; paintBox(); areaChanged();
+  },
+  handleUpEvent(){ if(areaEd) areaEd.drag = null; return false; }
+});
+// Default rectangle: the part of the map you can see above the sheet
+function defaultExtent(){
+  const [w,h] = map.getSize(), top = 70, bottom = Math.max(h - $("sheet").offsetHeight - 16, top + 80);
+  const a = map.getCoordinateFromPixel([24, top]), b = map.getCoordinateFromPixel([w-24, bottom]);
+  return [Math.min(a[0],b[0]), Math.min(a[1],b[1]), Math.max(a[0],b[0]), Math.max(a[1],b[1])];
+}
+const HINT = {
+  box: "Træk i hjørnerne eller kanterne for at ændre størrelsen, og midt i firkanten for at flytte den. Træk udenfor for at flytte kortet.",
+  drawing: "Tegn med én finger rundt om området. Slip, så lukkes formen.",
+  edit: "Træk i punkterne for at rette formen. Træk i en kant for at lave et nyt punkt."
+};
+function dropTools(){
+  const a = areaEd;
+  if(a.drawI){ map.removeInteraction(a.drawI); a.drawI = null; }
+  if(a.modI){ map.removeInteraction(a.modI); a.modI = null; }
+}
+function setMode(mode, init){
+  const a = areaEd; dropTools(); a.mode = mode; editSrc.clear();
+  document.querySelectorAll("#pArea [data-m]").forEach(b=>b.classList.toggle("on", b.dataset.m===mode));
+  if(mode==="box"){
+    a.ext = init || defaultExtent(); paintBox();
+    editSrc.addFeatures([shapeFeat, ...handleFeats]);
+    $("areaHint").textContent = HINT.box; $("btnRedraw").hidden = true;
+  } else if(init) setPoly(init);
+  else {
+    shapeFeat.setGeometry(null);
+    a.drawI = new ol.interaction.Draw({type:"Polygon", freehand:true,
+      style:new ol.style.Style({stroke:new ol.style.Stroke({color:EDIT,width:3}), fill:new ol.style.Fill({color:"#2b6cd422"})})});
+    a.drawI.on("drawend", e=>{
+      const g = e.feature.getGeometry().simplify(map.getView().getResolution()*4);
+      if(g.getType()!=="Polygon" || g.getCoordinates()[0].length < 4 || g.getArea() < 50){ toast("Tegn en ring rundt om området"); return; }
+      setTimeout(()=>{ if(areaEd===a && a.mode==="draw") { dropTools(); setPoly(g); } });
+    });
+    map.addInteraction(a.drawI);
+    $("areaHint").textContent = HINT.drawing; $("btnRedraw").hidden = true;
+  }
+  areaChanged();
+}
+function setPoly(g){
+  const a = areaEd;
+  shapeFeat.setGeometry(g); editSrc.addFeature(shapeFeat);
+  a.modI = new ol.interaction.Modify({features:new ol.Collection([shapeFeat]), pixelTolerance:22,
+    style:new ol.style.Style({image:new ol.style.Circle({radius:9, fill:new ol.style.Fill({color:"#fff"}), stroke:new ol.style.Stroke({color:EDIT,width:3})})})});
+  map.addInteraction(a.modI);
+  $("areaHint").textContent = HINT.edit; $("btnRedraw").hidden = false;
+  areaChanged();
+}
+const areaGeom = () => areaEd.mode==="box" ? ol.geom.Polygon.fromExtent(areaEd.ext) : shapeFeat.getGeometry();
+function curShape(){
+  const g = areaGeom(); if(!g) return null;
+  const [x0,y0,x1,y1] = g.getExtent();
+  return {extent:[Math.floor(x0), Math.floor(y0), Math.ceil(x1), Math.ceil(y1)],
+    area: areaEd.mode==="draw" ? {type:"Polygon", coordinates:[g.getCoordinates()[0].map(c=>[Math.round(c[0]), Math.round(c[1])])]} : null};
+}
+// Live size, and when the overview is open, how many of that type the area catches
+shapeFeat.on("change", ()=>areaChanged());
+function areaChanged(){
+  clearTimeout(areaT);
+  areaT = setTimeout(()=>{
+    if(!areaEd) return;
+    const s = curShape();
+    if(!s){ $("areaSize").textContent = ""; return; }
+    let txt = fmtArea(shapeGeom(s).getArea());
+    if(ol.extent.getArea(s.extent) > MAX_AREA) txt += " · for stort";
+    else if(over && overSrc.getFeatures().length){
+      const sh = prepShape(s), inside = overSrc.getFeaturesInExtent(s.extent).filter(f=>inShape(f.getGeometry(), sh));
+      const free = inside.filter(f=>f.get("_s")==="none").length;
+      txt += ` · ${inside.length} ${(CODES[over.code]||over.code).toLowerCase()}, ${free} ikke i en opgave`;
+    }
+    $("areaSize").textContent = txt;
+  }, 100);
+}
+// opts: {shape:{extent, area}|null, done(shape), cancel(), title, okLabel, hideOutline}
+function startArea(opts){
+  areaEd = {...opts, prev:curPane()};
+  $("areaTitle").textContent = opts.title || "Tegn opgavens område";
+  $("btnAreaOk").textContent = opts.okLabel || "Videre ▸";
+  if(opts.hideOutline) areaLayer.setVisible(false);
+  pane("pArea");
+  map.addInteraction(boxI);
+  const s = opts.shape;
+  if(s?.area) setMode("draw", new ol.geom.Polygon(s.area.coordinates));
+  else setMode("box", s?.extent || null);
+  if(s) map.getView().fit(s.extent, {padding:[80,30,sheetPad(),30], maxZoom:11, duration:300});
+}
+function endArea(){
+  const a = areaEd; dropTools(); map.removeInteraction(boxI); editSrc.clear(); areaLayer.setVisible(true);
+  areaEd = null; pane(a.prev); return a;
+}
+document.querySelectorAll("#pArea [data-m]").forEach(b=>b.onclick=()=>{
+  const a = areaEd, m = b.dataset.m; if(a.mode===m) return;
+  const g = areaGeom();
+  setMode(m, m==="box" && g ? g.getExtent() : null);
+});
+$("btnRedraw").onclick = ()=>setMode("draw", null);
+$("btnAreaCancel").onclick = ()=>{ endArea().cancel?.(); };
+$("btnAreaOk").onclick = ()=>{
+  const s = curShape();
+  if(!s){ toast("Tegn området først"); return; }
+  if(ol.extent.getArea(s.extent) > MAX_AREA){ toast("Området er for stort. Gør det mindre, eller del det i flere opgaver.", 4000); return; }
+  endArea().done(s);
+};
+// A boss can redraw an existing task's area
+$("btnEditArea").onclick = ()=>{
+  const t = task;
+  startArea({shape:{extent:t.extent, area:t.area||null}, title:"Ret opgavens område", okLabel:"Gem område", hideOutline:true, done:s=>saveArea(t, s)});
+};
+async function saveArea(t, s){
+  let patch = {extent:s.extent, area:s.area};
+  if(sb){
+    let {error} = await sb.from("tasks").update(patch).eq("id",t.id);
+    if(noAreaCol(error)){ if(s.area) toast(AREA_FALLBACK, 5000); patch = {extent:s.extent}; ({error} = await sb.from("tasks").update(patch).eq("id",t.id)); }
+    if(error){ toast("Området blev ikke gemt: " + error.message, 4000); return; }
+  }
+  t.extent = patch.extent; if(patch.area) t.area = patch.area; else delete t.area;
+  store.set("tasks", tasks); await elCacheDel(t.id);
+  toast("Området er gemt"); openTask(t);
+}
+
+// ================= OVERVIEW: ONE TYPE IN THE WHOLE KOMMUNE =================
+let over = null; // {code, t: timer}
+function renderTypes(){
+  const q = $("typeSearch").value.trim().toLowerCase();
+  const used = {}; tasks.forEach(t=>(t.codes||[]).forEach(c=>used[c]=(used[c]||0)+1));
+  const list = Object.entries(CODES).filter(([k,v])=>!q || k.toLowerCase().includes(q) || v.toLowerCase().includes(q))
+    .sort((a,b)=>(used[b[0]]||0)-(used[a[0]]||0));
+  $("typeList").innerHTML = list.map(([k,v])=>`<button class="item" data-c="${k}"><div class="grow"><div class="t">${esc(v)}</div>
+    ${used[k] ? `<div class="s">${used[k]} ${used[k]===1?"aktiv opgave":"aktive opgaver"}</div>` : ""}</div><span class="code">${k}</span></button>`).join("")
+    || `<p class="muted">Ingen typer matcher "${esc(q)}"</p>`;
+  $("typeList").querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{ $("pType").hidden = true; openOverview(b.dataset.c); });
+}
+$("btnOverview").onclick = $("btnOverType").onclick = ()=>{ $("typeSearch").value = ""; renderTypes(); $("pType").hidden = false; };
+$("typeSearch").oninput = renderTypes;
+$("btnTypeClose").onclick = ()=>{ $("pType").hidden = true; };
+function closeOverview(){
+  if(!over) return;
+  clearTimeout(over.t); clearTimeout(over.refresh); over = null; overSrc.clear(); areaSrc.clear();
+}
+async function openOverview(code){
+  closeOverview();
+  const o = over = {code};
+  const name = CODES[code] || code;
+  $("overCode").textContent = code; $("overName").textContent = `${name} i hele kommunen`;
+  $("overBar").innerHTML = ""; $("overLegend").innerHTML = ""; $("overTasks").innerHTML = "";
+  $("btnOverNew").textContent = `+ Ny opgave med ${name.toLowerCase()}`;
+  pane("pOver");
+  const cached = await elCacheGet("type:"+code);
+  let feats;
+  if(cached){ feats = fmt.readFeatures(cached.geojson); overAge(cached.saved); }
+  else {
+    $("overAge").innerHTML = `<span class="spin"></span> Henter fra kommunen …`;
+    try{ feats = await downloadType(code); overAge(Date.now()); }
+    catch(e){ console.error(e); if(over===o) $("overAge").textContent = "Kunne ikke hente fra kommunen. Prøv igen senere."; return; }
+  }
+  if(over!==o) return;
+  overSrc.addFeatures(feats);
+  await overPaint();
+  if(over!==o) return;
+  if(!feats.length) toast(`Kommunen har ingen ${name.toLowerCase()} registreret`, 4000);
+  else if(!store.get("seenType:"+code, false)){ map.getView().fit(overSrc.getExtent(), {padding:[70,16,sheetPad(),16], duration:300}); store.set("seenType:"+code, true); }
+  // Same rules as tasks: at most once a day, spread out, never in the morning rush
+  if(cached && Date.now() - cached.saved > DAY && !rushHour())
+    o.refresh = setTimeout(()=>{ if(over===o && navigator.onLine && !rushHour()) refreshType(o, false); }, 15000 + Math.random()*180000);
+}
+async function downloadType(code){ const fs = await fetchKommune(code); await elCachePut("type:"+code, fs); return fs; }
+function overAge(saved){ $("overAge").textContent = `Kortdata hentet ${ago(new Date(saved).toISOString())} · gemt på telefonen`; }
+async function refreshType(o, manual){
+  if(manual) $("overAge").innerHTML = `<span class="spin"></span> Henter fra kommunen …`;
+  try{
+    const fs = await downloadType(o.code); if(over!==o) return;
+    overSrc.clear(); overSrc.addFeatures(fs); await overPaint(); overAge(Date.now()); if(manual) toast("Kortdata opdateret");
+  }catch(e){ console.error(e); if(manual && over===o){ toast("Kunne ikke hente fra kommunen. Prøv igen senere.", 4000); const c = await elCacheGet("type:"+o.code); if(c) overAge(c.saved); else $("overAge").textContent = ""; } }
+}
+$("btnOverRefresh").onclick = ()=>{ if(over) refreshType(over, true); };
+// Status per element: from the tasks that cover it (done beats in progress beats todo); "none" if no task covers it
+async function progressFor(ids){
+  const m = new Map(); if(!ids.length) return m;
+  let fromDb = false;
+  if(sb){
+    fromDb = true;
+    for(let i=0;;i+=1000){
+      const {data,error} = await sb.from("progress").select("task_id,element_id,status").in("task_id",ids).range(i, i+999);
+      if(error){ fromDb = false; break; }
+      data.forEach(r=>m.set(r.task_id+"|"+r.element_id, r.status));
+      if(data.length < 1000) break;
+    }
+  }
+  if(!fromDb) ids.forEach(id=>store.get("prog:"+id,[]).forEach(r=>m.set(id+"|"+r.element_id, r.status)));
+  pending.forEach(r=>{ if(ids.includes(r.task_id)) m.set(r.task_id+"|"+r.element_id, r.status); });
+  return m;
+}
+async function overPaint(){
+  const o = over; if(!o) return;
+  const tl = tasks.filter(t=>(t.codes||[]).includes(o.code));
+  const prog = await progressFor(tl.map(t=>t.id));
+  if(over!==o) return;
+  areaSrc.clear();
+  tl.forEach(t=>{ const f = new ol.Feature(shapeGeom(t)); f.set("label", t.name); areaSrc.addFeature(f); });
+  const shapes = tl.map(t=>({t, s:prepShape(t)})), RANK = {todo:0, doing:1, done:2};
+  const per = new Map(tl.map(t=>[t.id, {done:0, total:0}])), c = {none:0, todo:0, doing:0, done:0};
+  overSrc.getFeatures().forEach(f=>{
+    const g = f.getGeometry(); let best = null, bt = null;
+    for(const {t,s} of shapes){
+      if(!inShape(g, s)) continue;
+      const st = prog.get(t.id+"|"+f.getId()) || "todo", p = per.get(t.id);
+      p.total++; if(st==="done") p.done++;
+      if(best===null || RANK[st] > RANK[best]){ best = st; bt = t.id; }
+    }
+    f.set("_s", best || "none", true); f.set("_t", bt, true); c[best || "none"]++;
+  });
+  overLayer.changed();
+  const n = overSrc.getFeatures().length, name = (CODES[o.code]||o.code).toLowerCase();
+  $("overBar").innerHTML = n ? ["done","doing","todo","none"].map(s=>`<i style="width:${c[s]/n*100}%;background:${COLORS[s]}"></i>`).join("") : "";
+  const LEG = {none:"ikke i en opgave", todo:"mangler", doing:"i gang", done:"færdige"};
+  $("overLegend").innerHTML = ["none","todo","doing","done"].map(s=>`<span><i style="background:${COLORS[s]}"></i><b class="num">${c[s]}</b> ${LEG[s]}</span>`).join("");
+  $("overTasks").innerHTML = (c.none ? `<button class="item" data-none="1"><div class="grow"><div class="t">Ikke i en opgave</div><div class="s">Vis hvor de ligger</div></div><span class="pill none num">${c.none}</span></button>` : "")
+    + `<div class="section">Opgaver med ${esc(name)}</div>`
+    + (tl.length ? tl.map(t=>{ const p = per.get(t.id);
+        return `<div class="row"><button class="item grow" data-fit="${esc(t.id)}"><div class="grow"><div class="t">${esc(t.name)}</div><div class="s">${esc(whoFor(t))}</div></div>
+          <span class="pill ${p.total && p.done===p.total ? "done" : "todo"} num">${p.done}/${p.total}</span></button>
+          <button class="btn ghost" data-open="${esc(t.id)}">Åbn</button></div>`; }).join("")
+      : `<p class="muted" style="margin:0">Ingen aktive opgaver med ${esc(name)}.</p>`);
+  const fit = ext => map.getView().fit(ext, {padding:[70,30,sheetPad(),30], maxZoom:11, duration:350});
+  $("overTasks").querySelectorAll("[data-fit]").forEach(b=>b.onclick=()=>fit(tasks.find(t=>t.id===b.dataset.fit).extent));
+  $("overTasks").querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openTask(tasks.find(t=>t.id===b.dataset.open)));
+  const nb = $("overTasks").querySelector("[data-none]");
+  if(nb) nb.onclick = ()=>{ const ext = ol.extent.createEmpty(); overSrc.getFeatures().forEach(f=>{ if(f.get("_s")==="none") ol.extent.extend(ext, f.getGeometry().getExtent()); }); fit(ext); };
+}
+$("btnOverBack").onclick = ()=>{ closeOverview(); pane("pTasks"); loadTasks(); };
+$("btnOverNew").onclick = ()=>{ if(over) beginNewTask(over.code); };
 
 // ================= ELEMENT VIEW =================
 function select(f){
@@ -708,6 +1116,12 @@ function showEl(zoom){
   }
 }
 map.on("singleclick", e=>{
+  if(areaEd) return;
+  if(over && !task){
+    const f = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===overLayer, hitTolerance:12})[0];
+    if(f){ const t = tasks.find(x=>x.id===f.get("_t")); toast(`${titleOf(f)}${subOf(f) ? " · " + subOf(f) : ""} · ${t ? LABEL[f.get("_s")] + " i " + t.name : "ikke i en opgave"}`, 4000); }
+    return;
+  }
   if(!task) return;
   const hits = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:12});
   if(!hits.length){ if(!$("pEl").hidden) select(null); return; }
