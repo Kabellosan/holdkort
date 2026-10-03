@@ -52,6 +52,8 @@ h2{font-size:19px;line-height:1.2;margin:0;text-wrap:balance}
 .btn.primary{background:var(--moss);border-color:var(--moss);color:#fff;font-weight:600}
 .btn.ghost{border-color:transparent;background:transparent;min-height:44px;padding:8px 10px;color:var(--ink2)}
 .btn.fill{flex:1}
+.btn.stop{justify-content:flex-start;gap:10px;border-style:dashed}
+.btn.stop.on{border-style:solid;border-color:var(--moss2);background:var(--paper);font-weight:600}
 .status{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .status button{border-radius:var(--r);border:2px solid var(--line);background:var(--card);min-height:56px;font-size:15px;font-weight:600;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
 .status button i{width:14px;height:14px;border-radius:50%}
@@ -131,6 +133,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <div class="grow"><div class="eyebrow" id="elCode"></div><h2 id="elTitle"></h2><div class="muted" id="elSub"></div></div>
       <button class="btn ghost" id="btnElClose" aria-label="Luk">✕</button>
     </div>
+    <button class="btn stop" id="btnGroup" hidden></button>
     <div class="status">
       <button data-s="todo"><i style="background:var(--todo)"></i><span>Mangler</span></button>
       <button data-s="doing"><i style="background:var(--doing)"></i><span>I gang</span></button>
@@ -218,7 +221,7 @@ const LABEL  = {todo:"Mangler", doing:"I gang", done:"Færdig"};
 const elSrc = new ol.source.Vector();
 const styleCache = {};
 function elStyle(f, res){
-  const s = statusOf(f.getId()), sel = f === selected;
+  const s = statusOf(f.getId()), sel = selSet.has(f);
   const key = s + sel + (res > 3.2 ? "far" : "near");
   if(!styleCache[key]){
     const c = COLORS[s], far = res > 3.2;
@@ -281,6 +284,8 @@ $("syncdot").className = "dot " + (sb ? "on" : "off");
 $("who").title = sb ? "Deles med holdet · tryk for at skifte navn" : "Kun på denne telefon · tryk for at skifte navn";
 
 let tasks = [], task = null, progress = new Map(), selected = null;
+let selSet = new Set(), groupMode = false, groupOf = new Map();
+const GROUP_M = 35; // elements this close to each other count as one stop
 const statusOf = id => progress.get(id)?.status || "todo";
 
 async function loadTasks(){
@@ -308,19 +313,23 @@ async function loadProgress(taskId){
   }
   store.get("prog:"+taskId,[]).forEach(r=>progress.set(r.element_id,r));
 }
-async function setStatus(id, status, note){
-  const prev = progress.get(id) || {};
-  const r = {task_id:task.id, element_id:id, status: status ?? prev.status ?? "todo", note: note ?? prev.note ?? "", worker:me, updated_at:new Date().toISOString()};
-  progress.set(id, r); refresh();
-  if(sb){ const {error} = await sb.from("progress").upsert(r); if(error) toast("Ikke gemt. Tjek forbindelsen."); }
+async function setStatus(ids, status, note){
+  const now = new Date().toISOString();
+  const rows = ids.map(id=>{ const prev = progress.get(id) || {};
+    return {task_id:task.id, element_id:id, status: status ?? prev.status ?? "todo", note: note ?? prev.note ?? "", worker:me, updated_at:now}; });
+  rows.forEach(r=>progress.set(r.element_id, r)); refresh();
+  if(sb){ const {error} = await sb.from("progress").upsert(rows); if(error) toast("Ikke gemt. Tjek forbindelsen."); }
   store.set("prog:"+task.id, [...progress.values()]);
 }
+const remoteBatch = {};
 if(sb){
   sb.channel("holdkort")
     .on("postgres_changes",{event:"*",schema:"public",table:"progress"},p=>{
       const r = p.new; if(!task || !r || r.task_id!==task.id) return;
       progress.set(r.element_id, r); refresh();
-      if(r.worker !== me){ const f = elSrc.getFeatureById(r.element_id); toast(`${r.worker||"Nogen"}: ${LABEL[r.status]}${f ? " · " + titleOf(f) : ""}`); }
+      if(r.worker !== me){ const f = elSrc.getFeatureById(r.element_id);
+        const k = r.worker + r.updated_at; remoteBatch[k] = (remoteBatch[k]||0) + 1; const n = remoteBatch[k];
+        toast(`${r.worker||"Nogen"}: ${LABEL[r.status]}${n>1 ? ` · ${n} elementer` : f ? " · " + titleOf(f) : ""}`); }
     })
     .on("postgres_changes",{event:"*",schema:"public",table:"tasks"},()=>{ if(!task) loadTasks(); })
     .subscribe();
@@ -403,7 +412,7 @@ function renderTasks(){
   });
 }
 async function openTask(t){
-  task = t; selected = null; elSrc.clear(); areaSrc.clear();
+  task = t; selected = null; selSet.clear(); elSrc.clear(); areaSrc.clear();
   areaSrc.addFeature(new ol.Feature(ol.geom.Polygon.fromExtent(t.extent)));
   $("workName").textContent = t.name; $("workCodes").textContent = codeNames(t.codes);
   $("workCount").innerHTML = `<span class="spin"></span>`; $("bar").innerHTML = "";
@@ -420,10 +429,11 @@ async function openTask(t){
   }
   if(task !== t) return;
   elSrc.addFeatures(feats);
+  buildGroups();
   refresh();
   if(!feats.length) toast("Ingen elementer af den type i området", 4000);
 }
-$("btnBack").onclick = ()=>{ task=null; selected=null; elSrc.clear(); areaSrc.clear(); pane("pTasks"); loadTasks(); };
+$("btnBack").onclick = ()=>{ task=null; selected=null; selSet.clear(); elSrc.clear(); areaSrc.clear(); pane("pTasks"); loadTasks(); };
 
 function refresh(){
   elLayer.changed();
@@ -433,7 +443,7 @@ function refresh(){
   $("workCount").innerHTML = `${c.done}<span class="muted" style="font-size:18px">/${n}</span>`;
   store.set("count:"+task.id, [c.done, n]);
   $("bar").innerHTML = n ? ["done","doing","todo"].map(s=>`<i style="width:${c[s]/n*100}%;background:${COLORS[s]}"></i>`).join("") : "";
-  if(selected && !$("pEl").hidden) showEl(selected, false);
+  if(selected && !$("pEl").hidden) showEl(false);
   if(!$("pList").hidden) renderList();
 }
 
@@ -471,25 +481,87 @@ $("btnCreate").onclick = async ()=>{
 };
 
 // ================= ELEMENT VIEW =================
-function select(f){ selected = f; elLayer.changed(); if(f) showEl(f, true); else pane("pWork"); }
-function showEl(f, zoom){
-  pane("pEl");
-  $("elCode").textContent = f.get("elementkode");
-  $("elTitle").textContent = titleOf(f);
-  $("elSub").textContent = subOf(f);
-  const p = progress.get(f.getId()), s = statusOf(f.getId());
-  document.querySelectorAll(".status [data-s]").forEach(b=>b.classList.toggle("on", b.dataset.s===s));
-  if(document.activeElement !== $("note")) $("note").value = p?.note || "";
-  $("elMeta").textContent = p ? `${p.worker||"?"} · ${ago(p.updated_at)}` : "Ingen har rørt den endnu";
-  if(zoom) map.getView().fit(f.getGeometry().getExtent(), {padding:[80,40,sheetPad(),40], maxZoom:12, duration:350});
+// Stops: elements within GROUP_M of a seed element form one stop (seeded greedily, so a long street doesn't chain into one giant stop)
+function buildGroups(){
+  groupOf = new Map();
+  const all = elSrc.getFeatures().slice().sort((a,b)=>ol.extent.getCenter(a.getGeometry().getExtent())[0]-ol.extent.getCenter(b.getGeometry().getExtent())[0]);
+  for(const f of all){
+    if(groupOf.has(f.getId())) continue;
+    const c = ol.extent.getCenter(f.getGeometry().getExtent());
+    const near = elSrc.getFeaturesInExtent(ol.extent.buffer(ol.extent.boundingExtent([c]), GROUP_M))
+      .filter(g=>!groupOf.has(g.getId()) && distTo(g, c) <= GROUP_M);
+    if(!near.includes(f)) near.push(f);
+    near.forEach(g=>groupOf.set(g.getId(), near));
+  }
 }
+const stopOf = f => groupOf.get(f.getId()) || [f];
+function select(f){
+  selected = f; selSet = new Set();
+  if(f){
+    const open = stopOf(f).filter(g=>statusOf(g.getId())!=="done");
+    groupMode = open.length > 1 && statusOf(f.getId())!=="done"; // default to the whole stop when there's more than one left
+    selSet = new Set(groupMode ? [f, ...open] : [f]);
+  }
+  elLayer.changed();
+  if(f) showEl(true); else pane("pWork");
+}
+function setGroupMode(on){
+  groupMode = on;
+  selSet = new Set(on ? [selected, ...stopOf(selected).filter(g=>statusOf(g.getId())!=="done")] : [selected]);
+  elLayer.changed(); showEl(true);
+}
+function showEl(zoom){
+  pane("pEl");
+  const fs = [...selSet], n = fs.length, f = selected;
+  const stop = stopOf(f);
+  if(n > 1){
+    const streets = [...new Set(fs.map(g=>g.get("vejnavn")||g.get("_street")).filter(Boolean))];
+    const kinds = [...new Set(fs.map(g=>CODES[g.get("elementkode")]||g.get("elementkode")))];
+    $("elCode").textContent = `Stop · ${n} elementer`;
+    $("elTitle").textContent = `${kinds.join(" + ")}${streets.length ? " · " + streets.slice(0,2).join(", ") : ""}`;
+    const area = fs.reduce((a,g)=>a+(g.get("geometri_areal")||0),0);
+    $("elSub").textContent = area ? `${Math.round(area)} m² i alt` : "";
+  } else {
+    $("elCode").textContent = f.get("elementkode");
+    $("elTitle").textContent = titleOf(f);
+    $("elSub").textContent = subOf(f);
+  }
+  // Stop toggle: shown when there are neighbours to take along
+  const others = stop.filter(g=>g!==f).length;
+  $("btnGroup").hidden = others===0 && n===1;
+  $("btnGroup").classList.toggle("on", groupMode);
+  $("btnGroup").innerHTML = groupMode
+    ? `<b>✓</b><span class="grow" style="text-align:left">Hele stoppet: ${n} valgt</span><span class="muted">tryk på kortet for at tilføje</span>`
+    : `<b>+</b><span class="grow" style="text-align:left">Tag hele stoppet med (${stop.length} her)</span>`;
+  const sts = new Set(fs.map(g=>statusOf(g.getId())));
+  const s = sts.size===1 ? [...sts][0] : null;
+  document.querySelectorAll(".status [data-s]").forEach(b=>b.classList.toggle("on", b.dataset.s===s));
+  const p = progress.get(f.getId());
+  if(document.activeElement !== $("note")) $("note").value = p?.note || "";
+  const latest = fs.map(g=>progress.get(g.getId())).filter(Boolean).sort((a,b)=>a.updated_at<b.updated_at?1:-1)[0];
+  $("elMeta").textContent = latest ? `${latest.worker||"?"} · ${ago(latest.updated_at)}` : (n>1 ? "Ingen har rørt dem endnu" : "Ingen har rørt den endnu");
+  if(zoom){
+    const ext = ol.extent.createEmpty(); fs.forEach(g=>ol.extent.extend(ext, g.getGeometry().getExtent()));
+    map.getView().fit(ext, {padding:[80,40,sheetPad(),40], maxZoom:12, duration:350});
+  }
+}
+$("btnGroup").onclick = ()=>setGroupMode(!groupMode);
 map.on("singleclick", e=>{
   if(!task) return;
   const f = map.forEachFeatureAtPixel(e.pixel, f=>f, {layerFilter:l=>l===elLayer, hitTolerance:12});
+  if(f && groupMode && !$("pEl").hidden){ // in stop mode, taps add/remove elements
+    if(selSet.has(f) && selSet.size>1){ selSet.delete(f); if(f===selected) selected=[...selSet][0]; }
+    else selSet.add(f);
+    elLayer.changed(); showEl(false); return;
+  }
   if(f) select(f); else if(!$("pEl").hidden) select(null);
 });
-document.querySelectorAll(".status [data-s]").forEach(b=>b.onclick=()=>{ setStatus(selected.getId(), b.dataset.s); if(b.dataset.s==="done") toast("Færdig ✓ Tryk Næste for den nærmeste"); });
-$("btnNote").onclick = ()=>{ setStatus(selected.getId(), null, $("note").value); toast("Note gemt"); };
+document.querySelectorAll(".status [data-s]").forEach(b=>b.onclick=()=>{
+  const ids = [...selSet].map(g=>g.getId());
+  setStatus(ids, b.dataset.s);
+  if(b.dataset.s==="done") toast(ids.length>1 ? `${ids.length} færdige ✓ Tryk Næste` : "Færdig ✓ Tryk Næste for den nærmeste");
+});
+$("btnNote").onclick = ()=>{ setStatus([...selSet].map(g=>g.getId()), null, $("note").value); toast("Note gemt"); };
 $("btnElClose").onclick = ()=>select(null);
 
 // ================= NEXT / LIST / GPS =================
@@ -501,7 +573,7 @@ function here(){ return geo.getPosition() || (selected && ol.extent.getCenter(se
 function distTo(f, p){ const c = f.getGeometry().getClosestPoint(p); return Math.hypot(c[0]-p[0], c[1]-p[1]); }
 function next(){
   const p = here();
-  const open = elSrc.getFeatures().filter(f=>f!==selected && statusOf(f.getId())!=="done");
+  const open = elSrc.getFeatures().filter(f=>!selSet.has(f) && statusOf(f.getId())!=="done");
   if(!open.length){ toast("Alt i opgaven er færdigt 🎉", 4000); return; }
   const untouched = open.filter(f=>statusOf(f.getId())==="todo"); // skip what a colleague is on
   const pool = untouched.length ? untouched : open;
