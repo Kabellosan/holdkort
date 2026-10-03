@@ -138,6 +138,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <div style="text-align:right"><div class="big num" id="workCount">–</div><div class="muted">færdige</div></div>
     </div>
     <div class="bar" id="bar"></div>
+    <div class="row"><span class="muted grow" id="dataAge"></span><button class="btn ghost" id="btnRefresh" style="min-height:36px;padding:4px 8px">Opdater</button></div>
     <div class="row">
       <button class="btn primary fill" id="btnNext">Næste ▸</button>
       <button class="btn" id="btnList">Liste</button>
@@ -432,7 +433,7 @@ async function archiveTask(t){
     await sb.from("tasks").update({archived:true, summary:c ? {done:c[0], total:c[1]} : null}).eq("id",t.id);
     await sb.from("progress").delete().eq("task_id",t.id);
   }
-  store.set("prog:"+t.id, null); store.set("els:"+t.id, null);
+  store.set("prog:"+t.id, null); elCacheDel(t.id);
   [...pending.keys()].filter(k=>k.startsWith(t.id+"|")).forEach(k=>pending.delete(k)); store.set("pending",[...pending.values()]);
   store.set("tasks",tasks); renderTasks(); renderOutbox();
   toast("Opgaven er afsluttet, og markeringerne er slettet");
@@ -554,29 +555,59 @@ function renderTasks(){
     b.dataset.armed=1; b.textContent="Sikker?"; setTimeout(()=>{delete b.dataset.armed; b.textContent="Afslut";},3000);
   });
 }
+// ---- Element data is stored on the phone (Cache API) and refreshed at most once a day, never in the morning rush ----
+const EL_CACHE = "elements-v1", DAY = 864e5;
+const elKey = id => new Request("https://holdkort.cache/elements/" + encodeURIComponent(id));
+async function elCacheGet(id){ try{ const r = await (await caches.open(EL_CACHE)).match(elKey(id)); return r ? await r.json() : null; }catch(e){ return null; } }
+async function elCachePut(id, feats){ try{ await (await caches.open(EL_CACHE)).put(elKey(id), new Response(JSON.stringify({saved:Date.now(), geojson:fmt.writeFeatures(feats)}))); }catch(e){} }
+async function elCacheDel(id){ try{ await (await caches.open(EL_CACHE)).delete(elKey(id)); }catch(e){} }
+const rushHour = () => { const h = new Date().getHours(); return h >= 6 && h < 9; };
+async function downloadElements(t){ const fs = await fetchElements(t.codes, t.extent); await nameByStreet(fs, t.extent); await elCachePut(t.id, fs); return fs; }
+function showDataAge(saved){
+  if(!saved){ $("dataAge").textContent = ""; return; }
+  $("dataAge").textContent = `Kortdata hentet ${ago(new Date(saved).toISOString())} · gemt på telefonen`;
+}
+function swapElements(fs){
+  const ids = new Set([...selSet].map(f=>f.getId()));
+  elSrc.clear(); elSrc.addFeatures(fs);
+  selSet = new Set(fs.filter(f=>ids.has(f.getId()))); selected = [...selSet][0] || null;
+  refresh();
+}
+let refreshTimer = null;
+async function refreshElements(t, manual){
+  clearTimeout(refreshTimer);
+  if(manual) $("dataAge").innerHTML = `<span class="spin"></span> Henter fra kommunen …`;
+  try{ const fs = await downloadElements(t); if(task !== t) return; swapElements(fs); showDataAge(Date.now()); if(manual) toast("Kortdata opdateret"); }
+  catch(e){ console.error(e); if(manual){ toast("Kunne ikke hente fra kommunen. Prøv igen senere.", 4000); showDataAge((await elCacheGet(t.id))?.saved); } }
+}
 async function openTask(t){
-  task = t; selected = null; selSet.clear(); elSrc.clear(); areaSrc.clear();
+  task = t; selected = null; selSet.clear(); elSrc.clear(); areaSrc.clear(); clearTimeout(refreshTimer);
   geo.setTracking(true);
   areaSrc.addFeature(new ol.Feature(ol.geom.Polygon.fromExtent(t.extent)));
   $("workName").textContent = t.name; $("workCodes").textContent = codeNames(t.codes);
-  $("workCount").innerHTML = `<span class="spin"></span>`; $("bar").innerHTML = "";
+  $("workCount").innerHTML = `<span class="spin"></span>`; $("bar").innerHTML = ""; $("dataAge").textContent = "";
   pane("pWork");
-  map.getView().fit(t.extent, {padding:[70,16,sheetPad(),16], duration:300});
+  // Only jump to the task area the first time; after that the map stays where you left it
+  const seen = store.get("seen:"+t.id, false);
+  if(!seen){ map.getView().fit(t.extent, {padding:[70,16,sheetPad(),16], duration:300}); store.set("seen:"+t.id, true); }
   await loadProgress(t.id);
+  const cached = await elCacheGet(t.id);
   let feats;
-  try { feats = await fetchElements(t.codes, t.extent); await nameByStreet(feats, t.extent); store.set("els:"+t.id, fmt.writeFeatures(feats)); }
-  catch(e){
-    console.error(e);
-    const cached = store.get("els:"+t.id, null);
-    if(cached){ feats = fmt.readFeatures(cached); toast("Ingen forbindelse. Viser gemte elementer."); }
-    else { toast("Kunne ikke hente elementer fra kommunen. Prøv igen om lidt.", 5000); $("workCount").textContent="–"; return; }
+  if(cached){ feats = fmt.readFeatures(cached.geojson); showDataAge(cached.saved); }
+  else {
+    try { feats = await downloadElements(t); showDataAge(Date.now()); }
+    catch(e){ console.error(e); toast("Kunne ikke hente elementer fra kommunen. Prøv igen om lidt.", 5000); $("workCount").textContent="–"; return; }
   }
   if(task !== t) return;
   elSrc.addFeatures(feats);
   refresh();
   if(!feats.length) toast("Ingen elementer af den type i området", 4000);
+  // Stale data: refresh quietly later, spread out over a few minutes so phones don't all ask at once
+  if(cached && Date.now() - cached.saved > DAY && !rushHour())
+    refreshTimer = setTimeout(()=>{ if(task===t && navigator.onLine && !rushHour()) refreshElements(t, false); }, 15000 + Math.random()*180000);
 }
-$("btnBack").onclick = ()=>{ task=null; selected=null; selSet.clear(); elSrc.clear(); areaSrc.clear(); pane("pTasks"); loadTasks(); };
+$("btnRefresh").onclick = ()=>{ if(task) refreshElements(task, true); };
+$("btnBack").onclick = ()=>{ clearTimeout(refreshTimer); task=null; selected=null; selSet.clear(); elSrc.clear(); areaSrc.clear(); pane("pTasks"); loadTasks(); };
 
 function refresh(){
   elLayer.changed();

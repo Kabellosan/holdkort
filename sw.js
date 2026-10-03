@@ -2,7 +2,7 @@
 const TILE_CACHE = "tiles-v1";
 const APP_CACHE = "app-v1";
 const APP_FILES = ["./", "index.html", "manifest.json"];
-const MAX_AGE_DAYS = 30; // the aerial photo changes once a year; refresh tiles monthly
+const MAX_AGE_DAYS = 180; // the 2024 aerial photo doesn't change; keep tiles for half a year
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(APP_CACHE).then(c => c.addAll(APP_FILES)).then(() => self.skipWaiting()));

@@ -13,8 +13,16 @@ Shared task map for the idverde crew in Ikast-Brande. The kommune's maintenance 
 Sidewalks (`FB2a`) come split into stretches by street and station, so you can mark "Rosenstien 0–25" done without the whole street.
 
 ## Where the data comes from
-- **Elements:** the kommune's open GeoServer, workspace `entreprenoer_udbud` (`element_arealer_distribution`, `element_arealer_vej_sti_distribution`, lines, points, curbs). Fetched fresh when a task opens and saved on the phone for offline use.
-- **Aerial photo:** the kommune's WMS (`theme-ortofoto2024`), cached on the phone for 30 days.
+- **Elements:** the kommune's open GeoServer, workspace `entreprenoer_udbud` (`element_arealer_distribution`, `element_arealer_vej_sti_distribution`, lines, points, curbs).
+- **Aerial photo:** the kommune's WMS (`theme-ortofoto2024`).
+
+### Easy on the kommune's server
+- Each task's elements are downloaded **once** and stored on the phone. Reopening a task is instant and costs the server nothing.
+- Stored data is refreshed **at most once a day**, in the background, after a random 15 s – 3 min delay, and **never between 06:00 and 09:00**. **Opdater** in the task forces a refresh.
+- Aerial photo tiles are stored on the phone for **180 days** (the 2024 photo doesn't change).
+- The map remembers where you were; a task only zooms to its area the first time you open it.
+
+The kommune's `robots.txt` asks automated programs not to use the site, so there is **no** nightly server job. With the kommune's OK, a nightly download shared by all phones would cut their load to one request a night.
 
 ## 1. Put it online — GitHub Pages (free)
 1. New repo, e.g. `Kabellosan/holdkort`. Upload `index.html`, `sw.js`, `manifest.json`.
