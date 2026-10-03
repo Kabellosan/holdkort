@@ -1,11 +1,11 @@
 # Holdkort
 
-Shared task map for the idverde crew in Ikast-Brande. The kommune's maintenance elements (pur, fortove, græs …) are loaded as individual shapes, and the crew marks each one **Mangler / I gang / Færdig**. Everyone sees the same progress live.
+Shared task map for the idverde crew in Ikast-Brande. The kommune's maintenance elements (pur, fortove, græs …) are loaded as individual shapes, and the crew marks each one **Mangler / I gang / Færdig**. Each worker decides when their marks are sent to the rest of the team.
 
 ## How it works on the job
 1. **Boss creates a task:** zooms the map to Brande, taps **Ny opgave**, searches "pur", ticks *HA3 Pur*, picks who should do it (or Alle), taps **Opret**. The task covers the area on screen.
 2. **Crew opens the task:** every pur bed in that area shows up in red, and the top shows e.g. `0/47`.
-3. **Næste ▸** jumps to the nearest location nobody has started, based on your GPS.
+3. **Næste ▸** jumps to the nearest location nobody has started, based on your GPS (which never leaves the phone).
 4. Tap **Færdig** → it turns green on your phone. Press **Send** when you choose, and it turns green for everyone. Tap more elements on the map to mark several at once. **I gang** (yellow) tells the others you're on it, so Næste skips it for them.
 5. **Liste** shows everything nearest first, with notes like "kun nordsiden mangler".
 6. When the job is done, tap **Afslut** on the task. Next season, make a new task and everything starts red again.
@@ -14,7 +14,7 @@ Sidewalks (`FB2a`) come split into stretches by street and station, so you can m
 
 ## Where the data comes from
 - **Elements:** the kommune's open GeoServer, workspace `entreprenoer_udbud` (`element_arealer_distribution`, `element_arealer_vej_sti_distribution`, lines, points, curbs). Fetched fresh when a task opens and saved on the phone for offline use.
-- **Aerial photo:** the kommune's WMS (`theme-orto_foraar_daf`), cached on the phone for 30 days. **Gem kort offline** pre-downloads the area on screen.
+- **Aerial photo:** the kommune's WMS (`theme-ortofoto2024`), cached on the phone for 30 days.
 
 ## 1. Put it online — GitHub Pages (free)
 1. New repo, e.g. `Kabellosan/holdkort`. Upload `index.html`, `sw.js`, `manifest.json`.
@@ -79,5 +79,5 @@ In Denmark, new forms of workplace control generally have to be announced to emp
 
 ## If "Kunne ikke hente elementer fra kommunen" shows up
 Two likely causes:
-- **Wrong address.** `WFS_URL` at the top of `index.html` is `https://kort.ikast-brande.dk/geoserver/entreprenoer_udbud/ows`. Compare with the address bar when you open a GeoJSON from GeoServer's Layer Preview and fix it if it differs.
-- **The server blocks browser apps from other sites (CORS).** Then the fix is a tiny relay, e.g. a free Supabase Edge Function that fetches from the kommune for the app. Ask Claude to add it.
+- **Wrong address.** `WFS_URL` at the top of `index.html` is `https://kort.ikast-brande.dk/wfs/entreprenoer_udbud/ows`. If the kommune moves its GeoServer, update it there.
+- **The kommune's server is down or changed its rules.** If it starts blocking apps on other sites (CORS), a small relay through a Supabase Edge Function can fix it.

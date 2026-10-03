@@ -546,6 +546,7 @@ function renderTasks(){
 }
 async function openTask(t){
   task = t; selected = null; selSet.clear(); elSrc.clear(); areaSrc.clear();
+  geo.setTracking(true);
   areaSrc.addFeature(new ol.Feature(ol.geom.Polygon.fromExtent(t.extent)));
   $("workName").textContent = t.name; $("workCodes").textContent = codeNames(t.codes);
   $("workCount").innerHTML = `<span class="spin"></span>`; $("bar").innerHTML = "";
@@ -692,7 +693,7 @@ $("btnElClose").onclick = ()=>select(null);
 const geo = new ol.Geolocation({projection:proj, trackingOptions:{enableHighAccuracy:true, maximumAge:10000}});
 geo.on("change:position", ()=>gpsFeat.setGeometry(new ol.geom.Point(geo.getPosition())));
 geo.on("error", ()=>toast("Ingen GPS. Tillad placering for siden i browseren."));
-geo.setTracking(true);
+// GPS starts when a task is opened, not on the login screen
 function here(){ return geo.getPosition() || (selected && ol.extent.getCenter(selected.getGeometry().getExtent())) || map.getView().getCenter(); }
 function distTo(f, p){ const c = f.getGeometry().getClosestPoint(p); return Math.hypot(c[0]-p[0], c[1]-p[1]); }
 function next(){
