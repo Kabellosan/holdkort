@@ -194,7 +194,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="row"><input type="search" id="placeQ" class="grow" placeholder="By, vej, adresse, station …" autocomplete="off" enterkeyhint="search"><button class="btn ghost" id="btnSearchClose">Luk</button></div>
   </header>
   <div class="list" id="placeList"></div>
-  <footer><div class="muted" style="font-size:12px">Søgning: Photon · kortdata © OpenStreetMap-bidragydere</div></footer>
+  <footer><div class="muted" style="font-size:12px">Søgning: Photon og Nominatim · data © OpenStreetMap-bidragydere</div></footer>
 </div>
 
 <!-- Login, full screen -->
@@ -739,7 +739,7 @@ if("serviceWorker" in navigator && location.protocol.startsWith("http")) navigat
 const PHOTON = "https://photon.komoot.io/api/";
 const KIND = {city:"By",town:"By",village:"Landsby",hamlet:"Landsby",suburb:"Bydel",neighbourhood:"Kvarter",
   residential:"Vej",primary:"Vej",secondary:"Vej",tertiary:"Vej",unclassified:"Vej",service:"Vej",living_street:"Vej",pedestrian:"Gågade",footway:"Sti",cycleway:"Cykelsti",
-  station:"Station",halt:"Station",bus_station:"Busstation",bus_stop:"Busstoppested",house:"Adresse",school:"Skole",park:"Park",playground:"Legeplads",cemetery:"Kirkegård",place_of_worship:"Kirke",parking:"Parkering",supermarket:"Butik"};
+  station:"Station",halt:"Station",railway:"Station",bus_station:"Busstation",bus_stop:"Busstoppested",house:"Adresse",school:"Skole",park:"Park",playground:"Legeplads",cemetery:"Kirkegård",place_of_worship:"Kirke",parking:"Parkering",supermarket:"Butik"};
 const pinFeat = new ol.Feature();
 pinFeat.setStyle(new ol.style.Style({image:new ol.style.Circle({radius:10,fill:new ol.style.Fill({color:"#ffffff"}),stroke:new ol.style.Stroke({color:"#1f3a2e",width:4})})}));
 gpsLayer.getSource().addFeature(pinFeat);
@@ -749,20 +749,41 @@ function placeLabel(p){
   const sub = [p.name && p.street ? [p.street,p.housenumber].filter(Boolean).join(" ") : "", p.postcode && p.city ? `${p.postcode} ${p.city}` : (p.city||p.county||"")].filter(Boolean).join(", ");
   return {name, sub, kind: KIND[p.osm_value] || (p.osm_key==="highway" ? "Vej" : p.osm_key==="place" ? "Sted" : "Sted")};
 }
-async function searchPlaces(q){
+const NOMINATIM = "https://nominatim.openstreetmap.org/search";
+const near = () => { const c = ol.proj.toLonLat(map.getView().getCenter(), proj); return {lat:c[1].toFixed(4), lon:c[0].toFixed(4)}; };
+async function photon(q, extra, signal){
+  const u = PHOTON + "?" + new URLSearchParams({q, ...near(), limit:"8", location_bias_scale:"0.8", zoom:"13", bbox:"8.0,54.5,15.3,57.8", ...extra});
+  return ((await (await fetch(u,{signal})).json()).features) || [];
+}
+// Nominatim (only on Enter, per its usage policy) is better at stations and house numbers
+async function nominatim(q, signal){
+  const u = NOMINATIM + "?" + new URLSearchParams({q, format:"jsonv2", limit:"6", countrycodes:"dk", viewbox:"8.8,56.35,9.7,55.75", addressdetails:"1"});
+  const rs = await (await fetch(u,{signal})).json();
+  return rs.map(r=>{ const a = r.address||{};
+    const bb = r.boundingbox ? [+r.boundingbox[2], +r.boundingbox[1], +r.boundingbox[3], +r.boundingbox[0]] : null;
+    return {geometry:{coordinates:[+r.lon, +r.lat]}, properties:{name:r.name || [a.road,a.house_number].filter(Boolean).join(" "),
+      street:a.road, housenumber:a.house_number, postcode:a.postcode, city:a.town||a.city||a.village||a.hamlet,
+      osm_key:r.category, osm_value:r.type, extent: (r.type==="town"||r.type==="city"||r.type==="village") ? bb : null}}; });
+}
+const fkey = f => f.geometry.coordinates.map(x=>x.toFixed(3)).join(",") + (f.properties.name||"");
+async function searchPlaces(q, deep){
   if(searchCtl) searchCtl.abort();
   if(q.length < 2){ $("placeList").innerHTML = ""; return; }
-  searchCtl = new AbortController();
-  const c = ol.proj.toLonLat(map.getView().getCenter(), proj);
-  const u = PHOTON + "?" + new URLSearchParams({q, lat:c[1].toFixed(4), lon:c[0].toFixed(4), limit:"10", bbox:"8.0,54.5,15.3,57.8"});
+  searchCtl = new AbortController(); const sig = searchCtl.signal;
   $("placeList").innerHTML = `<p class="muted"><span class="spin"></span> Søger …</p>`;
   try{
-    const res = await fetch(u, {signal:searchCtl.signal}); const js = await res.json();
-    const fs = js.features || [];
-    $("placeList").innerHTML = fs.length ? fs.map((f,i)=>{ const l = placeLabel(f.properties);
+    const jobs = [photon(q, {}, sig)];
+    const st = q.match(/^(.*?)\s*(station|st\.?|banegård)$/i);
+    if(st && st[1]) jobs.unshift(photon(st[1], {osm_tag:"railway:station"}, sig));
+    if(deep) jobs.unshift(nominatim(q, sig).catch(()=>[]));
+    const seen = new Set(), fs = [];
+    for(const list of await Promise.all(jobs)) for(const f of list){ const k = fkey(f); if(!seen.has(k)){ seen.add(k); fs.push(f); } }
+    $("placeList").innerHTML = (fs.length ? fs.slice(0,12).map((f,i)=>{ const l = placeLabel(f.properties);
       return `<button class="item" data-i="${i}"><div class="grow"><div class="t">${esc(l.name)}</div><div class="s">${esc(l.sub)}</div></div><span class="code">${esc(l.kind)}</span></button>`; }).join("")
-      : `<p class="muted">Ingen steder fundet for "${esc(q)}".</p>`;
+      : `<p class="muted">Ingen steder fundet for "${esc(q)}".</p>`)
+      + (deep ? "" : `<button class="btn ghost" id="btnDeep">Find ikke det rigtige? Søg grundigere</button>`);
     $("placeList").querySelectorAll("[data-i]").forEach(b=>b.onclick=()=>goPlace(fs[+b.dataset.i]));
+    if(!deep) $("btnDeep").onclick = ()=>searchPlaces(q, true);
   }catch(e){ if(e.name!=="AbortError") $("placeList").innerHTML = `<p class="muted">Søgningen virker ikke lige nu. Tjek forbindelsen.</p>`; }
 }
 function goPlace(f){
@@ -778,7 +799,7 @@ function goPlace(f){
 $("btnSearch").onclick = ()=>{ $("pSearch").hidden = false; $("placeQ").focus(); $("placeQ").select(); };
 $("btnSearchClose").onclick = ()=>{ $("pSearch").hidden = true; };
 $("placeQ").oninput = e=>{ clearTimeout(searchT); const q = e.target.value.trim(); searchT = setTimeout(()=>searchPlaces(q), 300); };
-$("placeQ").onkeydown = e=>{ if(e.key==="Enter"){ clearTimeout(searchT); searchPlaces(e.target.value.trim()); } };
+$("placeQ").onkeydown = e=>{ if(e.key==="Enter"){ clearTimeout(searchT); searchPlaces(e.target.value.trim(), true); } };
 
 pane("pTasks");
 applyUser(); renderOutbox();
