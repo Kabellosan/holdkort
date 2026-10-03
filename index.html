@@ -174,7 +174,7 @@ const SUPABASE_ANON_KEY = "";
 
 const WMS_URL = "https://kort.ikast-brande.dk/wms";
 const WMS_SERVICE = "entreprenoer_udbud";
-const LAYER_ORTO = "theme-orto_foraar_daf";
+const LAYER_ORTO = "theme-ortofoto2024"; // newest aerial photo in this map service
 const WFS_URL = "https://kort.ikast-brande.dk/wfs/entreprenoer_udbud/ows";
 const WFS_LAYERS = ["element_arealer_distribution","element_arealer_vej_sti_distribution","element_linier_distribution",
                     "element_punkter_distribution","element_kantsten_distribution","element_vej_sti_distribution"];
@@ -234,6 +234,11 @@ function elStyle(f, res){
         image:new ol.style.Circle({radius: sel?10:7, fill:new ol.style.Fill({color:c})}),
         zIndex: sel ? 31 : s==="done" ? 1 : 11
       })];
+    if(far) styleCache[key].push(new ol.style.Style({ // a dot on every element so small hedges are findable zoomed out
+      geometry: f => { const g = f.getGeometry(); return g.getType()==="Point" ? null : new ol.geom.Point(ol.extent.getCenter(g.getExtent())); },
+      image:new ol.style.Circle({radius: sel?9:6, fill:new ol.style.Fill({color:c}), stroke:new ol.style.Stroke({color:"#fff",width:2})}),
+      zIndex: sel ? 32 : s==="done" ? 2 : 12
+    }));
   }
   return styleCache[key];
 }
