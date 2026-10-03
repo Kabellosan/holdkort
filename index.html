@@ -348,7 +348,7 @@ function applyUser(){
   $("pLogin").hidden = !!user;
 }
 $("btnLogin").onclick = async ()=>{
-  const name = $("loginName").value.trim(), code = $("loginCode").value.trim().toLowerCase();
+  const name = $("loginName").value.trim().replace(/\s+/g," "), code = $("loginCode").value.trim().toLowerCase();
   if(!name){ $("loginErr").textContent = "Skriv dit navn"; return; }
   const h = await sha(code);
   const role = h===BOSS_CODE_SHA ? "boss" : h===CREW_CODE_SHA ? "crew" : null;
@@ -527,7 +527,8 @@ function subOf(f){
 }
 
 // ================= TASK LIST =================
-const forMe = t => !t.assignees?.length || t.assignees.includes(me);
+const norm = n => String(n||"").trim().replace(/\s+/g," ").toLowerCase();
+const forMe = t => !t.assignees?.length || t.assignees.some(a=>norm(a)===norm(me));
 const whoFor = t => !t.assignees?.length ? "Alle" : t.assignees.join(", ");
 function taskRow(t){
   const done = store.get("count:"+t.id, null);
