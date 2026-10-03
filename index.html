@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1f3a2e">
+<title>Holdkort</title>
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@10.10.0/ol.css">
+<script src="https://cdn.jsdelivr.net/npm/ol@10.10.0/dist/ol.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.22.0/dist/proj4.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
+<style>
+/* Map fills the screen. One rounded sheet at the bottom; task creation gets a full-screen panel. */
+:root{
+  --ink:#17221c; --ink2:#55645b; --paper:#f7f8f4; --card:#ffffff; --moss:#1f3a2e; --moss2:#2c5442; --line:#dde2d6;
+  --todo:#d64545; --doing:#e8a317; --done:#2e9e5b; --focus:#2b6cd4;
+  --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --r:14px;
+}
+@media (prefers-color-scheme:dark){:root{--ink:#eaf0e7;--ink2:#a4b2a8;--paper:#161d18;--card:#1f2822;--line:#2f3b33;--moss:#2c5442;--moss2:#3a6b55;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:var(--font);font-size:16px;line-height:1.35;color:var(--ink);background:var(--paper);overflow:hidden;-webkit-tap-highlight-color:transparent}
+#map{position:absolute;inset:0}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+
+/* Top chips */
+.top{position:absolute;top:calc(env(safe-area-inset-top,0px) + 12px);left:12px;right:12px;display:flex;gap:8px;align-items:flex-start;pointer-events:none}
+.top>*{pointer-events:auto}
+.chip{background:var(--card);border:1px solid var(--line);border-radius:999px;min-height:40px;padding:8px 14px;font-size:15px;box-shadow:0 2px 10px #0003;display:inline-flex;gap:8px;align-items:center}
+.dot{width:10px;height:10px;border-radius:50%;background:#999;flex:none}
+.dot.on{background:var(--done)} .dot.off{background:var(--todo)}
+.ol-zoom{top:calc(env(safe-area-inset-top,0px) + 64px);left:12px}
+.ol-zoom button{width:40px!important;height:40px!important;font-size:22px!important}
+
+/* Bottom sheet */
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--card);border-radius:20px 20px 0 0;
+  padding:10px 18px calc(env(safe-area-inset-bottom,0px) + 16px);box-shadow:0 -6px 24px #0003;max-height:58vh;display:flex;flex-direction:column}
+.grip{width:40px;height:5px;border-radius:9px;background:var(--line);margin:0 auto 12px;flex:none}
+.pane{display:flex;flex-direction:column;gap:14px;min-height:0}
+.row{display:flex;gap:10px;align-items:center}
+.wrap{flex-wrap:wrap}
+.grow{flex:1;min-width:0}
+.scroll{overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;gap:8px;margin:0 -4px;padding:0 4px}
+h2{font-size:19px;line-height:1.2;margin:0;text-wrap:balance}
+.eyebrow{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2)}
+.muted{font-size:14px;color:var(--ink2)}
+.btn{border-radius:var(--r);border:1px solid var(--line);background:var(--card);min-height:50px;padding:12px 16px;font-size:16px;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.btn.primary{background:var(--moss);border-color:var(--moss);color:#fff;font-weight:600}
+.btn.ghost{border-color:transparent;background:transparent;min-height:44px;padding:8px 10px;color:var(--ink2)}
+.btn.fill{flex:1}
+.status{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.status button{border-radius:var(--r);border:2px solid var(--line);background:var(--card);min-height:56px;font-size:15px;font-weight:600;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.status button i{width:14px;height:14px;border-radius:50%}
+.status button.on{border-color:currentColor}
+.status [data-s=todo]{color:var(--todo)} .status [data-s=doing]{color:#b07a00} .status [data-s=done]{color:var(--done)}
+@media (prefers-color-scheme:dark){.status [data-s=doing]{color:var(--doing)}}
+.status [data-s] span{color:var(--ink)}
+input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;padding:12px 14px;border-radius:var(--r);border:1px solid var(--line);background:var(--paper);color:var(--ink);width:100%;min-width:0}
+.item{display:flex;gap:12px;align-items:center;padding:14px;border-radius:var(--r);background:var(--paper);border:1px solid transparent;text-align:left;width:100%;min-height:60px}
+.item .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .s{font-size:14px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{font-size:13px;font-weight:600;padding:4px 10px;border-radius:999px;color:#fff;white-space:nowrap;flex:none}
+.pill.todo{background:var(--todo)} .pill.doing{background:var(--doing);color:#2a1d00} .pill.done{background:var(--done)}
+.bar{height:10px;border-radius:99px;background:var(--paper);overflow:hidden;display:flex}
+.bar i{display:block;height:100%}
+.num{font-variant-numeric:tabular-nums}
+.big{font-size:28px;font-weight:700;line-height:1}
+
+/* Full-screen panel for creating a task */
+.panel{position:absolute;inset:0;background:var(--card);display:flex;flex-direction:column;z-index:10}
+.panel header{padding:calc(env(safe-area-inset-top,0px) + 14px) 18px 12px;display:flex;flex-direction:column;gap:12px;border-bottom:1px solid var(--line)}
+.panel .list{flex:1;overflow-y:auto;padding:10px 18px;display:flex;flex-direction:column;gap:6px;-webkit-overflow-scrolling:touch}
+.panel footer{padding:12px 18px calc(env(safe-area-inset-bottom,0px) + 14px);border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px;background:var(--card)}
+.code-item{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:var(--r);background:var(--paper);min-height:54px;cursor:pointer;border:2px solid transparent}
+.code-item.on{border-color:var(--moss2)}
+.code-item input{width:22px;height:22px;accent-color:var(--moss);flex:none}
+.code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;color:var(--ink2);min-width:3.6em}
+.chosen{display:flex;gap:6px;flex-wrap:wrap}
+.chosen span{background:var(--moss);color:#fff;border-radius:999px;padding:5px 11px;font-size:14px}
+
+.toast{position:absolute;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 64px);background:var(--moss);color:#fff;padding:10px 16px;border-radius:999px;font-size:15px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:88vw;text-align:center;z-index:20}
+.toast.show{opacity:1}
+.spin{display:inline-block;width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-3px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}.spin{animation:none}}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="top">
+  <button class="chip" id="who" title="Skift navn"><span class="dot" id="syncdot"></span><span id="whoName">Navn?</span></button>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<div class="sheet" id="sheet">
+  <div class="grip"></div>
+
+  <!-- Task list -->
+  <div class="pane" id="pTasks">
+    <div class="row"><h2 class="grow">Opgaver</h2></div>
+    <div class="scroll" id="taskList"></div>
+    <button class="btn primary" id="btnNewTask">+ Ny opgave</button>
+  </div>
+
+  <!-- Working a task -->
+  <div class="pane" id="pWork" hidden>
+    <div class="row">
+      <button class="btn ghost" id="btnBack" aria-label="Tilbage til opgaver">‹ Opgaver</button>
+      <div class="grow"></div>
+      <button class="btn ghost" id="btnGps">◎ Min position</button>
+    </div>
+    <div class="row">
+      <div class="grow"><div class="eyebrow" id="workCodes"></div><h2 id="workName"></h2></div>
+      <div style="text-align:right"><div class="big num" id="workCount">–</div><div class="muted">færdige</div></div>
+    </div>
+    <div class="bar" id="bar"></div>
+    <div class="row">
+      <button class="btn primary fill" id="btnNext">Næste ▸</button>
+      <button class="btn" id="btnList">Liste</button>
+    </div>
+  </div>
+
+  <!-- One element -->
+  <div class="pane" id="pEl" hidden>
+    <div class="row">
+      <div class="grow"><div class="eyebrow" id="elCode"></div><h2 id="elTitle"></h2><div class="muted" id="elSub"></div></div>
+      <button class="btn ghost" id="btnElClose" aria-label="Luk">✕</button>
+    </div>
+    <div class="status">
+      <button data-s="todo"><i style="background:var(--todo)"></i><span>Mangler</span></button>
+      <button data-s="doing"><i style="background:var(--doing)"></i><span>I gang</span></button>
+      <button data-s="done"><i style="background:var(--done)"></i><span>Færdig</span></button>
+    </div>
+    <div class="row"><input type="text" id="note" placeholder="Note til holdet"><button class="btn" id="btnNote">Gem</button></div>
+    <div class="row"><span class="muted grow" id="elMeta"></span><button class="btn primary" id="btnNext2">Næste ▸</button></div>
+  </div>
+
+  <!-- List -->
+  <div class="pane" id="pList" hidden>
+    <div class="row">
+      <button class="btn ghost" id="btnListClose">‹ Kort</button>
+      <h2 class="grow">Nærmest først</h2>
+      <button class="btn ghost" id="fltTodo"></button>
+    </div>
+    <div class="scroll" id="elList"></div>
+  </div>
+</div>
+
+<!-- New task, full screen -->
+<div class="panel" id="pNew" hidden>
+  <header>
+    <div class="row"><h2 class="grow">Ny opgave</h2><button class="btn ghost" id="btnNewCancel">Annullér</button></div>
+    <input type="search" id="codeSearch" placeholder="Søg type: pur, fortov, græs, bænk …" autocomplete="off">
+  </header>
+  <div class="list" id="codeList"></div>
+  <footer>
+    <div class="chosen" id="chosen"></div>
+    <input type="text" id="taskTitle" placeholder="Navn, fx 'Pur i Brande, uge 41'">
+    <div class="muted">Opgaven dækker det område, der var på kortet, da du trykkede Ny opgave.</div>
+    <button class="btn primary" id="btnCreate">Opret opgave</button>
+  </footer>
+</div>
+
+<script>
+// ================= CONFIG =================
+// Fill these in to share tasks and progress across phones (see README). Empty = this phone only.
+const SUPABASE_URL = "";
+const SUPABASE_ANON_KEY = "";
+
+const WMS_URL = "https://kort.ikast-brande.dk/wms";
+const WMS_SERVICE = "entreprenoer_udbud";
+const LAYER_ORTO = "theme-orto_foraar_daf";
+const WFS_URL = "https://kort.ikast-brande.dk/wfs/entreprenoer_udbud/ows";
+const WFS_LAYERS = ["element_arealer_distribution","element_arealer_vej_sti_distribution","element_linier_distribution",
+                    "element_punkter_distribution","element_kantsten_distribution","element_vej_sti_distribution"];
+const ROAD_LAYER = "element_vej_sti_distribution"; // has street names; used to name elements that don't
+const START_CENTER = [524270, 6202500];
+const START_ZOOM = 7;
+
+const CODES = {
+ HA3:"Pur",HA1:"Prydpur",HA11:"Prydhæk",HA21:"Hæk",
+ FB2a:"Fortov",FB1:"Fast belægning, vej",FB1a:"Fast belægning, sti",FB1b:"Fast belægning, plads",FB1c:"Anden fast belægning",FB1j:"Helle",FB3a:"Kantsten",FB3b:"Svingsten",
+ LB2:"Grus, vej",LB2a:"Grus, sti",LB2b:"Grus, plads",LB2c:"Anden løs belægning",LB3:"Rekreativ sti",
+ GR2:"Brugsplæne",GR20:"Kantskæring, brugsplæne",GR3:"Græsflade",GR30:"Kantskæring, græsflade",GR4:"Fælledgræs",GR5b:"Boldbane B",GR5c:"Boldbane C",
+ GR6l:"Rabatgræs, land, forår",GR6m:"Rabatgræs, land, efterår",GR6n:"Rabatgræs, by",GR6o:"Oversigtsareal",GR7:"Naturgræs",GR7b:"Blomstereng",GR7c:"Naturareal",GR7d:"Græsarmering",GR9:"Fortidsminde",
+ BU1:"Prydbusk, punkt",BU1a:"Prydbusk, flade",BU2:"Bunddækkende buske",BU3:"Busket",
+ BL1:"Roser",BL3:"Staudebed",BL5:"Blomsterkummer",BI22:"Biodiversitet",
+ KL2:"Klatreplante",KL3:"Søjledækkende klatreplante",
+ TR1:"Fuldkronet træ",TR2:"Allétræ",TR3:"Frugttræ",TR4:"Formet træ",
+ SK2:"Krat",SK3:"Lund",SK5:"Levende hegn",SK6a:"Byskov",SK7:"Skov",
+ BY1:"Trappe/rampe",BY2:"Bro og rørgennemløb",BY2a:"Tunnel",BY3:"Plateau/spang",BY9:"Monument/skulptur",
+ UD1:"Skraldespand",UD1a:"Skraldespand, sortering",UD2a:"Bordbænkesæt",UD2b:"Bænk",UD3b:"Skaterrampe",UD4:"Informationsskilt",UD4a:"Piktogramstander",
+ UD55:"Shelter",UD55a:"Toilet",UD6:"Legeplads",UD65:"Jorddepot, boldbaner",UD7a:"Belysning, sportsanlæg",UD7c:"Juletræer og julebelysning",UD7d:"Målestationer og webkameraer",
+ UD8:"Trådhegn",UD84a:"Saltværn",UD8c:"Hegnselementer",UD8d:"Dyrehegn",UD9:"Træhulsrist",
+ VA3:"Grøft",VA3c:"Grøfteunderføring",VA3d:"Rabat",
+ SB4a:"Sportsbelægning, gummi",SB4b:"Sportsbelægning, rødgrus",SB4e:"Kunstgræs, indendørs",SB4f:"Kunstgræs, udendørs",SB4g:"Faldsand",SB4h:"Strandsand"
+};
+
+// ================= MAP =================
+proj4.defs("EPSG:25832","+proj=utm +zone=32 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
+ol.proj.proj4.register(proj4);
+const proj = ol.proj.get("EPSG:25832");
+const EXTENT = [120000, 5900000, 1000000, 6500000];
+proj.setExtent(EXTENT);
+const RES = Array.from({length:15},(_,i)=>1638.4/Math.pow(2,i));
+const tileGrid = new ol.tilegrid.TileGrid({extent:EXTENT, resolutions:RES, tileSize:256});
+const ortoSrc = new ol.source.TileWMS({url:WMS_URL, tileGrid, projection:proj, transition:0,
+  params:{SERVICE:"WMS",VERSION:"1.1.1",LAYERS:LAYER_ORTO,FORMAT:"image/jpeg",SERVICENAME:WMS_SERVICE,STYLES:""}});
+const ortoLayer = new ol.layer.Tile({source:ortoSrc, preload:2});
+
+const COLORS = {todo:"#d64545", doing:"#e8a317", done:"#2e9e5b"};
+const LABEL  = {todo:"Mangler", doing:"I gang", done:"Færdig"};
+const elSrc = new ol.source.Vector();
+const styleCache = {};
+function elStyle(f, res){
+  const s = statusOf(f.getId()), sel = f === selected;
+  const key = s + sel + (res > 3.2 ? "far" : "near");
+  if(!styleCache[key]){
+    const c = COLORS[s], far = res > 3.2;
+    styleCache[key] = [
+      new ol.style.Style({ // white halo so shapes pop on the aerial photo
+        stroke:new ol.style.Stroke({color:"#ffffffcc", width: sel ? 9 : far ? 6 : 5}),
+        image:new ol.style.Circle({radius: sel?13:10, fill:new ol.style.Fill({color:"#fff"})}),
+        zIndex: sel ? 30 : s==="done" ? 0 : 10
+      }),
+      new ol.style.Style({
+        fill:new ol.style.Fill({color: c + (sel ? "aa" : s==="done" ? "66" : "99")}),
+        stroke:new ol.style.Stroke({color:c, width: sel ? 5 : far ? 4 : 3}),
+        image:new ol.style.Circle({radius: sel?10:7, fill:new ol.style.Fill({color:c})}),
+        zIndex: sel ? 31 : s==="done" ? 1 : 11
+      })];
+  }
+  return styleCache[key];
+}
+const elLayer = new ol.layer.Vector({source:elSrc, style:elStyle, renderBuffer:200});
+const areaSrc = new ol.source.Vector();
+const areaLayer = new ol.layer.Vector({source:areaSrc, style:new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffdd",width:2,lineDash:[10,8]})})});
+const gpsFeat = new ol.Feature();
+gpsFeat.setStyle(new ol.style.Style({image:new ol.style.Circle({radius:9,fill:new ol.style.Fill({color:"#2b6cd4"}),stroke:new ol.style.Stroke({color:"#fff",width:3})})}));
+const gpsLayer = new ol.layer.Vector({source:new ol.source.Vector({features:[gpsFeat]})});
+
+const map = new ol.Map({target:"map", layers:[ortoLayer, areaLayer, elLayer, gpsLayer],
+  view:new ol.View({projection:proj, center:START_CENTER, zoom:START_ZOOM, resolutions:RES, constrainResolution:true}),
+  controls: ol.control.defaults.defaults({attribution:false, rotate:false})});
+const store = {get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+{ const v = store.get("view",null); if(v){ map.getView().setCenter(v.c); map.getView().setZoom(v.z); } }
+map.on("moveend",()=>store.set("view",{c:map.getView().getCenter(),z:map.getView().getZoom()}));
+const sheetPad = () => $("sheet").offsetHeight + 20;
+
+// ================= HELPERS =================
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function toast(t, ms=2600){const el=$("toast"); el.textContent=t; el.classList.add("show"); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove("show"),ms);}
+const PANES = ["pTasks","pWork","pEl","pList"];
+function pane(id){ PANES.forEach(p=>$(p).hidden = p!==id); }
+function ago(ts){ if(!ts) return ""; const m=Math.round((Date.now()-new Date(ts))/60000);
+  return m<1?"lige nu":m<60?`${m} min siden`:m<1440?`${Math.round(m/60)} t siden`:new Date(ts).toLocaleDateString("da-DK",{day:"numeric",month:"short"}); }
+function fmtDist(m){ return m<1000 ? `${Math.round(m/10)*10} m` : `${(m/1000).toFixed(1).replace(".",",")} km`; }
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2));
+const codeNames = codes => codes.map(c=>CODES[c]||c).join(" + ");
+
+let me = store.get("name","");
+function askName(){ const n = window.prompt("Dit navn (vises for holdet):", me); if(n && n.trim()){ me=n.trim(); store.set("name",me);} $("whoName").textContent = me || "Navn?"; }
+$("whoName").textContent = me || "Navn?";
+$("who").onclick = askName;
+if(!me) setTimeout(askName, 500);
+
+// ================= SHARED STATE =================
+const sb = (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase) ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+$("syncdot").className = "dot " + (sb ? "on" : "off");
+$("who").title = sb ? "Deles med holdet · tryk for at skifte navn" : "Kun på denne telefon · tryk for at skifte navn";
+
+let tasks = [], task = null, progress = new Map(), selected = null;
+const statusOf = id => progress.get(id)?.status || "todo";
+
+async function loadTasks(){
+  if(sb){
+    const {data,error} = await sb.from("tasks").select("*").eq("archived",false).order("created_at",{ascending:false});
+    if(error){ toast("Kunne ikke hente opgaver. Tjek forbindelsen."); tasks = store.get("tasks",[]); }
+    else { tasks = data; store.set("tasks",tasks); }
+  } else tasks = store.get("tasks",[]);
+  renderTasks();
+}
+async function saveTask(t){
+  if(sb){ const {error} = await sb.from("tasks").insert(t); if(error){ toast("Opgaven blev ikke gemt: " + error.message); return false; } }
+  tasks.unshift(t); store.set("tasks",tasks); return true;
+}
+async function archiveTask(t){
+  tasks = tasks.filter(x=>x.id!==t.id);
+  if(sb) await sb.from("tasks").update({archived:true}).eq("id",t.id);
+  store.set("tasks",tasks); renderTasks();
+}
+async function loadProgress(taskId){
+  progress = new Map();
+  if(sb){
+    const {data,error} = await sb.from("progress").select("*").eq("task_id",taskId);
+    if(!error){ data.forEach(r=>progress.set(r.element_id,r)); store.set("prog:"+taskId,data); return; }
+  }
+  store.get("prog:"+taskId,[]).forEach(r=>progress.set(r.element_id,r));
+}
+async function setStatus(id, status, note){
+  const prev = progress.get(id) || {};
+  const r = {task_id:task.id, element_id:id, status: status ?? prev.status ?? "todo", note: note ?? prev.note ?? "", worker:me, updated_at:new Date().toISOString()};
+  progress.set(id, r); refresh();
+  if(sb){ const {error} = await sb.from("progress").upsert(r); if(error) toast("Ikke gemt. Tjek forbindelsen."); }
+  store.set("prog:"+task.id, [...progress.values()]);
+}
+if(sb){
+  sb.channel("holdkort")
+    .on("postgres_changes",{event:"*",schema:"public",table:"progress"},p=>{
+      const r = p.new; if(!task || !r || r.task_id!==task.id) return;
+      progress.set(r.element_id, r); refresh();
+      if(r.worker !== me){ const f = elSrc.getFeatureById(r.element_id); toast(`${r.worker||"Nogen"}: ${LABEL[r.status]}${f ? " · " + titleOf(f) : ""}`); }
+    })
+    .on("postgres_changes",{event:"*",schema:"public",table:"tasks"},()=>{ if(!task) loadTasks(); })
+    .subscribe();
+}
+
+// ================= ELEMENTS FROM THE KOMMUNE =================
+const fmt = new ol.format.GeoJSON({dataProjection:proj, featureProjection:proj});
+function wfs(layer, extra){
+  const q = new URLSearchParams({service:"WFS",version:"1.0.0",request:"GetFeature",typeName:"entreprenoer_udbud:"+layer,
+    outputFormat:"application/json",srsName:"EPSG:25832", ...extra});
+  return fetch(WFS_URL + "?" + q).then(async res=>{
+    if(!res.ok) throw new Error(`${layer}: HTTP ${res.status}`);
+    const txt = await res.text();
+    if(!txt.trim().startsWith("{")) throw new Error(`${layer}: serveren svarede ikke med data`);
+    return fmt.readFeatures(txt);
+  });
+}
+async function fetchElements(codes, extent){
+  const cql = `elementkode IN (${codes.map(c=>`'${c.replace(/'/g,"")}'`).join(",")}) AND BBOX(wkb_geometry,${extent.join(",")})`;
+  const cqlNoGeom = `elementkode IN (${codes.map(c=>`'${c.replace(/'/g,"")}'`).join(",")})`;
+  const results = await Promise.allSettled(WFS_LAYERS.map(async layer=>{
+    // Ask the server to cut to the area; if the geometry column has another name, fall back to filtering here
+    let fs; try{ fs = await wfs(layer,{CQL_FILTER:cql}); }catch(e){ fs = await wfs(layer,{CQL_FILTER:cqlNoGeom}); }
+    const short = layer.replace("element_","").replace("_distribution","");
+    return fs.filter(f=>f.getGeometry() && f.getGeometry().intersectsExtent(extent))
+             .map(f=>{ f.setId(short + ":" + (f.get("ogc_fid") ?? f.get("unik_id") ?? f.getId())); return f; });
+  }));
+  const ok = results.filter(r=>r.status==="fulfilled");
+  if(!ok.length) throw new Error(results.map(r=>r.reason?.message).join("; "));
+  return ok.flatMap(r=>r.value);
+}
+// Name each element after the nearest street, since pur and fortov have no street name in the data
+async function nameByStreet(feats, extent){
+  const needs = feats.filter(f=>!f.get("vejnavn"));
+  if(!needs.length) return;
+  const pad = 60, ext = [extent[0]-pad, extent[1]-pad, extent[2]+pad, extent[3]+pad];
+  let roads;
+  try{ roads = await wfs(ROAD_LAYER, {bbox: ext.join(",") + ",EPSG:25832"}); }catch(e){ return; }
+  roads = roads.filter(r=>r.get("vejnavn"));
+  if(!roads.length) return;
+  const idx = new ol.source.Vector({features:roads});
+  needs.forEach(f=>{
+    const c = ol.extent.getCenter(f.getGeometry().getExtent());
+    const r = idx.getClosestFeatureToCoordinate(c);
+    if(r) f.set("_street", String(r.get("vejnavn")).split(",")[0].trim());
+  });
+}
+function titleOf(f){
+  const name = CODES[f.get("elementkode")] || f.get("elementkode");
+  const street = f.get("vejnavn") || f.get("_street");
+  return street ? `${name} · ${street}` : name;
+}
+function subOf(f){
+  const p = f.getProperties(), bits = [];
+  if(p.geometri_areal) bits.push(`${Math.round(p.geometri_areal)} m²`);
+  if(p.geometri_laengde) bits.push(`${Math.round(p.geometri_laengde)} m`);
+  if(p.fra_station!=null && p.til_station!=null && p.til_station) bits.push(`station ${p.fra_station}–${p.til_station}`);
+  if(p.attribut_1) bits.push(p.attribut_1);
+  if(p.attribut_2 && !/forpligtelse/.test(p.attribut_2)) bits.push(String(p.attribut_2).replace(/_/g," "));
+  if(p.belaegningstype) bits.push(p.belaegningstype);
+  const rem = p.bemaerkning || p.bemaerkninger; if(rem && rem.trim()) bits.push(rem.trim());
+  return bits.join(" · ");
+}
+
+// ================= TASK LIST =================
+function renderTasks(){
+  const L = $("taskList");
+  if(!tasks.length){ L.innerHTML = `<p class="muted" style="margin:0">Ingen opgaver endnu. Zoom kortet ind på det område, I skal arbejde i, og tryk <b>Ny opgave</b>.</p>`; return; }
+  L.innerHTML = tasks.map(t=>{
+    const done = store.get("count:"+t.id, null);
+    return `<div class="row">
+      <button class="item grow" data-open="${esc(t.id)}"><div class="grow"><div class="t">${esc(t.name)}</div>
+      <div class="s">${esc(codeNames(t.codes))} · ${esc(t.created_by||"")} · ${ago(t.created_at)}</div></div>
+      ${done ? `<span class="pill ${done[0]===done[1]?"done":"todo"} num">${done[0]}/${done[1]}</span>` : ""}</button>
+      <button class="btn ghost" data-arch="${esc(t.id)}">Afslut</button></div>`; }).join("");
+  L.querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openTask(tasks.find(t=>t.id===b.dataset.open)));
+  L.querySelectorAll("[data-arch]").forEach(b=>b.onclick=()=>{
+    if(b.dataset.armed){ archiveTask(tasks.find(t=>t.id===b.dataset.arch)); return; }
+    b.dataset.armed=1; b.textContent="Sikker?"; setTimeout(()=>{delete b.dataset.armed; b.textContent="Afslut";},3000);
+  });
+}
+async function openTask(t){
+  task = t; selected = null; elSrc.clear(); areaSrc.clear();
+  areaSrc.addFeature(new ol.Feature(ol.geom.Polygon.fromExtent(t.extent)));
+  $("workName").textContent = t.name; $("workCodes").textContent = codeNames(t.codes);
+  $("workCount").innerHTML = `<span class="spin"></span>`; $("bar").innerHTML = "";
+  pane("pWork");
+  map.getView().fit(t.extent, {padding:[70,16,sheetPad(),16], duration:300});
+  await loadProgress(t.id);
+  let feats;
+  try { feats = await fetchElements(t.codes, t.extent); await nameByStreet(feats, t.extent); store.set("els:"+t.id, fmt.writeFeatures(feats)); }
+  catch(e){
+    console.error(e);
+    const cached = store.get("els:"+t.id, null);
+    if(cached){ feats = fmt.readFeatures(cached); toast("Ingen forbindelse. Viser gemte elementer."); }
+    else { toast("Kunne ikke hente elementer fra kommunen. Prøv igen om lidt.", 5000); $("workCount").textContent="–"; return; }
+  }
+  if(task !== t) return;
+  elSrc.addFeatures(feats);
+  refresh();
+  if(!feats.length) toast("Ingen elementer af den type i området", 4000);
+}
+$("btnBack").onclick = ()=>{ task=null; selected=null; elSrc.clear(); areaSrc.clear(); pane("pTasks"); loadTasks(); };
+
+function refresh(){
+  elLayer.changed();
+  if(!task) return;
+  const ids = elSrc.getFeatures().map(f=>f.getId()), n = ids.length;
+  const c = {todo:0,doing:0,done:0}; ids.forEach(id=>c[statusOf(id)]++);
+  $("workCount").innerHTML = `${c.done}<span class="muted" style="font-size:18px">/${n}</span>`;
+  store.set("count:"+task.id, [c.done, n]);
+  $("bar").innerHTML = n ? ["done","doing","todo"].map(s=>`<i style="width:${c[s]/n*100}%;background:${COLORS[s]}"></i>`).join("") : "";
+  if(selected && !$("pEl").hidden) showEl(selected, false);
+  if(!$("pList").hidden) renderList();
+}
+
+// ================= NEW TASK (full screen) =================
+let picked = new Set(), newExtent = null;
+function renderCodes(){
+  const q = $("codeSearch").value.trim().toLowerCase();
+  const list = Object.entries(CODES).filter(([k,v])=>!q || k.toLowerCase().includes(q) || v.toLowerCase().includes(q));
+  $("codeList").innerHTML = list.map(([k,v])=>`<label class="code-item ${picked.has(k)?"on":""}"><input type="checkbox" value="${k}" ${picked.has(k)?"checked":""}><span class="grow">${esc(v)}</span><span class="code">${k}</span></label>`).join("")
+    || `<p class="muted">Ingen typer matcher "${esc(q)}"</p>`;
+  $("codeList").querySelectorAll("input").forEach(i=>i.onchange=()=>{
+    i.checked ? picked.add(i.value) : picked.delete(i.value);
+    i.closest(".code-item").classList.toggle("on", i.checked);
+    renderChosen();
+  });
+}
+function renderChosen(){
+  $("chosen").innerHTML = [...picked].map(c=>`<span>${esc(CODES[c])}</span>`).join("") || `<span class="muted" style="background:none;color:var(--ink2);padding:0">Ingen typer valgt</span>`;
+  if(!$("taskTitle").dataset.touched) $("taskTitle").value = codeNames([...picked]);
+}
+$("btnNewTask").onclick = ()=>{
+  if(map.getView().getResolution() > 12.8){ toast("Zoom ind på byen eller området først", 3500); return; }
+  newExtent = map.getView().calculateExtent(map.getSize()).map(Math.round);
+  picked = new Set(); $("codeSearch").value=""; $("taskTitle").value=""; delete $("taskTitle").dataset.touched;
+  renderCodes(); renderChosen(); $("pNew").hidden = false;
+};
+$("codeSearch").oninput = renderCodes;
+$("taskTitle").oninput = ()=>$("taskTitle").dataset.touched = 1;
+$("btnNewCancel").onclick = ()=>{ $("pNew").hidden = true; };
+$("btnCreate").onclick = async ()=>{
+  if(!picked.size){ toast("Vælg mindst én type"); return; }
+  const t = {id:uuid(), name:$("taskTitle").value.trim() || codeNames([...picked]), codes:[...picked],
+    extent:newExtent, created_by:me, created_at:new Date().toISOString(), archived:false};
+  if(await saveTask(t)){ $("pNew").hidden = true; openTask(t); }
+};
+
+// ================= ELEMENT VIEW =================
+function select(f){ selected = f; elLayer.changed(); if(f) showEl(f, true); else pane("pWork"); }
+function showEl(f, zoom){
+  pane("pEl");
+  $("elCode").textContent = f.get("elementkode");
+  $("elTitle").textContent = titleOf(f);
+  $("elSub").textContent = subOf(f);
+  const p = progress.get(f.getId()), s = statusOf(f.getId());
+  document.querySelectorAll(".status [data-s]").forEach(b=>b.classList.toggle("on", b.dataset.s===s));
+  if(document.activeElement !== $("note")) $("note").value = p?.note || "";
+  $("elMeta").textContent = p ? `${p.worker||"?"} · ${ago(p.updated_at)}` : "Ingen har rørt den endnu";
+  if(zoom) map.getView().fit(f.getGeometry().getExtent(), {padding:[80,40,sheetPad(),40], maxZoom:12, duration:350});
+}
+map.on("singleclick", e=>{
+  if(!task) return;
+  const f = map.forEachFeatureAtPixel(e.pixel, f=>f, {layerFilter:l=>l===elLayer, hitTolerance:12});
+  if(f) select(f); else if(!$("pEl").hidden) select(null);
+});
+document.querySelectorAll(".status [data-s]").forEach(b=>b.onclick=()=>{ setStatus(selected.getId(), b.dataset.s); if(b.dataset.s==="done") toast("Færdig ✓ Tryk Næste for den nærmeste"); });
+$("btnNote").onclick = ()=>{ setStatus(selected.getId(), null, $("note").value); toast("Note gemt"); };
+$("btnElClose").onclick = ()=>select(null);
+
+// ================= NEXT / LIST / GPS =================
+const geo = new ol.Geolocation({projection:proj, trackingOptions:{enableHighAccuracy:true, maximumAge:10000}});
+geo.on("change:position", ()=>gpsFeat.setGeometry(new ol.geom.Point(geo.getPosition())));
+geo.on("error", ()=>toast("Ingen GPS. Tillad placering for siden i browseren."));
+geo.setTracking(true);
+function here(){ return geo.getPosition() || (selected && ol.extent.getCenter(selected.getGeometry().getExtent())) || map.getView().getCenter(); }
+function distTo(f, p){ const c = f.getGeometry().getClosestPoint(p); return Math.hypot(c[0]-p[0], c[1]-p[1]); }
+function next(){
+  const p = here();
+  const open = elSrc.getFeatures().filter(f=>f!==selected && statusOf(f.getId())!=="done");
+  if(!open.length){ toast("Alt i opgaven er færdigt 🎉", 4000); return; }
+  const untouched = open.filter(f=>statusOf(f.getId())==="todo"); // skip what a colleague is on
+  const pool = untouched.length ? untouched : open;
+  pool.sort((a,b)=>distTo(a,p)-distTo(b,p));
+  select(pool[0]);
+  toast(`${fmtDist(distTo(pool[0],p))} væk`);
+}
+$("btnNext").onclick = next; $("btnNext2").onclick = next;
+$("btnGps").onclick = ()=>{ const p = geo.getPosition(); if(p) map.getView().animate({center:p, zoom:Math.max(map.getView().getZoom(),10)}); else toast("Venter på GPS …"); };
+
+let onlyOpen = store.get("onlyOpen", true);
+function renderList(){
+  $("fltTodo").textContent = onlyOpen ? "Vis alle" : "Skjul færdige";
+  const p = here();
+  const fs = elSrc.getFeatures().filter(f=>!onlyOpen || statusOf(f.getId())!=="done").map(f=>[f, distTo(f,p)]).sort((a,b)=>a[1]-b[1]).slice(0,300);
+  $("elList").innerHTML = fs.length ? fs.map(([f,d])=>{ const s=statusOf(f.getId()), pr=progress.get(f.getId());
+    return `<button class="item" data-id="${esc(f.getId())}"><div class="grow"><div class="t">${esc(titleOf(f))}</div>
+      <div class="s num">${fmtDist(d)}${pr?.worker && s!=="todo" ? " · "+esc(pr.worker) : ""}${pr?.note ? " · "+esc(pr.note) : ""}</div></div>
+      <span class="pill ${s}">${LABEL[s]}</span></button>`; }).join("") : `<p class="muted" style="margin:0">Intet tilbage. Godt gået.</p>`;
+  $("elList").querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>select(elSrc.getFeatureById(b.dataset.id)));
+}
+$("btnList").onclick = ()=>{ pane("pList"); renderList(); };
+$("fltTodo").onclick = ()=>{ onlyOpen=!onlyOpen; store.set("onlyOpen",onlyOpen); renderList(); };
+$("btnListClose").onclick = ()=>pane(selected ? "pEl" : "pWork");
+
+if("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(()=>{});
+pane("pTasks");
+loadTasks();
+</script>
+</body>
+</html>
