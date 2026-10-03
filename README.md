@@ -22,7 +22,7 @@ Sidewalks (`FB2a`) come split into stretches by street and station, so you can m
 3. On the phone, open `https://kabellosan.github.io/holdkort/` → Share → **Føj til hjemmeskærm**. Allow location when asked.
 
 ## 2. Share with the crew — Supabase (free)
-Without this, everything stays on one phone (red dot next to your name).
+**Connected:** project `rvfwmmctqndfqvbuuoyi` (EU, Ireland). The database stores only the day a mark was sent (a trigger strips the time), and marks can only be deleted once their task is closed. The steps below are for setting it up again from scratch.
 
 1. Create a project at supabase.com.
 2. SQL Editor → run:
