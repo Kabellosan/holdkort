@@ -3,10 +3,10 @@
 Shared task map for the idverde crew in Ikast-Brande. The kommune's maintenance elements (pur, fortove, græs …) are loaded as individual shapes, and the crew marks each one **Mangler / I gang / Færdig**. Everyone sees the same progress live.
 
 ## How it works on the job
-1. **Boss creates a task:** zooms the map to Brande, taps **Ny opgave**, searches "pur", ticks *HA3 Pur*, taps **Opret**. The task covers the area on screen.
+1. **Boss creates a task:** zooms the map to Brande, taps **Ny opgave**, searches "pur", ticks *HA3 Pur*, picks who should do it (or Alle), taps **Opret**. The task covers the area on screen.
 2. **Crew opens the task:** every pur bed in that area shows up in red, and the top shows e.g. `0/47`.
 3. **Næste ▸** jumps to the nearest location nobody has started, based on your GPS.
-4. Tap **Færdig** → it turns green on everyone's phone, with your name and time. **I gang** (yellow) tells the others you're on it, so Næste skips it for them.
+4. Tap **Færdig** → it turns green on your phone. Press **Send** when you choose, and it turns green for everyone. Tap more elements on the map to mark several at once. **I gang** (yellow) tells the others you're on it, so Næste skips it for them.
 5. **Liste** shows everything nearest first, with notes like "kun nordsiden mangler".
 6. When the job is done, tap **Afslut** on the task. Next season, make a new task and everything starts red again.
 
@@ -29,16 +29,18 @@ Without this, everything stays on one phone (red dot next to your name).
 
 ```sql
 create table tasks (
-  id uuid primary key,
+  id text primary key,
   name text not null,
   codes text[] not null,
   extent jsonb not null,
+  assignees text[] default '{}',
   created_by text default '',
   created_at timestamptz default now(),
-  archived boolean default false
+  archived boolean default false,
+  summary jsonb
 );
 create table progress (
-  task_id uuid references tasks(id) on delete cascade,
+  task_id text references tasks(id) on delete cascade,
   element_id text not null,
   status text not null default 'todo',
   note text default '',
@@ -46,16 +48,34 @@ create table progress (
   updated_at timestamptz default now(),
   primary key (task_id, element_id)
 );
+create table people (
+  name text primary key,
+  role text not null default 'crew'
+);
 alter table tasks enable row level security;
 alter table progress enable row level security;
+alter table people enable row level security;
 create policy "crew" on tasks for all using (true) with check (true);
 create policy "crew" on progress for all using (true) with check (true);
+create policy "crew" on people for all using (true) with check (true);
 alter publication supabase_realtime add table tasks, progress;
 ```
 
-3. Project Settings → API → copy **Project URL** and the **anon public** key into the top of `index.html` (`SUPABASE_URL`, `SUPABASE_ANON_KEY`). Commit. The dot turns green.
+3. Project Settings → API → copy **Project URL** and the **anon public** key into the top of `index.html` (`SUPABASE_URL`, `SUPABASE_ANON_KEY`). The dot turns green.
 
-These policies let anyone with the link edit. Fine for testing with the crew; add Supabase email login before it spreads further.
+## Logins and roles
+- Everyone logs in once with **name + code**. The crew code gives the crew view; the boss code also lets you create, assign and close tasks.
+- Codes are stored as SHA-256 hashes at the top of `index.html` (`CREW_CODE_SHA`, `BOSS_CODE_SHA`). Placeholder codes are `hold` and `chef`. Change them before real use.
+- This login is trust-based: anyone with the anon key could read the database directly. Fine for a crew that trusts each other; switch to Supabase email login before it becomes an official tool.
+
+## Privacy by design
+- **GPS never leaves the phone.** It's only used to find the nearest element.
+- **Nothing is sent until the worker presses Send.** "Send automatisk" is opt-in per person.
+- **Only the send day is shown,** never clock times per mark. No routes, no positions, no per-person statistics.
+- **Bosses see progress, not people:** the app hides who marked what from the boss view.
+- **Closing a task deletes all its marks.** Only "done X of Y" is kept in `tasks.summary`.
+
+In Denmark, new forms of workplace control generally have to be announced to employees in advance, and anything tied to names falls under GDPR. Worth showing this to your tillidsrepræsentant before rolling it out.
 
 ## If "Kunne ikke hente elementer fra kommunen" shows up
 Two likely causes:

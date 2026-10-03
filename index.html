@@ -82,6 +82,21 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .chosen{display:flex;gap:6px;flex-wrap:wrap}
 .chosen span{background:var(--moss);color:#fff;border-radius:999px;padding:5px 11px;font-size:14px}
 
+.outbox{display:flex;align-items:center;gap:10px;background:var(--paper);border:2px solid var(--doing);border-radius:var(--r);padding:8px 8px 8px 14px;margin-bottom:12px}
+.outbox b{font-variant-numeric:tabular-nums}
+.badge{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:var(--moss);color:#fff;border-radius:6px;padding:2px 6px}
+.section{font-size:13px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink2);margin:6px 0 0}
+.panel .body{flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:14px;-webkit-overflow-scrolling:touch}
+.panel .body p{margin:0;max-width:60ch}
+.switch{display:flex;align-items:center;gap:12px;padding:14px;border-radius:var(--r);background:var(--paper);cursor:pointer}
+.switch input{width:24px;height:24px;accent-color:var(--moss);flex:none}
+.facts{display:flex;flex-direction:column;gap:10px;padding:0;margin:0;list-style:none}
+.facts li{display:flex;gap:10px;align-items:flex-start}
+.facts li i{font-style:normal;flex:none;width:22px;text-align:center}
+.people{display:flex;flex-wrap:wrap;gap:8px}
+.people button{border-radius:999px;border:2px solid var(--line);background:var(--card);padding:8px 14px;min-height:42px;font-size:15px}
+.people button.on{border-color:var(--moss2);background:var(--moss);color:#fff}
+.err{color:var(--todo);font-size:14px;min-height:1.2em}
 .toast{position:absolute;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 64px);background:var(--moss);color:#fff;padding:10px 16px;border-radius:999px;font-size:15px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:88vw;text-align:center;z-index:20}
 .toast.show{opacity:1}
 .spin{display:inline-block;width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-3px}
@@ -93,18 +108,21 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 <div id="map"></div>
 
 <div class="top">
-  <button class="chip" id="who" title="Skift navn"><span class="dot" id="syncdot"></span><span id="whoName">Navn?</span></button>
+  <button class="chip" id="who" title="Din profil"><span class="dot" id="syncdot"></span><span id="whoName">Navn?</span><span class="badge" id="whoBadge" hidden>Chef</span></button>
 </div>
 <div class="toast" id="toast" role="status"></div>
 
 <div class="sheet" id="sheet">
   <div class="grip"></div>
+  <div class="outbox" id="outbox" hidden>
+    <span class="grow"><b id="outCount">0</b> <span id="outLabel">ændringer</span> ikke sendt</span>
+    <button class="btn primary" id="btnSend" style="min-height:44px">Send</button>
+  </div>
 
   <!-- Task list -->
   <div class="pane" id="pTasks">
-    <div class="row"><h2 class="grow">Opgaver</h2></div>
     <div class="scroll" id="taskList"></div>
-    <button class="btn primary" id="btnNewTask">+ Ny opgave</button>
+    <button class="btn primary" id="btnNewTask" hidden>+ Ny opgave</button>
   </div>
 
   <!-- Working a task -->
@@ -162,9 +180,42 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <footer>
     <div class="chosen" id="chosen"></div>
     <input type="text" id="taskTitle" placeholder="Navn, fx 'Pur i Brande, uge 41'">
+    <div class="section">Hvem skal lave den?</div>
+    <div class="people" id="assignList"></div>
     <div class="muted">Opgaven dækker det område, der var på kortet, da du trykkede Ny opgave.</div>
     <button class="btn primary" id="btnCreate">Opret opgave</button>
   </footer>
+</div>
+
+<!-- Login, full screen -->
+<div class="panel" id="pLogin" hidden>
+  <div class="body" style="justify-content:center">
+    <h2 style="font-size:28px">Holdkort</h2>
+    <p class="muted">Skriv dit navn og holdets kode. Koden får du af din chef.</p>
+    <input type="text" id="loginName" placeholder="Dit navn" autocomplete="name">
+    <input type="text" id="loginCode" placeholder="Kode" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <div class="err" id="loginErr"></div>
+    <button class="btn primary" id="btnLogin">Log ind</button>
+  </div>
+</div>
+
+<!-- Profile and privacy, full screen -->
+<div class="panel" id="pProfile" hidden>
+  <header><div class="row"><h2 class="grow" id="profName"></h2><button class="btn ghost" id="btnProfClose">Luk</button></div></header>
+  <div class="body">
+    <div class="muted" id="profRole"></div>
+    <label class="switch"><input type="checkbox" id="autoSend"><span class="grow"><b>Send automatisk</b><br><span class="muted">Fra: dine markeringer bliver på telefonen, til du trykker Send.</span></span></label>
+    <div class="section">Hvad deles?</div>
+    <ul class="facts">
+      <li><i>📍</i><span><b>Din position forlader aldrig telefonen.</b> GPS bruges kun til at finde det nærmeste element. Den gemmes og sendes ikke.</span></li>
+      <li><i>📤</i><span><b>Intet sendes, før du trykker Send</b> (medmindre du selv slår automatisk til).</span></li>
+      <li><i>🧾</i><span><b>Det, der sendes:</b> hvilket element, status (mangler / i gang / færdig), en evt. note, dit navn og <i>dagen</i> det blev sendt. Ikke klokkeslæt for hver markering, og ingen rute.</span></li>
+      <li><i>👀</i><span><b>Holdet</b> kan se, hvem der har markeret hvad, så I ikke tager det samme. <b>Cheferne</b> ser kun, hvor meget af opgaven der er færdigt.</span></li>
+      <li><i>🗑️</i><span><b>Når en opgave afsluttes,</b> slettes alle markeringer. Kun "færdig, 47 af 47" bliver gemt.</span></li>
+    </ul>
+    <p class="muted" id="profHonest"></p>
+    <button class="btn" id="btnLogout">Log ud</button>
+  </div>
 </div>
 
 <script>
@@ -172,6 +223,9 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 // Fill these in to share tasks and progress across phones (see README). Empty = this phone only.
 const SUPABASE_URL = "";
 const SUPABASE_ANON_KEY = "";
+// Login codes, stored as SHA-256 so they aren't readable in the public repo. Ask Claude to change them.
+const CREW_CODE_SHA = "e8b22d83b417e85ba4f24101a49a49cc3246a5e5e4ce6574623063e4e32801e0"; // crew
+const BOSS_CODE_SHA = "f59ac0828b9a32293b348e398a0efd342b1e4377a687f3a9055ee2871dff35e4"; // bosses
 
 const WMS_URL = "https://kort.ikast-brande.dk/wms";
 const WMS_SERVICE = "entreprenoer_udbud";
@@ -253,7 +307,7 @@ const gpsLayer = new ol.layer.Vector({source:new ol.source.Vector({features:[gps
 const map = new ol.Map({target:"map", layers:[ortoLayer, areaLayer, elLayer, gpsLayer],
   view:new ol.View({projection:proj, center:START_CENTER, zoom:START_ZOOM, resolutions:RES, constrainResolution:true}),
   controls: ol.control.defaults.defaults({attribution:false, rotate:false})});
-const store = {get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const store = {get(k,d){try{const v=localStorage.getItem(k);return v ? (JSON.parse(v) ?? d) : d}catch(e){return d}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 { const v = store.get("view",null); if(v){ map.getView().setCenter(v.c); map.getView().setZoom(v.z); } }
 map.on("moveend",()=>store.set("view",{c:map.getView().getCenter(),z:map.getView().getZoom()}));
 const sheetPad = () => $("sheet").offsetHeight + 20;
@@ -264,26 +318,89 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;
 function toast(t, ms=2600){const el=$("toast"); el.textContent=t; el.classList.add("show"); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove("show"),ms);}
 const PANES = ["pTasks","pWork","pEl","pList"];
 function pane(id){ PANES.forEach(p=>$(p).hidden = p!==id); }
-function ago(ts){ if(!ts) return ""; const m=Math.round((Date.now()-new Date(ts))/60000);
-  return m<1?"lige nu":m<60?`${m} min siden`:m<1440?`${Math.round(m/60)} t siden`:new Date(ts).toLocaleDateString("da-DK",{day:"numeric",month:"short"}); }
+// Only the day is ever shown, never the clock time
+function ago(ts){ if(!ts) return ""; const d=new Date(ts), t=new Date(); const day=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate());
+  const diff=Math.round((day(t)-day(d))/864e5);
+  return diff<=0?"i dag":diff===1?"i går":d.toLocaleDateString("da-DK",{day:"numeric",month:"short"}); }
 function fmtDist(m){ return m<1000 ? `${Math.round(m/10)*10} m` : `${(m/1000).toFixed(1).replace(".",",")} km`; }
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2));
 const codeNames = codes => codes.map(c=>CODES[c]||c).join(" + ");
 
-let me = store.get("name","");
-function askName(){ const n = window.prompt("Dit navn (vises for holdet):", me); if(n && n.trim()){ me=n.trim(); store.set("name",me);} $("whoName").textContent = me || "Navn?"; }
-$("whoName").textContent = me || "Navn?";
-$("who").onclick = askName;
-if(!me) setTimeout(askName, 500);
+let user = store.get("user", null);   // {name, role: "crew"|"boss"}
+let me = user?.name || "";
+const isBoss = () => user?.role === "boss";
+async function sha(txt){ const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(txt)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join(""); }
+function applyUser(){
+  $("whoName").textContent = me || "Navn?";
+  $("whoBadge").hidden = !isBoss();
+  $("btnNewTask").hidden = !isBoss();
+  $("pLogin").hidden = !!user;
+}
+$("btnLogin").onclick = async ()=>{
+  const name = $("loginName").value.trim(), code = $("loginCode").value.trim().toLowerCase();
+  if(!name){ $("loginErr").textContent = "Skriv dit navn"; return; }
+  const h = await sha(code);
+  const role = h===BOSS_CODE_SHA ? "boss" : h===CREW_CODE_SHA ? "crew" : null;
+  if(!role){ $("loginErr").textContent = "Koden passer ikke. Spørg din chef."; return; }
+  user = {name, role}; me = name; store.set("user", user);
+  if(sb) sb.from("people").upsert({name, role}).then(()=>{});
+  applyUser(); loadTasks();
+};
+$("loginCode").onkeydown = e=>{ if(e.key==="Enter") $("btnLogin").click(); };
+$("who").onclick = ()=>{
+  $("profName").textContent = me;
+  $("profRole").textContent = isBoss() ? "Chef: kan oprette og fordele opgaver." : "Holdet";
+  $("autoSend").checked = autoSend;
+  $("profHonest").textContent = sb
+    ? "Login med kode og navn er tillidsbaseret: reglerne ovenfor håndhæves af appen, ikke låst i databasen. Ved officiel brug bør login skiftes til e-mail."
+    : "Appen er ikke koblet til en fælles database endnu, så alt bliver på denne telefon.";
+  $("pProfile").hidden = false;
+};
+$("btnProfClose").onclick = ()=>{ $("pProfile").hidden = true; };
+$("btnLogout").onclick = ()=>{
+  if(pendingCount()){ toast("Send dine ændringer først", 3500); return; }
+  user=null; me=""; store.set("user",null); $("pProfile").hidden = true; applyUser();
+};
 
 // ================= SHARED STATE =================
 const sb = (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase) ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 $("syncdot").className = "dot " + (sb ? "on" : "off");
-$("who").title = sb ? "Deles med holdet · tryk for at skifte navn" : "Kun på denne telefon · tryk for at skifte navn";
+$("who").title = sb ? "Forbundet til holdet · din profil" : "Kun på denne telefon · din profil";
 
 let tasks = [], task = null, progress = new Map(), selected = null;
 let selSet = new Set();
-const statusOf = id => progress.get(id)?.status || "todo";
+// Outbox: marks stay on this phone until the worker presses Send (or turns on auto-send)
+let pending = new Map(store.get("pending", []).map(r=>[r.task_id+"|"+r.element_id, r]));
+let autoSend = store.get("autoSend", false);
+const eff = id => (task && pending.get(task.id+"|"+id)) || progress.get(id);
+const statusOf = id => eff(id)?.status || "todo";
+const pendingCount = () => pending.size;
+function renderOutbox(){
+  const n = pending.size;
+  $("outbox").hidden = n===0;
+  $("outCount").textContent = n; $("outLabel").textContent = n===1 ? "ændring" : "ændringer";
+}
+async function sendPending(){
+  if(!pending.size) return;
+  const now = new Date().toISOString();
+  const rows = [...pending.values()].map(r=>({...r, updated_at: now})); // only the send time is stored
+  if(sb){
+    const {error} = await sb.from("progress").upsert(rows);
+    if(error){ toast("Ikke sendt. Prøv igen, når du har forbindelse.", 4000); return; }
+  } else {
+    const byTask = {}; rows.forEach(r=>(byTask[r.task_id] ||= []).push(r));
+    for(const [tid, rs] of Object.entries(byTask)){
+      const m = new Map(store.get("prog:"+tid, []).map(x=>[x.element_id,x])); rs.forEach(r=>m.set(r.element_id, r));
+      store.set("prog:"+tid, [...m.values()]);
+    }
+  }
+  rows.forEach(r=>{ if(task && r.task_id===task.id) progress.set(r.element_id, r); });
+  pending.clear(); store.set("pending", []);
+  renderOutbox(); refresh();
+  toast(`Sendt: ${rows.length} ${rows.length===1?"ændring":"ændringer"} ✓`);
+}
+$("btnSend").onclick = sendPending;
+$("autoSend").onchange = e=>{ autoSend = e.target.checked; store.set("autoSend", autoSend); if(autoSend) sendPending(); };
 
 async function loadTasks(){
   if(sb){
@@ -297,10 +414,18 @@ async function saveTask(t){
   if(sb){ const {error} = await sb.from("tasks").insert(t); if(error){ toast("Opgaven blev ikke gemt: " + error.message); return false; } }
   tasks.unshift(t); store.set("tasks",tasks); return true;
 }
+// Closing a task deletes every individual mark; only the total is kept
 async function archiveTask(t){
+  const c = store.get("count:"+t.id, null);
   tasks = tasks.filter(x=>x.id!==t.id);
-  if(sb) await sb.from("tasks").update({archived:true}).eq("id",t.id);
-  store.set("tasks",tasks); renderTasks();
+  if(sb){
+    await sb.from("tasks").update({archived:true, summary:c ? {done:c[0], total:c[1]} : null}).eq("id",t.id);
+    await sb.from("progress").delete().eq("task_id",t.id);
+  }
+  store.set("prog:"+t.id, null); store.set("els:"+t.id, null);
+  [...pending.keys()].filter(k=>k.startsWith(t.id+"|")).forEach(k=>pending.delete(k)); store.set("pending",[...pending.values()]);
+  store.set("tasks",tasks); renderTasks(); renderOutbox();
+  toast("Opgaven er afsluttet, og markeringerne er slettet");
 }
 async function loadProgress(taskId){
   progress = new Map();
@@ -310,13 +435,12 @@ async function loadProgress(taskId){
   }
   store.get("prog:"+taskId,[]).forEach(r=>progress.set(r.element_id,r));
 }
-async function setStatus(ids, status, note){
-  const now = new Date().toISOString();
-  const rows = ids.map(id=>{ const prev = progress.get(id) || {};
-    return {task_id:task.id, element_id:id, status: status ?? prev.status ?? "todo", note: note ?? prev.note ?? "", worker:me, updated_at:now}; });
-  rows.forEach(r=>progress.set(r.element_id, r)); refresh();
-  if(sb){ const {error} = await sb.from("progress").upsert(rows); if(error) toast("Ikke gemt. Tjek forbindelsen."); }
-  store.set("prog:"+task.id, [...progress.values()]);
+function setStatus(ids, status, note){
+  ids.forEach(id=>{ const prev = eff(id) || {};
+    pending.set(task.id+"|"+id, {task_id:task.id, element_id:id, status: status ?? prev.status ?? "todo", note: note ?? prev.note ?? "", worker:me}); });
+  store.set("pending", [...pending.values()]);
+  renderOutbox(); refresh();
+  if(autoSend) sendPending();
 }
 const remoteBatch = {};
 if(sb){
@@ -326,7 +450,7 @@ if(sb){
       progress.set(r.element_id, r); refresh();
       if(r.worker !== me){ const f = elSrc.getFeatureById(r.element_id);
         const k = r.worker + r.updated_at; remoteBatch[k] = (remoteBatch[k]||0) + 1; const n = remoteBatch[k];
-        toast(`${r.worker||"Nogen"}: ${LABEL[r.status]}${n>1 ? ` · ${n} elementer` : f ? " · " + titleOf(f) : ""}`); }
+        toast(`${isBoss() ? "Opdateret" : (r.worker||"Nogen")}: ${LABEL[r.status]}${n>1 ? ` · ${n} elementer` : f ? " · " + titleOf(f) : ""}`); }
     })
     .on("postgres_changes",{event:"*",schema:"public",table:"tasks"},()=>{ if(!task) loadTasks(); })
     .subscribe();
@@ -392,16 +516,28 @@ function subOf(f){
 }
 
 // ================= TASK LIST =================
+const forMe = t => !t.assignees?.length || t.assignees.includes(me);
+const whoFor = t => !t.assignees?.length ? "Alle" : t.assignees.join(", ");
+function taskRow(t){
+  const done = store.get("count:"+t.id, null);
+  return `<div class="row">
+    <button class="item grow" data-open="${esc(t.id)}"><div class="grow"><div class="t">${esc(t.name)}</div>
+    <div class="s">${esc(codeNames(t.codes))} · ${esc(whoFor(t))}</div></div>
+    ${done ? `<span class="pill ${done[0]===done[1]?"done":"todo"} num">${done[0]}/${done[1]}</span>` : ""}</button>
+    ${isBoss() ? `<button class="btn ghost" data-arch="${esc(t.id)}">Afslut</button>` : ""}</div>`;
+}
 function renderTasks(){
   const L = $("taskList");
-  if(!tasks.length){ L.innerHTML = `<p class="muted" style="margin:0">Ingen opgaver endnu. Zoom kortet ind på det område, I skal arbejde i, og tryk <b>Ny opgave</b>.</p>`; return; }
-  L.innerHTML = tasks.map(t=>{
-    const done = store.get("count:"+t.id, null);
-    return `<div class="row">
-      <button class="item grow" data-open="${esc(t.id)}"><div class="grow"><div class="t">${esc(t.name)}</div>
-      <div class="s">${esc(codeNames(t.codes))} · ${esc(t.created_by||"")} · ${ago(t.created_at)}</div></div>
-      ${done ? `<span class="pill ${done[0]===done[1]?"done":"todo"} num">${done[0]}/${done[1]}</span>` : ""}</button>
-      <button class="btn ghost" data-arch="${esc(t.id)}">Afslut</button></div>`; }).join("");
+  if(!user){ L.innerHTML = ""; return; }
+  if(!tasks.length){ L.innerHTML = isBoss()
+      ? `<h2>Opgaver</h2><p class="muted" style="margin:0">Ingen opgaver endnu. Zoom kortet ind på det område, holdet skal arbejde i, og tryk <b>Ny opgave</b>.</p>`
+      : `<h2>Dine opgaver</h2><p class="muted" style="margin:0">Ingen opgaver lige nu. Når en chef giver dig en, dukker den op her.</p>`; return; }
+  if(isBoss()) L.innerHTML = `<h2>Opgaver</h2>` + tasks.map(taskRow).join("");
+  else {
+    const mine = tasks.filter(forMe), other = tasks.filter(t=>!forMe(t));
+    L.innerHTML = `<h2>Dine opgaver</h2>` + (mine.length ? mine.map(taskRow).join("") : `<p class="muted" style="margin:0">Ingen tildelt dig lige nu.</p>`)
+      + (other.length ? `<div class="section">Andres opgaver</div>` + other.map(taskRow).join("") : "");
+  }
   L.querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openTask(tasks.find(t=>t.id===b.dataset.open)));
   L.querySelectorAll("[data-arch]").forEach(b=>b.onclick=()=>{
     if(b.dataset.armed){ archiveTask(tasks.find(t=>t.id===b.dataset.arch)); return; }
@@ -444,7 +580,20 @@ function refresh(){
 }
 
 // ================= NEW TASK (full screen) =================
-let picked = new Set(), newExtent = null;
+let picked = new Set(), newExtent = null, assignees = new Set(), people = [];
+async function loadPeople(){
+  if(sb){ const {data} = await sb.from("people").select("name,role").order("name"); if(data) people = data.filter(p=>p.role==="crew").map(p=>p.name); }
+  else people = [...new Set(tasks.flatMap(t=>t.assignees||[]))];
+}
+function renderAssign(){
+  $("assignList").innerHTML = `<button data-p="" class="${assignees.size?"":"on"}">Alle</button>` +
+    people.map(n=>`<button data-p="${esc(n)}" class="${assignees.has(n)?"on":""}">${esc(n)}</button>`).join("") +
+    `<button data-add="1">+ Navn</button>`;
+  $("assignList").querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{
+    const n = b.dataset.p; if(!n) assignees.clear(); else assignees.has(n) ? assignees.delete(n) : assignees.add(n); renderAssign(); });
+  $("assignList").querySelector("[data-add]").onclick = ()=>{
+    const n = (window.prompt("Navn på medarbejder:")||"").trim(); if(n){ if(!people.includes(n)) people.push(n); assignees.add(n); renderAssign(); } };
+}
 function renderCodes(){
   const q = $("codeSearch").value.trim().toLowerCase();
   const list = Object.entries(CODES).filter(([k,v])=>!q || k.toLowerCase().includes(q) || v.toLowerCase().includes(q));
@@ -464,7 +613,8 @@ $("btnNewTask").onclick = ()=>{
   if(map.getView().getResolution() > 12.8){ toast("Zoom ind på byen eller området først", 3500); return; }
   newExtent = map.getView().calculateExtent(map.getSize()).map(Math.round);
   picked = new Set(); $("codeSearch").value=""; $("taskTitle").value=""; delete $("taskTitle").dataset.touched;
-  renderCodes(); renderChosen(); $("pNew").hidden = false;
+  assignees = new Set(); renderCodes(); renderChosen(); renderAssign(); $("pNew").hidden = false;
+  loadPeople().then(renderAssign);
 };
 $("codeSearch").oninput = renderCodes;
 $("taskTitle").oninput = ()=>$("taskTitle").dataset.touched = 1;
@@ -472,7 +622,7 @@ $("btnNewCancel").onclick = ()=>{ $("pNew").hidden = true; };
 $("btnCreate").onclick = async ()=>{
   if(!picked.size){ toast("Vælg mindst én type"); return; }
   const t = {id:uuid(), name:$("taskTitle").value.trim() || codeNames([...picked]), codes:[...picked],
-    extent:newExtent, created_by:me, created_at:new Date().toISOString(), archived:false};
+    extent:newExtent, assignees:[...assignees], created_by:me, created_at:new Date().toISOString(), archived:false};
   if(await saveTask(t)){ $("pNew").hidden = true; openTask(t); }
 };
 
@@ -502,10 +652,13 @@ function showEl(zoom){
   const sts = new Set(fs.map(g=>statusOf(g.getId())));
   const s = sts.size===1 ? [...sts][0] : null;
   document.querySelectorAll(".status [data-s]").forEach(b=>b.classList.toggle("on", b.dataset.s===s));
-  const p = progress.get(f.getId());
+  const p = eff(f.getId());
   if(document.activeElement !== $("note")) $("note").value = n>1 ? "" : (p?.note || "");
+  const unsent = fs.some(g=>pending.has(task.id+"|"+g.getId()));
   const latest = fs.map(g=>progress.get(g.getId())).filter(Boolean).sort((a,b)=>a.updated_at<b.updated_at?1:-1)[0];
-  $("elMeta").textContent = latest ? `${latest.worker||"?"} · ${ago(latest.updated_at)}` : (n>1 ? "Ingen har rørt dem endnu" : "Ingen har rørt den endnu");
+  $("elMeta").textContent = unsent ? "Ikke sendt endnu"
+    : latest ? (isBoss() ? `Sendt ${ago(latest.updated_at)}` : `${latest.worker||"?"} · ${ago(latest.updated_at)}`)
+    : (n>1 ? "Ingen har rørt dem endnu" : "Ingen har rørt den endnu");
   if(zoom){
     const ext = ol.extent.createEmpty(); fs.forEach(g=>ol.extent.extend(ext, g.getGeometry().getExtent()));
     map.getView().fit(ext, {padding:[80,40,sheetPad(),40], maxZoom:12, duration:350});
@@ -560,9 +713,9 @@ function renderList(){
   $("fltTodo").textContent = onlyOpen ? "Vis alle" : "Skjul færdige";
   const p = here();
   const fs = elSrc.getFeatures().filter(f=>!onlyOpen || statusOf(f.getId())!=="done").map(f=>[f, distTo(f,p)]).sort((a,b)=>a[1]-b[1]).slice(0,300);
-  $("elList").innerHTML = fs.length ? fs.map(([f,d])=>{ const s=statusOf(f.getId()), pr=progress.get(f.getId());
+  $("elList").innerHTML = fs.length ? fs.map(([f,d])=>{ const s=statusOf(f.getId()), pr=eff(f.getId());
     return `<button class="item" data-id="${esc(f.getId())}"><div class="grow"><div class="t">${esc(titleOf(f))}</div>
-      <div class="s num">${fmtDist(d)}${pr?.worker && s!=="todo" ? " · "+esc(pr.worker) : ""}${pr?.note ? " · "+esc(pr.note) : ""}</div></div>
+      <div class="s num">${fmtDist(d)}${pr?.worker && s!=="todo" && !isBoss() ? " · "+esc(pr.worker) : ""}${pr?.note ? " · "+esc(pr.note) : ""}</div></div>
       <span class="pill ${s}">${LABEL[s]}</span></button>`; }).join("") : `<p class="muted" style="margin:0">Intet tilbage. Godt gået.</p>`;
   $("elList").querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>select(elSrc.getFeatureById(b.dataset.id)));
 }
@@ -572,7 +725,11 @@ $("btnListClose").onclick = ()=>pane(selected ? "pEl" : "pWork");
 
 if("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(()=>{});
 pane("pTasks");
+applyUser(); renderOutbox();
+if(user && sb) sb.from("people").upsert({name:me, role:user.role}).then(()=>{});
 loadTasks();
+// Try to send leftovers when the connection comes back, but only if the worker chose auto-send
+window.addEventListener("online", ()=>{ if(autoSend) sendPending(); });
 </script>
 </body>
 </html>
