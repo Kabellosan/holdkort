@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1f3a2e">
+<title>Holdkort</title>
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@10.10.0/ol.css">
+<script src="https://cdn.jsdelivr.net/npm/ol@10.10.0/dist/ol.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.22.0/dist/proj4.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
+<style>
+/* Full-screen map, one bottom sheet that changes with what you're doing. Big targets for gloves. */
+:root{
+  --ink:#16231c; --paper:#f6f7f2; --paper2:#eceee6; --moss:#1f3a2e; --line:#d3d9cb;
+  --todo:#d64545; --doing:#e8a317; --done:#2e9e5b; --me:#2b6cd4;
+  --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{--ink:#e9eee6;--paper:#18201b;--paper2:#222c25;--line:#34412f;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:var(--font);color:var(--ink);background:var(--paper);overflow:hidden}
+#map{position:absolute;inset:0}
+.top{position:absolute;top:calc(env(safe-area-inset-top,0px) + 10px);left:10px;right:10px;display:flex;gap:8px;align-items:center;pointer-events:none;flex-wrap:wrap}
+.top>*{pointer-events:auto}
+.chip{background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:8px 12px;font-size:14px;box-shadow:0 2px 8px #0003;display:flex;gap:6px;align-items:center;cursor:pointer;color:var(--ink)}
+.dot{width:9px;height:9px;border-radius:50%;background:#999;flex:none}
+.dot.on{background:var(--done)} .dot.off{background:var(--todo)}
+#taskChip{margin-left:auto;max-width:60vw}
+#taskChip b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prog{font-variant-numeric:tabular-nums;white-space:nowrap}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--paper);border-top:1px solid var(--line);
+  padding:12px 14px calc(env(safe-area-inset-bottom,0px) + 12px);box-shadow:0 -4px 16px #0003;max-height:62vh;display:flex;flex-direction:column;gap:10px}
+.pane{display:flex;flex-direction:column;gap:10px;min-height:0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.scroll{overflow-y:auto;min-height:0;display:flex;flex-direction:column;gap:6px;-webkit-overflow-scrolling:touch}
+h2{font-size:17px;margin:0;text-wrap:balance}
+.muted{font-size:13px;opacity:.75}
+button{font:inherit;font-size:15px;border-radius:10px;border:1px solid var(--line);background:var(--paper);color:var(--ink);padding:11px 14px;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid var(--me);outline-offset:2px}
+button.primary{background:var(--moss);color:#fff;border-color:var(--moss)}
+button.big{font-size:17px;padding:14px 18px;flex:1}
+button.small{font-size:13px;padding:7px 10px}
+button.on{outline:3px solid var(--me)}
+button[data-s]{flex:1}
+button[data-s=todo]{border-left:7px solid var(--todo)}
+button[data-s=doing]{border-left:7px solid var(--doing)}
+button[data-s=done]{border-left:7px solid var(--done)}
+input[type=text]{font:inherit;font-size:15px;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--paper);color:var(--ink);flex:1;min-width:0}
+.item{display:flex;gap:10px;align-items:center;padding:10px;border-radius:10px;background:var(--paper2);cursor:pointer;border:0;text-align:left;width:100%}
+.item .grow{flex:1;min-width:0}
+.item .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{font-size:12px;padding:3px 8px;border-radius:999px;color:#fff;white-space:nowrap}
+.pill.todo{background:var(--todo)} .pill.doing{background:var(--doing);color:#1d1600} .pill.done{background:var(--done)}
+.bar{height:8px;border-radius:99px;background:var(--paper2);overflow:hidden;display:flex}
+.bar i{display:block;height:100%}
+.code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;opacity:.8;min-width:3.4em}
+label.item input{width:20px;height:20px}
+.toast{position:absolute;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 60px);background:var(--moss);color:#fff;padding:9px 15px;border-radius:999px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;text-align:center}
+.toast.show{opacity:1}
+.ol-zoom{top:calc(env(safe-area-inset-top,0px) + 60px)}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="top">
+  <button class="chip" id="who" title="Skift navn"><span class="dot" id="syncdot"></span><span id="whoName">Navn?</span></button>
+  <button class="chip" id="taskChip" hidden><b id="taskName"></b><span class="prog" id="taskProg"></span></button>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<div class="sheet">
+  <!-- Pick a task -->
+  <div class="pane" id="pTasks">
+    <h2>Opgaver</h2>
+    <div class="scroll" id="taskList"></div>
+    <div class="row">
+      <button class="primary big" id="btnNewTask">+ Ny opgave</button>
+      <button id="btnCache">Gem kort offline</button>
+    </div>
+  </div>
+
+  <!-- Create a task -->
+  <div class="pane" id="pNew" hidden>
+    <h2>Ny opgave</h2>
+    <input type="text" id="codeSearch" placeholder="Søg type, fx pur, fortov, græs">
+    <div class="scroll" id="codeList" style="max-height:28vh"></div>
+    <input type="text" id="taskTitle" placeholder="Navn, fx 'Pur i Brande, uge 41'">
+    <p class="muted" style="margin:0">Opgaven dækker det område, du ser på kortet nu. Zoom ind på byen først.</p>
+    <div class="row">
+      <button class="primary big" id="btnCreate">Opret opgave</button>
+      <button id="btnNewCancel">Annullér</button>
+    </div>
+  </div>
+
+  <!-- Working a task -->
+  <div class="pane" id="pWork" hidden>
+    <div class="bar" id="bar"></div>
+    <div class="row">
+      <button class="primary big" id="btnNext">Næste ▸</button>
+      <button id="btnList">Liste</button>
+      <button id="btnGps">Min position</button>
+    </div>
+  </div>
+
+  <!-- One element -->
+  <div class="pane" id="pEl" hidden>
+    <div class="row" style="flex-wrap:nowrap"><div style="min-width:0;flex:1"><h2 id="elTitle"></h2><div class="muted" id="elSub"></div></div>
+      <button class="small" id="btnElClose">Luk</button></div>
+    <div class="row">
+      <button data-s="todo">Mangler</button>
+      <button data-s="doing">I gang</button>
+      <button data-s="done">Færdig</button>
+    </div>
+    <div class="row"><input type="text" id="note" placeholder="Note, fx 'kun nordsiden mangler'"><button id="btnNote">Gem</button></div>
+    <div class="row"><span class="muted" id="elMeta" style="flex:1"></span><button class="primary" id="btnNext2">Næste ▸</button></div>
+  </div>
+
+  <!-- List of elements -->
+  <div class="pane" id="pList" hidden>
+    <div class="row"><h2 style="flex:1">Nærmest først</h2>
+      <button class="small" id="fltTodo">Kun ikke færdige</button><button class="small" id="btnListClose">Luk</button></div>
+    <div class="scroll" id="elList"></div>
+  </div>
+</div>
+
+<script>
+// ================= CONFIG =================
+// Fill these in to share tasks and progress across phones (see README). Empty = this phone only.
+const SUPABASE_URL = "";
+const SUPABASE_ANON_KEY = "";
+
+const WMS_URL = "https://kort.ikast-brande.dk/wms";
+const WMS_SERVICE = "entreprenoer_udbud";
+const LAYER_ORTO = "theme-orto_foraar_daf";
+// GeoServer WFS with the kommune's maintenance elements (from GeoServer's Layer Preview)
+const WFS_URL = "https://kort.ikast-brande.dk/geoserver/entreprenoer_udbud/ows";
+const WFS_LAYERS = [
+  "element_arealer_distribution",          // pur, græs, buske, bede …
+  "element_arealer_vej_sti_distribution",  // fortove, stier, pladser
+  "element_linier_distribution",
+  "element_punkter_distribution",
+  "element_kantsten_distribution",
+  "element_vej_sti_distribution"
+];
+const START_CENTER = [524270, 6202500];
+const START_ZOOM = 7;
+
+// Element codes from the kommune's map (Tilbudslisten / plejeelementer)
+const CODES = {
+ HA3:"Pur",HA1:"Prydpur",HA11:"Prydhæk",HA21:"Hæk",
+ FB2a:"Fortov, forpligtelse",FB1:"Fast belægning, vej",FB1a:"Fast belægning, sti",FB1b:"Fast belægning, plads",FB1c:"Anden fast belægning",FB1j:"Helle",FB3a:"Kantsten",FB3b:"Svingsten",
+ LB2:"Grus, vej",LB2a:"Grus, sti",LB2b:"Grus, plads",LB2c:"Anden løs belægning",LB3:"Rekreativ sti",
+ GR2:"Brugsplæne",GR20:"Kantskæring, brugsplæne",GR3:"Græsflade",GR30:"Kantskæring, græsflade",GR4:"Fælledgræs",GR5b:"Boldbane B",GR5c:"Boldbane C",
+ GR6l:"Rabatgræs, land, forår",GR6m:"Rabatgræs, land, efterår",GR6n:"Rabatgræs, by",GR6o:"Oversigtsareal",GR7:"Naturgræs",GR7b:"Blomstereng",GR7c:"Naturareal",GR7d:"Græsarmering",GR9:"Fortidsminde",
+ BU1:"Prydbusk, punkt",BU1a:"Prydbusk, flade",BU2:"Bunddækkende buske",BU3:"Busket",
+ BL1:"Roser",BL3:"Staudebed",BL5:"Blomsterkummer",BI22:"Biodiversitet",
+ KL2:"Klatreplante",KL3:"Søjledækkende klatreplante",
+ TR1:"Fuldkronet træ",TR2:"Allétræ",TR3:"Frugttræ",TR4:"Formet træ",
+ SK2:"Krat",SK3:"Lund",SK5:"Levende hegn",SK6a:"Byskov",SK7:"Skov",
+ BY1:"Trappe/rampe",BY2:"Bro og rørgennemløb",BY2a:"Tunnel",BY3:"Plateau/spang",BY9:"Monument/skulptur",
+ UD1:"Skraldespand",UD1a:"Skraldespand, sortering",UD2a:"Bordbænkesæt",UD2b:"Bænk",UD3b:"Skaterrampe",UD4:"Informationsskilt",UD4a:"Piktogramstander",
+ UD55:"Shelter",UD55a:"Toilet",UD6:"Legeplads",UD65:"Jorddepot, boldbaner",UD7a:"Belysning, sportsanlæg",UD7c:"Juletræer og julebelysning",UD7d:"Målestationer og webkameraer",
+ UD8:"Trådhegn",UD84a:"Saltværn",UD8c:"Hegnselementer",UD8d:"Dyrehegn",UD9:"Træhulsrist",
+ VA3:"Grøft",VA3c:"Grøfteunderføring",VA3d:"Rabat",
+ SB4a:"Sportsbelægning, gummi",SB4b:"Sportsbelægning, rødgrus",SB4e:"Kunstgræs, indendørs",SB4f:"Kunstgræs, udendørs",SB4g:"Faldsand",SB4h:"Strandsand"
+};
+
+// ================= MAP =================
+proj4.defs("EPSG:25832","+proj=utm +zone=32 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
+ol.proj.proj4.register(proj4);
+const proj = ol.proj.get("EPSG:25832");
+const EXTENT = [120000, 5900000, 1000000, 6500000];
+proj.setExtent(EXTENT);
+const RES = Array.from({length:15},(_,i)=>1638.4/Math.pow(2,i));
+const tileGrid = new ol.tilegrid.TileGrid({extent:EXTENT, resolutions:RES, tileSize:256});
+const ortoSrc = new ol.source.TileWMS({url:WMS_URL, tileGrid, projection:proj, transition:0,
+  params:{SERVICE:"WMS",VERSION:"1.1.1",LAYERS:LAYER_ORTO,FORMAT:"image/jpeg",SERVICENAME:WMS_SERVICE,STYLES:""}});
+const ortoLayer = new ol.layer.Tile({source:ortoSrc, preload:2});
+
+const COLORS = {todo:"#d64545", doing:"#e8a317", done:"#2e9e5b"};
+const LABEL  = {todo:"Mangler", doing:"I gang", done:"Færdig"};
+const elSrc = new ol.source.Vector();
+const styleCache = {};
+function elStyle(f){
+  const s = statusOf(f.getId()), sel = f === selected, key = s + sel;
+  if(!styleCache[key]){
+    const c = COLORS[s];
+    styleCache[key] = new ol.style.Style({
+      fill:new ol.style.Fill({color: c + (sel ? "99" : s==="done" ? "55" : "88")}),
+      stroke:new ol.style.Stroke({color: sel ? "#fff" : c, width: sel ? 5 : 3}),
+      image:new ol.style.Circle({radius: sel?11:8, fill:new ol.style.Fill({color:c}), stroke:new ol.style.Stroke({color:"#fff",width:2})}),
+      zIndex: sel ? 3 : s==="done" ? 0 : 1
+    });
+  }
+  return styleCache[key];
+}
+const elLayer = new ol.layer.Vector({source:elSrc, style:elStyle, renderBuffer:200});
+const areaSrc = new ol.source.Vector();
+const areaLayer = new ol.layer.Vector({source:areaSrc, style:new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffcc",width:2,lineDash:[8,6]})})});
+const gpsFeat = new ol.Feature();
+gpsFeat.setStyle(new ol.style.Style({image:new ol.style.Circle({radius:8,fill:new ol.style.Fill({color:"#2b6cd4"}),stroke:new ol.style.Stroke({color:"#fff",width:3})})}));
+const gpsLayer = new ol.layer.Vector({source:new ol.source.Vector({features:[gpsFeat]})});
+
+const map = new ol.Map({target:"map", layers:[ortoLayer, areaLayer, elLayer, gpsLayer],
+  view:new ol.View({projection:proj, center:START_CENTER, zoom:START_ZOOM, resolutions:RES, constrainResolution:true}),
+  controls: ol.control.defaults.defaults({attribution:false, rotate:false})});
+try{const v=JSON.parse(localStorage.getItem("view")); if(v){map.getView().setCenter(v.c); map.getView().setZoom(v.z);}}catch(e){}
+map.on("moveend",()=>{try{localStorage.setItem("view",JSON.stringify({c:map.getView().getCenter(),z:map.getView().getZoom()}))}catch(e){}});
+
+// ================= HELPERS =================
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function toast(t){const el=$("toast"); el.textContent=t; el.classList.add("show"); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove("show"),2600);}
+const store = {get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+function pane(id){ ["pTasks","pNew","pWork","pEl","pList"].forEach(p=>$(p).hidden = p!==id); }
+function ago(ts){ if(!ts) return ""; const m=Math.round((Date.now()-new Date(ts))/60000);
+  return m<1?"lige nu":m<60?`${m} min siden`:m<1440?`${Math.round(m/60)} t siden`:new Date(ts).toLocaleDateString("da-DK",{day:"numeric",month:"short"}); }
+function fmtDist(m){ return m<1000 ? `${Math.round(m/10)*10} m` : `${(m/1000).toFixed(1)} km`; }
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2));
+
+let me = store.get("name","");
+function askName(){ const n = window.prompt("Dit navn (vises for holdet):", me); if(n && n.trim()){ me=n.trim(); store.set("name",me);} $("whoName").textContent = me || "Navn?"; }
+$("whoName").textContent = me || "Navn?";
+$("who").onclick = askName;
+if(!me) setTimeout(askName, 400);
+
+// ================= SHARED STATE =================
+// tasks:    {id, name, codes[], extent[4], created_by, created_at, archived}
+// progress: {task_id, element_id, status, note, worker, updated_at}
+const sb = (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase) ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+$("syncdot").className = "dot " + (sb ? "on" : "off");
+$("who").title = sb ? "Deles med holdet. Tryk for at skifte navn" : "Kun på denne telefon. Tryk for at skifte navn";
+
+let tasks = [], task = null, progress = new Map(), selected = null;
+const statusOf = id => progress.get(id)?.status || "todo";
+
+async function loadTasks(){
+  if(sb){
+    const {data,error} = await sb.from("tasks").select("*").eq("archived",false).order("created_at",{ascending:false});
+    if(error){ toast("Kunne ikke hente opgaver. Tjek forbindelsen."); tasks = store.get("tasks",[]); }
+    else { tasks = data; store.set("tasks",tasks); }
+  } else tasks = store.get("tasks",[]);
+  renderTasks();
+}
+async function saveTask(t){
+  tasks.unshift(t);
+  if(sb){ const {error} = await sb.from("tasks").insert(t); if(error){ toast("Opgaven blev ikke gemt: " + error.message); return false; } }
+  store.set("tasks",tasks); return true;
+}
+async function archiveTask(t){
+  tasks = tasks.filter(x=>x.id!==t.id);
+  if(sb) await sb.from("tasks").update({archived:true}).eq("id",t.id);
+  store.set("tasks",tasks); renderTasks();
+}
+async function loadProgress(taskId){
+  progress = new Map();
+  if(sb){
+    const {data,error} = await sb.from("progress").select("*").eq("task_id",taskId);
+    if(!error){ data.forEach(r=>progress.set(r.element_id,r)); store.set("prog:"+taskId,data); return; }
+  }
+  store.get("prog:"+taskId,[]).forEach(r=>progress.set(r.element_id,r));
+}
+async function setStatus(id, status, note){
+  const prev = progress.get(id) || {};
+  const r = {task_id:task.id, element_id:id, status: status ?? prev.status ?? "todo", note: note ?? prev.note ?? "", worker:me, updated_at:new Date().toISOString()};
+  progress.set(id, r); refresh();
+  if(sb){ const {error} = await sb.from("progress").upsert(r); if(error) toast("Ikke gemt. Tjek forbindelsen."); }
+  store.set("prog:"+task.id, [...progress.values()]);
+}
+if(sb){
+  sb.channel("holdkort")
+    .on("postgres_changes",{event:"*",schema:"public",table:"progress"},p=>{
+      const r = p.new; if(!task || !r || r.task_id!==task.id) return;
+      progress.set(r.element_id, r); refresh();
+      if(r.worker !== me){ const f = elSrc.getFeatureById(r.element_id); toast(`${r.worker||"Nogen"}: ${LABEL[r.status]}${f ? " · " + titleOf(f) : ""}`); }
+    })
+    .on("postgres_changes",{event:"*",schema:"public",table:"tasks"},()=>{ if(!task) loadTasks(); })
+    .subscribe();
+}
+
+// ================= ELEMENTS FROM THE KOMMUNE =================
+const fmt = new ol.format.GeoJSON({dataProjection:proj, featureProjection:proj});
+async function fetchElements(codes, extent){
+  const cql = `elementkode IN (${codes.map(c=>`'${c.replace(/'/g,"")}'`).join(",")})`;
+  const results = await Promise.allSettled(WFS_LAYERS.map(async layer=>{
+    const q = new URLSearchParams({service:"WFS",version:"1.0.0",request:"GetFeature",typeName:"entreprenoer_udbud:"+layer,
+      outputFormat:"application/json",srsName:"EPSG:25832",CQL_FILTER:cql});
+    const res = await fetch(WFS_URL + "?" + q);
+    if(!res.ok) throw new Error(layer + ": HTTP " + res.status);
+    const txt = await res.text();
+    if(!txt.trim().startsWith("{")) throw new Error(layer + ": ikke GeoJSON"); // layer without elementkode → ServiceException
+    return fmt.readFeatures(txt).map(f=>{ f.setId(layer.replace("_distribution","") + ":" + (f.get("unik_id") || f.get("ogc_fid") || f.getId())); return f; });
+  }));
+  const ok = results.filter(r=>r.status==="fulfilled");
+  if(!ok.length) throw new Error(results.map(r=>r.reason?.message).join("; "));
+  return ok.flatMap(r=>r.value).filter(f=>f.getGeometry() && f.getGeometry().intersectsExtent(extent));
+}
+function titleOf(f){
+  const code = f.get("elementkode"), name = CODES[code] || code;
+  const street = f.get("vejnavn");
+  return street ? `${street} · ${name}` : name;
+}
+function subOf(f){
+  const p = f.getProperties(), bits = [p.elementkode];
+  if(p.geometri_areal) bits.push(`${Math.round(p.geometri_areal)} m²`);
+  const g = f.getGeometry(); if(g && /Line/.test(g.getType())) bits.push(`${Math.round(ol.sphere.getLength(g,{projection:proj}))} m`);
+  if(p.fra_station!=null && p.til_station!=null && (p.fra_station||p.til_station)) bits.push(`station ${p.fra_station}–${p.til_station}`);
+  if(p.attribut_2) bits.push(String(p.attribut_2).replace("_"," "));
+  if(p.belaegningstype) bits.push(p.belaegningstype);
+  if(p.bemaerkning || p.bemaerkninger) bits.push(p.bemaerkning || p.bemaerkninger);
+  return bits.join(" · ");
+}
+
+// ================= TASK LIST =================
+function renderTasks(){
+  const L = $("taskList");
+  if(!tasks.length){ L.innerHTML = `<p class="muted" style="margin:0">Ingen opgaver endnu. Zoom ind på et område og tryk "Ny opgave", fx Pur i Brande.</p>`; return; }
+  L.innerHTML = tasks.map(t=>`<div class="row" style="flex-wrap:nowrap">
+    <button class="item" data-open="${esc(t.id)}"><div class="grow"><div class="t">${esc(t.name)}</div>
+    <div class="muted">${t.codes.map(c=>esc(CODES[c]||c)).join(", ")} · ${esc(t.created_by||"")} · ${ago(t.created_at)}</div></div><span>▸</span></button>
+    <button class="small" data-arch="${esc(t.id)}" title="Afslut opgave">Afslut</button></div>`).join("");
+  L.querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openTask(tasks.find(t=>t.id===b.dataset.open)));
+  L.querySelectorAll("[data-arch]").forEach(b=>b.onclick=()=>{
+    if(b.dataset.armed){ archiveTask(tasks.find(t=>t.id===b.dataset.arch)); return; }
+    b.dataset.armed=1; b.textContent="Sikker?"; setTimeout(()=>{delete b.dataset.armed; b.textContent="Afslut";},3000);
+  });
+}
+async function openTask(t){
+  task = t; selected = null; elSrc.clear(); areaSrc.clear();
+  areaSrc.addFeature(new ol.Feature(ol.geom.Polygon.fromExtent(t.extent)));
+  $("taskChip").hidden = false; $("taskName").textContent = t.name; $("taskProg").textContent = "henter…";
+  pane("pWork");
+  map.getView().fit(t.extent, {padding:[70,20,170,20], duration:300});
+  await loadProgress(t.id);
+  let feats;
+  try { feats = await fetchElements(t.codes, t.extent); store.set("els:"+t.id, fmt.writeFeatures(feats)); }
+  catch(e){
+    const cached = store.get("els:"+t.id, null);
+    if(cached){ feats = fmt.readFeatures(cached); toast("Offline: viser gemte elementer"); }
+    else { toast("Kunne ikke hente elementer fra kommunen"); console.error(e); $("taskProg").textContent="fejl"; return; }
+  }
+  elSrc.addFeatures(feats);
+  refresh();
+  if(!feats.length) toast("Ingen elementer af den type i området");
+}
+$("taskChip").onclick = ()=>{ task=null; selected=null; elSrc.clear(); areaSrc.clear(); $("taskChip").hidden=true; pane("pTasks"); loadTasks(); };
+
+function refresh(){
+  elLayer.changed();
+  if(!task) return;
+  const ids = elSrc.getFeatures().map(f=>f.getId()), n = ids.length;
+  const c = {todo:0,doing:0,done:0}; ids.forEach(id=>c[statusOf(id)]++);
+  $("taskProg").textContent = `${c.done}/${n}`;
+  $("bar").innerHTML = n ? ["done","doing","todo"].map(s=>`<i style="width:${c[s]/n*100}%;background:${COLORS[s]}"></i>`).join("") : "";
+  if(selected && !$("pEl").hidden) showEl(selected, false);
+  if(!$("pList").hidden) renderList();
+}
+
+// ================= NEW TASK =================
+let picked = new Set();
+function renderCodes(){
+  const q = $("codeSearch").value.trim().toLowerCase();
+  const list = Object.entries(CODES).filter(([k,v])=>!q || k.toLowerCase().includes(q) || v.toLowerCase().includes(q));
+  $("codeList").innerHTML = list.map(([k,v])=>`<label class="item"><input type="checkbox" value="${k}" ${picked.has(k)?"checked":""}><span class="code">${k}</span><span class="grow">${esc(v)}</span></label>`).join("")
+    || `<p class="muted">Ingen typer matcher "${esc(q)}"</p>`;
+  $("codeList").querySelectorAll("input").forEach(i=>i.onchange=()=>{ i.checked?picked.add(i.value):picked.delete(i.value);
+    if(!$("taskTitle").dataset.touched) $("taskTitle").value = [...picked].map(c=>CODES[c]).join(" + "); });
+}
+$("btnNewTask").onclick = ()=>{ picked = new Set(); $("codeSearch").value=""; $("taskTitle").value=""; delete $("taskTitle").dataset.touched; renderCodes(); pane("pNew"); $("codeSearch").focus(); };
+$("codeSearch").oninput = renderCodes;
+$("taskTitle").oninput = ()=>$("taskTitle").dataset.touched = 1;
+$("btnNewCancel").onclick = ()=>pane("pTasks");
+$("btnCreate").onclick = async ()=>{
+  if(!picked.size){ toast("Vælg mindst én type"); return; }
+  if(map.getView().getResolution() > 25.6){ toast("Zoom længere ind, så opgaven ikke dækker hele kommunen"); return; }
+  const t = {id:uuid(), name:$("taskTitle").value.trim() || [...picked].map(c=>CODES[c]).join(" + "), codes:[...picked],
+    extent: map.getView().calculateExtent(map.getSize()).map(Math.round), created_by: me, created_at:new Date().toISOString(), archived:false};
+  if(await saveTask(t)) openTask(t);
+};
+
+// ================= ELEMENT VIEW =================
+function select(f){ selected = f; elLayer.changed(); if(f) showEl(f, true); else pane("pWork"); }
+function showEl(f, zoom){
+  pane("pEl");
+  $("elTitle").textContent = titleOf(f);
+  $("elSub").textContent = subOf(f);
+  const p = progress.get(f.getId()), s = statusOf(f.getId());
+  document.querySelectorAll("#pEl [data-s]").forEach(b=>b.classList.toggle("on", b.dataset.s===s));
+  if(document.activeElement !== $("note")) $("note").value = p?.note || "";
+  $("elMeta").textContent = p ? `${LABEL[s]} · ${p.worker||"?"} · ${ago(p.updated_at)}` : "Ingen har rørt den endnu";
+  if(zoom) map.getView().fit(f.getGeometry().getExtent(), {padding:[80,30,300,30], maxZoom:12, duration:350});
+}
+map.on("singleclick", e=>{
+  if(!task) return;
+  const f = map.forEachFeatureAtPixel(e.pixel, f=>f, {layerFilter:l=>l===elLayer, hitTolerance:10});
+  if(f) select(f); else if(!$("pEl").hidden) select(null);
+});
+document.querySelectorAll("#pEl [data-s]").forEach(b=>b.onclick=()=>{ setStatus(selected.getId(), b.dataset.s); if(b.dataset.s==="done") toast("Færdig ✓ Tryk Næste for den nærmeste"); });
+$("btnNote").onclick = ()=>{ setStatus(selected.getId(), null, $("note").value); toast("Note gemt"); };
+$("btnElClose").onclick = ()=>select(null);
+
+// ================= NEXT / LIST / GPS =================
+const geo = new ol.Geolocation({projection:proj, trackingOptions:{enableHighAccuracy:true, maximumAge:10000}});
+geo.on("change:position", ()=>gpsFeat.setGeometry(new ol.geom.Point(geo.getPosition())));
+geo.on("error", ()=>toast("Ingen GPS-adgang. Tillad placering i browseren."));
+geo.setTracking(true);
+function here(){ return geo.getPosition() || (selected && ol.extent.getCenter(selected.getGeometry().getExtent())) || map.getView().getCenter(); }
+function distTo(f, p){ const c = f.getGeometry().getClosestPoint(p); return Math.hypot(c[0]-p[0], c[1]-p[1]); }
+function next(){
+  const p = here();
+  const open = elSrc.getFeatures().filter(f=>f!==selected && statusOf(f.getId())!=="done");
+  if(!open.length){ toast("Alt i opgaven er færdigt 🎉"); return; }
+  const untouched = open.filter(f=>statusOf(f.getId())==="todo"); // skip ones a colleague is on
+  const pool = untouched.length ? untouched : open;
+  pool.sort((a,b)=>distTo(a,p)-distTo(b,p));
+  select(pool[0]);
+  toast(`${fmtDist(distTo(pool[0],p))} væk`);
+}
+$("btnNext").onclick = next; $("btnNext2").onclick = next;
+$("btnGps").onclick = ()=>{ const p = geo.getPosition(); if(p) map.getView().animate({center:p, zoom:Math.max(map.getView().getZoom(),10)}); else toast("Venter på GPS…"); };
+
+let onlyOpen = store.get("onlyOpen", true);
+function renderList(){
+  $("fltTodo").classList.toggle("on", onlyOpen);
+  const p = here();
+  const fs = elSrc.getFeatures().filter(f=>!onlyOpen || statusOf(f.getId())!=="done").map(f=>[f, distTo(f,p)]).sort((a,b)=>a[1]-b[1]).slice(0,200);
+  $("elList").innerHTML = fs.length ? fs.map(([f,d])=>{ const s=statusOf(f.getId()), pr=progress.get(f.getId());
+    return `<button class="item" data-id="${esc(f.getId())}"><div class="grow"><div class="t">${esc(titleOf(f))}</div>
+      <div class="muted">${fmtDist(d)}${pr?.worker && s!=="todo" ? " · "+esc(pr.worker) : ""}${pr?.note ? " · "+esc(pr.note) : ""}</div></div>
+      <span class="pill ${s}">${LABEL[s]}</span></button>`; }).join("") : `<p class="muted">Intet tilbage. Godt gået.</p>`;
+  $("elList").querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>select(elSrc.getFeatureById(b.dataset.id)));
+}
+$("btnList").onclick = ()=>{ pane("pList"); renderList(); };
+$("fltTodo").onclick = ()=>{ onlyOpen=!onlyOpen; store.set("onlyOpen",onlyOpen); renderList(); };
+$("btnListClose").onclick = ()=>pane("pWork");
+
+// ================= OFFLINE AERIAL =================
+$("btnCache").onclick = async ()=>{
+  if(!("caches" in window)){ toast("Telefonen understøtter ikke offline-kort"); return; }
+  const v = map.getView(), ext = v.calculateExtent(map.getSize()), z0 = v.getZoom(), urlFn = ortoSrc.getTileUrlFunction(), urls = [];
+  for(let z=Math.max(0,z0-1); z<=Math.min(RES.length-1,z0+3); z++) tileGrid.forEachTileCoord(ext, z, tc=>{ const u=urlFn(tc,1,proj); if(u) urls.push(u); });
+  if(urls.length > 4000){ toast(`For stort område (${urls.length} fliser). Zoom ind.`); return; }
+  const cache = await caches.open("tiles-v1"); let n = 0;
+  for(let i=0;i<urls.length;i+=6){
+    await Promise.all(urls.slice(i,i+6).map(async u=>{ try{ if(!(await cache.match(u))) await cache.put(u, await fetch(u,{mode:"no-cors"})); }catch(e){} n++; }));
+    toast(`Gemmer luftfoto… ${n}/${urls.length}`);
+  }
+  toast(`Området er gemt offline`);
+};
+
+if("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(()=>{});
+pane("pTasks");
+loadTasks();
+</script>
+</body>
+</html>
