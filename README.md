@@ -3,12 +3,14 @@
 Shared task map for the idverde crew in Ikast-Brande. The kommune's maintenance elements (pur, fortove, græs …) are loaded as individual shapes, and the crew marks each one **Mangler / I gang / Færdig**. Each worker decides when their marks are sent to the rest of the team.
 
 ## How it works on the job
-1. **Boss creates a task:** zooms the map to Brande, taps **Ny opgave**, searches "pur", ticks *HA3 Pur*, picks who should do it (or Alle), taps **Opret**. The task covers the area on screen.
+1. **Boss creates a task:** taps **Ny opgave** and marks the area on the map, either as a **rectangle** (drag the corners or edges to resize, the middle to move) or **drawn freehand** with a finger (then drag the points to adjust). Then searches "pur", ticks *HA3 Pur*, picks who should do it (or Alle), taps **Opret**. A boss can redraw a task's area later with **▭ Område** inside the task.
 2. **Crew opens the task:** every pur bed in that area shows up in red, and the top shows e.g. `0/47`.
 3. **Næste ▸** jumps to the nearest location nobody has started, based on your GPS (which never leaves the phone).
 4. Tap **Færdig** → it turns green on your phone. Press **Send** when you choose, and it turns green for everyone. Tap more elements on the map to mark several at once. **I gang** (yellow) tells the others you're on it, so Næste skips it for them.
 5. **Liste** shows everything nearest first, with notes like "kun nordsiden mangler".
 6. When the job is done, tap **Afslut** on the task. Next season, make a new task and everything starts red again.
+
+**Overblik (bosses):** pick a type, e.g. *Pur*, to see every pur bed in the whole kommune. Beds inside a task show that task's status; purple ones aren't in any task yet. **+ Ny opgave med pur** lets you draw a new task right around the purple ones, and while drawing it shows how many the area catches.
 
 Sidewalks (`FB2a`) come split into stretches by street and station, so you can mark "Rosenstien 0–25" done without the whole street.
 
@@ -20,6 +22,7 @@ Sidewalks (`FB2a`) come split into stretches by street and station, so you can m
 - Each task's elements are downloaded **once** and stored on the phone. Reopening a task is instant and costs the server nothing.
 - Stored data is refreshed **at most once a day**, in the background, after a random 15 s – 3 min delay, and **never between 06:00 and 09:00**. **Opdater** in the task forces a refresh.
 - Aerial photo tiles are stored on the phone for **180 days** (the 2024 photo doesn't change).
+- **Overblik** downloads one type for the whole kommune (bosses only), stored on the phone and refreshed by the same once-a-day rule.
 - The map remembers where you were; a task only zooms to its area the first time you open it.
 
 The kommune's `robots.txt` asks automated programs not to use the site, so there is **no** nightly server job. With the kommune's OK, a nightly download shared by all phones would cut their load to one request a night.
@@ -45,7 +48,8 @@ create table tasks (
   created_by text default '',
   created_at timestamptz default now(),
   archived boolean default false,
-  summary jsonb
+  summary jsonb,
+  area jsonb -- freehand task area (GeoJSON polygon, EPSG:25832); null = the rectangle in extent
 );
 create table progress (
   task_id text references tasks(id) on delete cascade,

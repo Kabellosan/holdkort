@@ -23,11 +23,13 @@ A phone web app for Captain's idverde crew (Ikast-Brande Kommune contract). Boss
 - Element data per task is stored on the phone (Cache API `elements-v1`); refreshed at most once a day, random 15 s–3 min delay, never 06:00–09:00. "Opdater" forces it.
 - Aerial tiles: fixed 256 px grid in EPSG:25832, service worker cache-first, 180 days.
 - A task only auto-zooms the first time it's opened; map position is remembered.
+- Task areas: a rectangle (`extent` only, `area` null) or a freehand polygon (`area` = GeoJSON Polygon in EPSG:25832, `extent` = its bounding box). The WFS request uses the bbox; elements are cut to the polygon on the phone (`hitsArea`). Max bbox 60 km². If the `area` column is missing, saves fall back to the rectangle. Stored element data carries an area key, so redrawing a task re-downloads it.
+- Overblik (boss): one type for the whole kommune via `elementkode IN (...)` with no bbox, cached as `type:<code>` with the same once-a-day rules. Status per element comes from the tasks covering it (done > doing > todo); purple = in no task.
 
 ## Backend: Supabase
 - Project `rvfwmmctqndfqvbuuoyi` (org "Kabellosan's Org", region eu-west-1), connected via the Supabase connector.
 - Publishable key is in `index.html` (public by design). Never put the service_role key in the repo.
-- Tables: `tasks` (id, name, codes[], extent, assignees[], created_by, created_at, archived, summary), `progress` (task_id, element_id, status, note, worker, updated_at; PK task_id+element_id), `people` (name, role).
+- Tables: `tasks` (id, name, codes[], extent, assignees[], created_by, created_at, archived, summary, area), `progress` (task_id, element_id, status, note, worker, updated_at; PK task_id+element_id), `people` (name, role).
 - Trigger `progress_day_only` truncates `updated_at` to the day **in the database**.
 - RLS (anon): read/insert/update on all three; delete on `progress` only when its task is archived; no deletes on tasks/people.
 - Realtime on `tasks` and `progress`.
