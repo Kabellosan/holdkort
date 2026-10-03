@@ -109,6 +109,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 
 <div class="top">
   <button class="chip" id="who" title="Din profil"><span class="dot" id="syncdot"></span><span id="whoName">Navn?</span><span class="badge" id="whoBadge" hidden>Chef</span></button>
+  <button class="chip" id="btnSearch" style="margin-left:auto" aria-label="Søg sted">⌕ <span>Søg</span></button>
 </div>
 <div class="toast" id="toast" role="status"></div>
 
@@ -185,6 +186,15 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="muted">Opgaven dækker det område, der var på kortet, da du trykkede Ny opgave.</div>
     <button class="btn primary" id="btnCreate">Opret opgave</button>
   </footer>
+</div>
+
+<!-- Place search, full screen -->
+<div class="panel" id="pSearch" hidden>
+  <header>
+    <div class="row"><input type="search" id="placeQ" class="grow" placeholder="By, vej, adresse, station …" autocomplete="off" enterkeyhint="search"><button class="btn ghost" id="btnSearchClose">Luk</button></div>
+  </header>
+  <div class="list" id="placeList"></div>
+  <footer><div class="muted" style="font-size:12px">Søgning: Photon · kortdata © OpenStreetMap-bidragydere</div></footer>
 </div>
 
 <!-- Login, full screen -->
@@ -725,6 +735,51 @@ $("fltTodo").onclick = ()=>{ onlyOpen=!onlyOpen; store.set("onlyOpen",onlyOpen);
 $("btnListClose").onclick = ()=>pane(selected ? "pEl" : "pWork");
 
 if("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(()=>{});
+// ================= PLACE SEARCH (Photon / OpenStreetMap) =================
+const PHOTON = "https://photon.komoot.io/api/";
+const KIND = {city:"By",town:"By",village:"Landsby",hamlet:"Landsby",suburb:"Bydel",neighbourhood:"Kvarter",
+  residential:"Vej",primary:"Vej",secondary:"Vej",tertiary:"Vej",unclassified:"Vej",service:"Vej",living_street:"Vej",pedestrian:"Gågade",footway:"Sti",cycleway:"Cykelsti",
+  station:"Station",halt:"Station",bus_station:"Busstation",bus_stop:"Busstoppested",house:"Adresse",school:"Skole",park:"Park",playground:"Legeplads",cemetery:"Kirkegård",place_of_worship:"Kirke",parking:"Parkering",supermarket:"Butik"};
+const pinFeat = new ol.Feature();
+pinFeat.setStyle(new ol.style.Style({image:new ol.style.Circle({radius:10,fill:new ol.style.Fill({color:"#ffffff"}),stroke:new ol.style.Stroke({color:"#1f3a2e",width:4})})}));
+gpsLayer.getSource().addFeature(pinFeat);
+let searchCtl = null, searchT = null;
+function placeLabel(p){
+  const name = p.name || [p.street, p.housenumber].filter(Boolean).join(" ");
+  const sub = [p.name && p.street ? [p.street,p.housenumber].filter(Boolean).join(" ") : "", p.postcode && p.city ? `${p.postcode} ${p.city}` : (p.city||p.county||"")].filter(Boolean).join(", ");
+  return {name, sub, kind: KIND[p.osm_value] || (p.osm_key==="highway" ? "Vej" : p.osm_key==="place" ? "Sted" : "Sted")};
+}
+async function searchPlaces(q){
+  if(searchCtl) searchCtl.abort();
+  if(q.length < 2){ $("placeList").innerHTML = ""; return; }
+  searchCtl = new AbortController();
+  const c = ol.proj.toLonLat(map.getView().getCenter(), proj);
+  const u = PHOTON + "?" + new URLSearchParams({q, lat:c[1].toFixed(4), lon:c[0].toFixed(4), limit:"10", bbox:"8.0,54.5,15.3,57.8"});
+  $("placeList").innerHTML = `<p class="muted"><span class="spin"></span> Søger …</p>`;
+  try{
+    const res = await fetch(u, {signal:searchCtl.signal}); const js = await res.json();
+    const fs = js.features || [];
+    $("placeList").innerHTML = fs.length ? fs.map((f,i)=>{ const l = placeLabel(f.properties);
+      return `<button class="item" data-i="${i}"><div class="grow"><div class="t">${esc(l.name)}</div><div class="s">${esc(l.sub)}</div></div><span class="code">${esc(l.kind)}</span></button>`; }).join("")
+      : `<p class="muted">Ingen steder fundet for "${esc(q)}".</p>`;
+    $("placeList").querySelectorAll("[data-i]").forEach(b=>b.onclick=()=>goPlace(fs[+b.dataset.i]));
+  }catch(e){ if(e.name!=="AbortError") $("placeList").innerHTML = `<p class="muted">Søgningen virker ikke lige nu. Tjek forbindelsen.</p>`; }
+}
+function goPlace(f){
+  const pt = ol.proj.fromLonLat(f.geometry.coordinates, proj);
+  pinFeat.setGeometry(new ol.geom.Point(pt));
+  $("pSearch").hidden = true;
+  const ex = f.properties.extent; // [minLon, maxLat, maxLon, minLat] for towns and long streets
+  if(ex){ const a = ol.proj.fromLonLat([ex[0],ex[3]], proj), b = ol.proj.fromLonLat([ex[2],ex[1]], proj);
+    map.getView().fit([a[0],a[1],b[0],b[1]], {padding:[70,20,sheetPad(),20], maxZoom:12, duration:400}); }
+  else map.getView().animate({center:pt, zoom:Math.max(map.getView().getZoom(), 11), duration:400});
+  toast(placeLabel(f.properties).name);
+}
+$("btnSearch").onclick = ()=>{ $("pSearch").hidden = false; $("placeQ").focus(); $("placeQ").select(); };
+$("btnSearchClose").onclick = ()=>{ $("pSearch").hidden = true; };
+$("placeQ").oninput = e=>{ clearTimeout(searchT); const q = e.target.value.trim(); searchT = setTimeout(()=>searchPlaces(q), 300); };
+$("placeQ").onkeydown = e=>{ if(e.key==="Enter"){ clearTimeout(searchT); searchPlaces(e.target.value.trim()); } };
+
 pane("pTasks");
 applyUser(); renderOutbox();
 if(user && sb) sb.from("people").upsert({name:me, role:user.role}).then(()=>{});
