@@ -88,7 +88,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .chosen{display:flex;gap:6px;flex-wrap:wrap}
 .chosen span{background:var(--moss);color:#fff;border-radius:999px;padding:5px 11px;font-size:14px}
 
-.outbox{display:flex;align-items:center;gap:10px;background:var(--paper);border:2px solid var(--doing);border-radius:var(--r);padding:8px 8px 8px 14px;margin-bottom:12px}
+.outbox{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;background:var(--paper);border:2px solid var(--doing);border-radius:var(--r);padding:8px 8px 8px 14px;margin-bottom:12px}
+.outbox .grow{flex-basis:100%}
+.outbox .btn{min-height:44px;padding:8px 12px;font-size:15px}
+.chip.unsent{border:2px solid var(--doing);font-weight:600}
 .outbox b{font-variant-numeric:tabular-nums}
 .badge{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:var(--moss);color:#fff;border-radius:6px;padding:2px 6px}
 .section{font-size:13px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink2);margin:6px 0 0}
@@ -115,6 +118,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 
 <div class="top">
   <button class="chip" id="who" title="Din profil"><span class="dot" id="syncdot"></span><span id="whoName">Navn?</span><span class="badge" id="whoBadge" hidden>Chef</span></button>
+  <button class="chip unsent" id="btnUnsent" hidden aria-label="Vis ændringer, der ikke er sendt"><span class="dot" style="background:var(--doing)"></span><span><span id="unsentCount">0</span> ikke sendt</span></button>
   <button class="chip" id="btnSearch" style="margin-left:auto" aria-label="Søg sted">⌕ <span>Søg</span></button>
 </div>
 <div class="toast" id="toast" role="status"></div>
@@ -123,7 +127,9 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <div class="grip"></div>
   <div class="outbox" id="outbox" hidden>
     <span class="grow"><b id="outCount">0</b> <span id="outLabel">ændringer</span> ikke sendt</span>
-    <button class="btn primary" id="btnSend" style="min-height:44px">Send</button>
+    <button class="btn primary" id="btnSend">Send</button>
+    <button class="btn" id="btnLater">Send senere</button>
+    <button class="btn ghost" id="btnDiscard" style="margin-left:auto">Annuller</button>
   </div>
 
   <!-- Task list -->
@@ -462,9 +468,12 @@ let autoSend = store.get("autoSend", false);
 const eff = id => (task && pending.get(task.id+"|"+id)) || progress.get(id);
 const statusOf = id => eff(id)?.status || "todo";
 const pendingCount = () => pending.size;
+let outboxLater = false; // "Send senere" folds the bar into a small chip at the top until it's tapped
 function renderOutbox(){
   const n = pending.size;
-  $("outbox").hidden = n===0;
+  if(!n) outboxLater = false;
+  $("outbox").hidden = n===0 || outboxLater;
+  $("btnUnsent").hidden = !(n && outboxLater); $("unsentCount").textContent = n;
   $("outCount").textContent = n; $("outLabel").textContent = n===1 ? "ændring" : "ændringer";
 }
 async function sendPending(){
@@ -487,6 +496,17 @@ async function sendPending(){
   toast(`Sendt: ${rows.length} ${rows.length===1?"ændring":"ændringer"} ✓`);
 }
 $("btnSend").onclick = sendPending;
+$("btnLater").onclick = ()=>{ outboxLater = true; renderOutbox(); };
+$("btnUnsent").onclick = ()=>{ outboxLater = false; renderOutbox(); };
+$("btnDiscard").onclick = ()=>{
+  const b = $("btnDiscard");
+  if(!b.dataset.armed){ b.dataset.armed=1; b.textContent="Slet dem?"; setTimeout(()=>{delete b.dataset.armed; b.textContent="Annuller";},3000); return; }
+  delete b.dataset.armed; b.textContent="Annuller";
+  const n = pending.size;
+  pending.clear(); store.set("pending", []);
+  renderOutbox(); refresh();
+  toast(`${n} ${n===1?"ændring":"ændringer"} slettet`);
+};
 $("autoSend").onchange = e=>{ autoSend = e.target.checked; store.set("autoSend", autoSend); if(autoSend) sendPending(); };
 
 async function loadTasks(){
@@ -530,8 +550,11 @@ async function loadProgress(taskId){
   store.get("prog:"+taskId,[]).forEach(r=>progress.set(r.element_id,r));
 }
 function setStatus(ids, status, note){
-  ids.forEach(id=>{ const prev = eff(id) || {};
-    pending.set(task.id+"|"+id, {task_id:task.id, element_id:id, status: status ?? prev.status ?? "todo", note: note ?? prev.note ?? "", worker:me}); });
+  ids.forEach(id=>{ const prev = eff(id) || {}, key = task.id+"|"+id;
+    const r = {task_id:task.id, element_id:id, status: status ?? prev.status ?? "todo", note: note ?? prev.note ?? "", worker:me};
+    // Setting an element back to what the team already has is not a change, so it leaves the outbox
+    const base = progress.get(id) || {status:"todo", note:""};
+    if(r.status===base.status && r.note===(base.note||"")) pending.delete(key); else pending.set(key, r); });
   store.set("pending", [...pending.values()]);
   renderOutbox(); refresh();
   if(autoSend) sendPending();

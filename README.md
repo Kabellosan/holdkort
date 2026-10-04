@@ -6,7 +6,7 @@ Shared task map for the idverde crew in Ikast-Brande. The kommune's maintenance 
 1. **Boss creates a task:** taps **Ny opgave** and marks the area on the map, either as a **rectangle** (drag the corners or edges to resize, the middle to move) or **drawn freehand** with a finger (then drag the points to adjust). Then searches "pur", ticks *HA3 Pur*, picks who should do it (or Alle), taps **Opret**. A boss can redraw a task's area later with **▭ Område** inside the task.
 2. **Crew opens the task:** every pur bed in that area shows up in red, and the top shows e.g. `0/47`.
 3. **Næste ▸** jumps to the nearest location nobody has started, based on your GPS (which never leaves the phone).
-4. Tap **Færdig** → it turns green on your phone. Press **Send** when you choose, and it turns green for everyone. Tap more elements on the map to mark several at once. **I gang** (yellow) tells the others you're on it, so Næste skips it for them.
+4. Tap **Færdig** → it turns green on your phone. Press **Send** when you choose, and it turns green for everyone. **Send senere** tucks the unsent count into a small chip at the top; **Annuller** (tap twice) throws the unsent marks away. Setting an element back to what the team already sees is not counted as a change. Tap more elements on the map to mark several at once. **I gang** (yellow) tells the others you're on it, so Næste skips it for them.
 5. **Liste** shows everything nearest first, with notes like "kun nordsiden mangler".
 6. When the job is done, tap **Afslut** on the task. Next season, make a new task and everything starts red again.
 
