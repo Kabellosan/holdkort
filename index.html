@@ -410,7 +410,10 @@ function fmtDist(m){ return m<1000 ? `${Math.round(m/10)*10} m` : `${(m/1000).to
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2));
 const codeNames = codes => codes.map(c=>CODES[c]||c).join(" + ");
 
+// Phone keyboards often add a trailing space after a name; tidy names wherever they come in
+const cleanName = n => String(n||"").trim().replace(/\s+/g," ");
 let user = store.get("user", null);   // {name, role: "crew"|"boss"}
+if(user) user.name = cleanName(user.name);
 let me = user?.name || "";
 const isBoss = () => user?.role === "boss";
 async function sha(txt){ const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(txt)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join(""); }
@@ -421,7 +424,7 @@ function applyUser(){
   $("pLogin").hidden = !!user;
 }
 $("btnLogin").onclick = async ()=>{
-  const name = $("loginName").value.trim().replace(/\s+/g," "), code = $("loginCode").value.trim().toLowerCase();
+  const name = cleanName($("loginName").value), code = $("loginCode").value.trim().toLowerCase();
   if(!name){ $("loginErr").textContent = "Skriv dit navn"; return; }
   const h = await sha(code);
   const role = h===BOSS_CODE_SHA ? "boss" : h===CREW_CODE_SHA ? "crew" : null;
@@ -541,7 +544,7 @@ if(sb){
       if(over && !task){ clearTimeout(over.t); over.t = setTimeout(overPaint, 1500); return; }
       if(!task || !r || r.task_id!==task.id) return;
       progress.set(r.element_id, r); refresh();
-      if(r.worker !== me){ const f = elSrc.getFeatureById(r.element_id);
+      if(norm(r.worker) !== norm(me)){ const f = elSrc.getFeatureById(r.element_id);
         const k = r.worker + r.updated_at; remoteBatch[k] = (remoteBatch[k]||0) + 1; const n = remoteBatch[k];
         toast(`${isBoss() ? "Opdateret" : (r.worker||"Nogen")}: ${LABEL[r.status]}${n>1 ? ` · ${n} elementer` : f ? " · " + titleOf(f) : ""}`); }
     })
@@ -654,7 +657,7 @@ function subOf(f){
 }
 
 // ================= TASK LIST =================
-const norm = n => String(n||"").trim().replace(/\s+/g," ").toLowerCase();
+const norm = n => cleanName(n).toLowerCase();
 const forMe = t => !t.assignees?.length || t.assignees.some(a=>norm(a)===norm(me));
 const whoFor = t => !t.assignees?.length ? "Alle" : t.assignees.join(", ");
 function taskRow(t){
@@ -756,7 +759,7 @@ function refresh(){
 // ================= NEW TASK (full screen) =================
 let picked = new Set(), newShape = null, assignees = new Set(), people = [];
 async function loadPeople(){
-  if(sb){ const {data} = await sb.from("people").select("name,role").order("name"); if(data) people = data.filter(p=>p.role==="crew").map(p=>p.name); }
+  if(sb){ const {data} = await sb.from("people").select("name,role").order("name"); if(data) people = data.filter(p=>p.role==="crew").map(p=>cleanName(p.name)); }
   else people = [...new Set(tasks.flatMap(t=>t.assignees||[]))];
 }
 function renderAssign(){
@@ -766,7 +769,7 @@ function renderAssign(){
   $("assignList").querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{
     const n = b.dataset.p; if(!n) assignees.clear(); else assignees.has(n) ? assignees.delete(n) : assignees.add(n); renderAssign(); });
   $("assignList").querySelector("[data-add]").onclick = ()=>{
-    const n = (window.prompt("Navn på medarbejder:")||"").trim(); if(n){ if(!people.includes(n)) people.push(n); assignees.add(n); renderAssign(); } };
+    let n = cleanName(window.prompt("Navn på medarbejder:")); if(n){ n = people.find(p=>norm(p)===norm(n)) || n; if(!people.includes(n)) people.push(n); assignees.add(n); renderAssign(); } };
 }
 function renderCodes(){
   const q = $("codeSearch").value.trim().toLowerCase();
