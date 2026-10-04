@@ -446,7 +446,10 @@ function ago(ts){ if(!ts) return ""; const d=new Date(ts), t=new Date(); const d
   return diff<=0?"i dag":diff===1?"i går":d.toLocaleDateString("da-DK",{day:"numeric",month:"short"}); }
 function fmtDist(m){ return m<1000 ? `${Math.round(m/10)*10} m` : `${(m/1000).toFixed(1).replace(".",",")} km`; }
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2));
-const codeNames = codes => codes.map(c=>CODES[c]||c).join(" + ");
+// "Pur (HA3)": the plain name with the kommune's code, so crew and the GIS data use the same words
+const typeName = c => CODES[c] ? `${CODES[c]} (${c})` : c;
+const codeNames = codes => codes.map(typeName).join(" + ");
+const plainNames = codes => codes.map(c=>CODES[c]||c).join(" + ");
 
 // Phone keyboards often add a trailing space after a name; tidy names wherever they come in
 const cleanName = n => String(n||"").trim().replace(/\s+/g," ");
@@ -695,7 +698,7 @@ async function nameByStreet(feats, extent){
   });
 }
 function titleOf(f){
-  const name = CODES[f.get("elementkode")] || f.get("elementkode");
+  const name = typeName(f.get("elementkode"));
   const street = f.get("vejnavn") || f.get("_street");
   return street ? `${name} · ${street}` : name;
 }
@@ -838,8 +841,8 @@ function renderCodes(){
   });
 }
 function renderChosen(){
-  $("chosen").innerHTML = [...picked].map(c=>`<span>${esc(CODES[c])}</span>`).join("") || `<span class="muted" style="background:none;color:var(--ink2);padding:0">Ingen typer valgt</span>`;
-  if(!$("taskTitle").dataset.touched) $("taskTitle").value = codeNames([...picked]);
+  $("chosen").innerHTML = [...picked].map(c=>`<span>${esc(typeName(c))}</span>`).join("") || `<span class="muted" style="background:none;color:var(--ink2);padding:0">Ingen typer valgt</span>`;
+  if(!$("taskTitle").dataset.touched) $("taskTitle").value = plainNames([...picked]);
 }
 // Step 1: draw the area on the map. Step 2: pick types and people.
 function beginNewTask(code){
@@ -860,7 +863,7 @@ $("taskTitle").oninput = ()=>$("taskTitle").dataset.touched = 1;
 $("btnNewCancel").onclick = ()=>{ $("pNew").hidden = true; };
 $("btnCreate").onclick = async ()=>{
   if(!picked.size){ toast("Vælg mindst én type"); return; }
-  const t = {id:uuid(), name:$("taskTitle").value.trim() || codeNames([...picked]), codes:[...picked],
+  const t = {id:uuid(), name:$("taskTitle").value.trim() || plainNames([...picked]), codes:[...picked],
     extent:newShape.extent, area:newShape.area, assignees:[...assignees], created_by:me, created_at:new Date().toISOString(), archived:false};
   if(await saveTask(t)){ $("pNew").hidden = true; openTask(t); }
 };
@@ -1156,14 +1159,14 @@ function showEl(zoom){
   const fs = [...selSet], n = fs.length, f = selected;
   if(n > 1){
     const streets = [...new Set(fs.map(g=>g.get("vejnavn")||g.get("_street")).filter(Boolean))];
-    const kinds = [...new Set(fs.map(g=>CODES[g.get("elementkode")]||g.get("elementkode")))];
+    const kinds = [...new Set(fs.map(g=>typeName(g.get("elementkode"))))];
     $("elCode").textContent = `${n} elementer valgt`;
     $("elTitle").textContent = `${kinds.join(" + ")}${streets.length ? " · " + streets.slice(0,2).join(", ") : ""}`;
     const area = fs.reduce((a,g)=>a+(g.get("geometri_areal")||0),0);
     $("elSub").textContent = area ? `${Math.round(area)} m² i alt` : "";
     $("multiHint").textContent = "Tryk igen for at fjerne et.";
   } else {
-    $("elCode").textContent = f.get("elementkode");
+    $("elCode").textContent = "1 element valgt";
     $("elTitle").textContent = titleOf(f);
     $("elSub").textContent = subOf(f);
     $("multiHint").textContent = "Tryk på flere for at markere dem.";
