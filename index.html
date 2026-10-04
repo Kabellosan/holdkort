@@ -108,6 +108,12 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .people button{border-radius:999px;border:2px solid var(--line);background:var(--card);padding:8px 14px;min-height:42px;font-size:15px}
 .people button.on{border-color:var(--moss2);background:var(--moss);color:#fff}
 .err{color:var(--todo);font-size:14px;min-height:1.2em}
+.selrow{align-items:center}
+.btn.clear{min-height:50px;font-weight:600;flex:none;white-space:nowrap}
+.ask{position:absolute;inset:0;background:#0007;display:flex;align-items:center;justify-content:center;padding:18px;z-index:30}
+.ask>div{background:var(--card);border-radius:20px;padding:20px;max-width:360px;width:100%;display:flex;flex-direction:column;gap:12px;box-shadow:0 10px 40px #0005}
+.ask h2{font-size:20px}
+.ask .btn{width:100%;min-height:56px;font-size:17px}
 .toast{position:absolute;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 64px);background:var(--moss);color:#fff;padding:10px 16px;border-radius:999px;font-size:15px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:88vw;text-align:center;z-index:20}
 .toast.show{opacity:1}
 .spin{display:inline-block;width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-3px}
@@ -199,7 +205,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <div class="grow"><div class="eyebrow" id="elCode"></div><h2 id="elTitle"></h2><div class="muted" id="elSub"></div></div>
       <button class="btn ghost" id="btnElClose" aria-label="Luk">✕</button>
     </div>
-    <div class="muted" id="multiHint">Tryk på flere elementer på kortet for at markere dem samtidig.</div>
+    <div class="row selrow"><span class="muted grow" id="multiHint">Tryk på flere for at markere dem.</span><button class="btn clear" id="btnClearSel">✕ Ryd markerede</button></div>
     <div class="status">
       <button data-s="todo"><i style="background:var(--todo)"></i><span>Mangler</span></button>
       <button data-s="doing"><i style="background:var(--doing)"></i><span>I gang</span></button>
@@ -217,6 +223,16 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button class="btn ghost" id="fltTodo"></button>
     </div>
     <div class="scroll" id="elList"></div>
+  </div>
+</div>
+
+<!-- Ask before clearing all marks -->
+<div class="ask" id="askClear" hidden role="dialog" aria-modal="true" aria-labelledby="askClearQ">
+  <div>
+    <h2 id="askClearQ">Fjern alle markeringer?</h2>
+    <div class="muted" id="askClearSub"></div>
+    <button class="btn primary" id="askClearYes">Ja, fjern dem</button>
+    <button class="btn" id="askClearNo">Nej, behold dem</button>
   </div>
 </div>
 
@@ -1145,13 +1161,14 @@ function showEl(zoom){
     $("elTitle").textContent = `${kinds.join(" + ")}${streets.length ? " · " + streets.slice(0,2).join(", ") : ""}`;
     const area = fs.reduce((a,g)=>a+(g.get("geometri_areal")||0),0);
     $("elSub").textContent = area ? `${Math.round(area)} m² i alt` : "";
-    $("multiHint").textContent = "Tryk på et valgt element for at fjerne det.";
+    $("multiHint").textContent = "Tryk igen for at fjerne et.";
   } else {
     $("elCode").textContent = f.get("elementkode");
     $("elTitle").textContent = titleOf(f);
     $("elSub").textContent = subOf(f);
-    $("multiHint").textContent = "Tryk på flere elementer på kortet for at markere dem samtidig.";
+    $("multiHint").textContent = "Tryk på flere for at markere dem.";
   }
+  $("btnClearSel").textContent = n>1 ? `✕ Ryd ${n} markerede` : "✕ Ryd markerede";
   const sts = new Set(fs.map(g=>statusOf(g.getId())));
   const s = sts.size===1 ? [...sts][0] : null;
   document.querySelectorAll(".status [data-s]").forEach(b=>b.classList.toggle("on", b.dataset.s===s));
@@ -1179,19 +1196,35 @@ map.on("singleclick", e=>{
   }
   if(!task) return;
   const hits = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:12});
-  if(!hits.length){ if(!$("pEl").hidden) select(null); return; }
-  if($("pEl").hidden){ select(hits[0]); return; }
-  // An element is open: taps add to the selection, preferring what isn't selected yet (beds can overlap)
-  const add = hits.find(h=>!selSet.has(h));
+  const open = !$("pEl").hidden && selSet.size;
+  if(!hits.length){
+    // Tapping empty map: one mark just closes; several marks ask first, so a stray tap doesn't lose them
+    if(open && selSet.size > 1) askClear(); else if(open) select(null);
+    return;
+  }
+  if(!open){ select(hits[0]); return; }
+  // Tapping right on a marked element removes it; otherwise add the nearest unmarked one (beds can overlap)
+  const exact = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:0}).find(h=>selSet.has(h));
+  const add = !exact && hits.find(h=>!selSet.has(h));
   if(add) selSet.add(add);
   else {
-    const f = hits[0];
-    if(selSet.size === 1) return; // keep the last one; tap empty map to close
+    const f = exact || hits.find(h=>selSet.has(h));
     selSet.delete(f);
+    if(!selSet.size){ select(null); return; }
     if(f===selected) selected = [...selSet][0];
   }
   elLayer.changed(); showEl(false);
 });
+function askClear(){
+  $("askClearSub").textContent = `${selSet.size} elementer er markeret. Det, du har sat, bliver ikke slettet.`;
+  $("askClear").hidden = false; $("askClearNo").focus();
+}
+function closeAsk(){ $("askClear").hidden = true; }
+$("askClearYes").onclick = ()=>{ closeAsk(); select(null); toast("Markeringer fjernet"); };
+$("askClearNo").onclick = closeAsk;
+$("askClear").onclick = e=>{ if(e.target===$("askClear")) closeAsk(); };
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !$("askClear").hidden) closeAsk(); });
+$("btnClearSel").onclick = ()=>{ const n = selSet.size; select(null); if(n>1) toast("Markeringer fjernet"); };
 document.querySelectorAll(".status [data-s]").forEach(b=>b.onclick=()=>{
   const ids = [...selSet].map(g=>g.getId());
   setStatus(ids, b.dataset.s);
