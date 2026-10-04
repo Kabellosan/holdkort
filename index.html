@@ -75,6 +75,8 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
 .pill.none{background:#7c5cff}
+.item .swatch{flex:none;width:6px;align-self:stretch;border-radius:3px;margin:-4px 0}
+.item.on{border-color:var(--ink2)}
 
 /* Full-screen panel for creating a task */
 .panel{position:absolute;inset:0;background:var(--card);display:flex;flex-direction:column;z-index:10}
@@ -369,11 +371,25 @@ const overSrc = new ol.source.Vector(); // overview: one type in the whole kommu
 const overLayer = new ol.layer.Vector({source:overSrc, style:(f,res)=>shapeStyle(f.get("_s")||"none", false, res > 3.2), renderBuffer:200});
 const areaSrc = new ol.source.Vector();
 const areaDash = new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffdd",width:2,lineDash:[10,8]})});
-const areaLayer = new ol.layer.Vector({source:areaSrc, style:areaDash});
+// Overview: each task gets its own outline colour so overlapping areas can be told apart (none of them red/yellow/green/purple)
+const TASK_COLORS = ["#2f6fe0", "#c2338a", "#0e8f9e", "#8b5a2b", "#2c2f8f", "#56636f", "#e05a1f"];
+const areaStyleCache = {};
+function areaStyle(f){
+  const c = f.get("color"); if(!c) return areaDash;
+  const foc = over?.focus, dim = foc && foc!==f.get("tid"), on = foc===f.get("tid");
+  const key = c + (dim ? "d" : on ? "o" : "");
+  return areaStyleCache[key] ||= [
+    new ol.style.Style({stroke:new ol.style.Stroke({color: dim ? "#ffffff55" : "#ffffffdd", width: on ? 9 : 6}), zIndex:0}),
+    new ol.style.Style({stroke:new ol.style.Stroke({color: dim ? c+"66" : c, width: on ? 5 : 3, lineDash: on ? undefined : [12,6]}),
+      fill:new ol.style.Fill({color: c + (on ? "2a" : "14")}), zIndex:1})];
+}
+const areaLayer = new ol.layer.Vector({source:areaSrc, style:areaStyle});
 const labelLayer = new ol.layer.Vector({source:areaSrc, declutter:true, style:f=>{ // task names in the overview, above the elements
   const name = f.get("label"); if(!name) return null;
+  const dim = over?.focus && over.focus!==f.get("tid");
   return new ol.style.Style({text:new ol.style.Text({text:name, font:"600 13px system-ui,sans-serif", overflow:true,
-    fill:new ol.style.Fill({color:"#fff"}), stroke:new ol.style.Stroke({color:"#000a",width:3})})});
+    fill:new ol.style.Fill({color: dim ? "#ffffffaa" : "#fff"}), stroke:new ol.style.Stroke({color:(f.get("color")||"#000000")+(dim ? "66" : "ee"),width:4}),
+    padding:[2,4,2,4]}), zIndex: f.get("tid")===over?.focus ? 1 : 0});
 }});
 // The area being drawn or edited: a blue outline with round handles you can drag
 const EDIT = "#2b6cd4";
@@ -1065,22 +1081,26 @@ async function progressFor(ids){
 }
 async function overPaint(){
   const o = over; if(!o) return;
-  const tl = tasks.filter(t=>(t.codes||[]).includes(o.code));
+  // Oldest first, so each task keeps its colour while the list of tasks stays the same
+  const tl = tasks.filter(t=>(t.codes||[]).includes(o.code)).sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
+  const col = new Map(tl.map((t,i)=>[t.id, TASK_COLORS[i % TASK_COLORS.length]]));
+  if(o.focus && !col.has(o.focus)) o.focus = null;
   const prog = await progressFor(tl.map(t=>t.id));
   if(over!==o) return;
   areaSrc.clear();
-  tl.forEach(t=>{ const f = new ol.Feature(shapeGeom(t)); f.set("label", t.name); areaSrc.addFeature(f); });
+  tl.forEach(t=>{ const f = new ol.Feature(shapeGeom(t)); f.setProperties({label:t.name, tid:t.id, color:col.get(t.id)}); areaSrc.addFeature(f); });
   const shapes = tl.map(t=>({t, s:prepShape(t)})), RANK = {todo:0, doing:1, done:2};
   const per = new Map(tl.map(t=>[t.id, {done:0, total:0}])), c = {none:0, todo:0, doing:0, done:0};
   overSrc.getFeatures().forEach(f=>{
-    const g = f.getGeometry(); let best = null, bt = null;
+    const g = f.getGeometry(); let best = null; const in_ = [];
     for(const {t,s} of shapes){
       if(!inShape(g, s)) continue;
       const st = prog.get(t.id+"|"+f.getId()) || "todo", p = per.get(t.id);
       p.total++; if(st==="done") p.done++;
-      if(best===null || RANK[st] > RANK[best]){ best = st; bt = t.id; }
+      in_.push([t.id, st]);
+      if(best===null || RANK[st] > RANK[best]) best = st;
     }
-    f.set("_s", best || "none", true); f.set("_t", bt, true); c[best || "none"]++;
+    f.set("_s", best || "none", true); f.set("_t", in_, true); c[best || "none"]++;
   });
   overLayer.changed();
   const n = overSrc.getFeatures().length, name = (CODES[o.code]||o.code).toLowerCase();
@@ -1090,12 +1110,18 @@ async function overPaint(){
   $("overTasks").innerHTML = (c.none ? `<button class="item" data-none="1"><div class="grow"><div class="t">Ikke i en opgave</div><div class="s">Vis hvor de ligger</div></div><span class="pill none num">${c.none}</span></button>` : "")
     + `<div class="section">Opgaver med ${esc(name)}</div>`
     + (tl.length ? tl.map(t=>{ const p = per.get(t.id);
-        return `<div class="row"><button class="item grow" data-fit="${esc(t.id)}"><div class="grow"><div class="t">${esc(t.name)}</div><div class="s">${esc(whoFor(t))}</div></div>
+        return `<div class="row"><button class="item grow${o.focus===t.id ? " on" : ""}" data-fit="${esc(t.id)}"><i class="swatch" style="background:${col.get(t.id)}"></i><div class="grow"><div class="t">${esc(t.name)}</div><div class="s">${esc(whoFor(t))}</div></div>
           <span class="pill ${p.total && p.done===p.total ? "done" : "todo"} num">${p.done}/${p.total}</span></button>
           <button class="btn ghost" data-open="${esc(t.id)}">Åbn</button></div>`; }).join("")
       : `<p class="muted" style="margin:0">Ingen aktive opgaver med ${esc(name)}.</p>`);
   const fit = ext => map.getView().fit(ext, {padding:[70,30,sheetPad(),30], maxZoom:11, duration:350});
-  $("overTasks").querySelectorAll("[data-fit]").forEach(b=>b.onclick=()=>fit(tasks.find(t=>t.id===b.dataset.fit).extent));
+  // Tapping a task shows it on the map and fades the others; tapping it again shows all tasks equally
+  $("overTasks").querySelectorAll("[data-fit]").forEach(b=>b.onclick=()=>{
+    const id = b.dataset.fit, on = o.focus!==id; o.focus = on ? id : null;
+    $("overTasks").querySelectorAll("[data-fit]").forEach(x=>x.classList.toggle("on", x.dataset.fit===o.focus));
+    areaLayer.changed(); labelLayer.changed();
+    if(on) fit(tasks.find(t=>t.id===id).extent);
+  });
   $("overTasks").querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openTask(tasks.find(t=>t.id===b.dataset.open)));
   const nb = $("overTasks").querySelector("[data-none]");
   if(nb) nb.onclick = ()=>{ const ext = ol.extent.createEmpty(); overSrc.getFeatures().forEach(f=>{ if(f.get("_s")==="none") ol.extent.extend(ext, f.getGeometry().getExtent()); }); fit(ext); };
@@ -1145,7 +1171,10 @@ map.on("singleclick", e=>{
   if(areaEd) return;
   if(over && !task){
     const f = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===overLayer, hitTolerance:12})[0];
-    if(f){ const t = tasks.find(x=>x.id===f.get("_t")); toast(`${titleOf(f)}${subOf(f) ? " · " + subOf(f) : ""} · ${t ? LABEL[f.get("_s")] + " i " + t.name : "ikke i en opgave"}`, 4000); }
+    if(f){ // every task the element is in, grouped by its status there
+      const by = {}; (f.get("_t")||[]).forEach(([id,st])=>{ const t = tasks.find(x=>x.id===id); if(t) (by[st] ||= []).push(t.name); });
+      const parts = ["done","doing","todo"].filter(s=>by[s]).map(s=>`${LABEL[s]} i ${by[s].join(", ")}`), n = Object.values(by).flat().length;
+      toast(`${titleOf(f)}${subOf(f) ? " · " + subOf(f) : ""} · ${parts.length ? parts.join(" · ") : "ikke i en opgave"}`, 4000 + 1500*Math.max(0, n-1)); }
     return;
   }
   if(!task) return;
