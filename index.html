@@ -692,7 +692,7 @@ function setStatus(ids, status, note, reason, photo){
     const photos = [...(pending.get(key)?._photos || []), ...(photo ? [photo] : [])];
     // _fields are for the log only: what the team had before, the element's type, photos waiting to be sent
     const r = {task_id:task.id, element_id:id, status: status ?? prev.status ?? "todo", note: note ?? prev.note ?? "", worker:me,
-      _was: base.status==="done", _note0: base.note||"", _code: elSrc.getFeatureById(id)?.get("elementkode") || null, _photos: photos};
+      _was: base.status==="done", _st0: base.status||"todo", _reason0: base.reason||null, _note0: base.note||"", _code: elSrc.getFeatureById(id)?.get("elementkode") || null, _photos: photos};
     // The reason only belongs to "blocked"; any other status clears it
     r.reason = r.status==="blocked" ? (reason ?? prev.reason ?? "Andet") : null;
     // Setting an element back to what the team already has is not a change, so it leaves the outbox
@@ -1320,24 +1320,35 @@ async function tendedForCode(code){ // the whole kommune, for the overview
   }
   return m;
 }
-// After the marks are saved: a line per element newly done, with a new note, or with a photo.
-// Done taken back (e.g. a wrong tap) removes this task's done line from the last two days.
+// After the marks are saved: a line per element whose status changed (Mangler, I gang, Blokeret, Færdig), with a new note, or with a photo.
+// Done taken back (e.g. a wrong tap) removes this task's done line from the last two days, so "sidst passet" stays true.
 async function writeLog(rows, paths){
   const day = today(), add = [], undo = [];
   rows.forEach(r=>{
     if(r._was && r.status!=="done") undo.push(r);
+    const st0 = r._st0 ?? (r._was ? "done" : null); // marks queued before this version have no _st0
+    const changed = r.status!==st0 || (r.status==="blocked" && (r.reason||null)!==(r._reason0||null));
     const done = r.status==="done" && !r._was, noted = !!r.note && r.note!==r._note0;
     const photos = (r._photos||[]).map(p=>paths[p]).filter(Boolean);
-    if(!done && !noted && !photos.length) return;
-    const line = {element_id:r.element_id, code:r._code, task_id:r.task_id, day, done, note: (done || noted) && r.note ? r.note : null, photo:null};
+    if(!changed && !noted && !photos.length) return;
+    const line = {element_id:r.element_id, code:r._code, task_id:r.task_id, day, done, status: changed ? r.status : null,
+      reason: changed && r.status==="blocked" ? r.reason||null : null, note: (done || noted) && r.note ? r.note : null, photo:null};
     if(!photos.length) add.push(line);
-    else photos.forEach((p,i)=>add.push({...line, done: done && i===0, note: i===0 ? line.note : null, photo:p}));
+    else photos.forEach((p,i)=>add.push(i===0 ? {...line, photo:p} : {...line, done:false, status:null, reason:null, note:null, photo:p}));
     if(done) lastTended.set(r.element_id, day);
   });
   const back = new Date(Date.now() - 864e5), yday = `${back.getFullYear()}-${String(back.getMonth()+1).padStart(2,"0")}-${String(back.getDate()).padStart(2,"0")}`;
   for(const r of undo)
     await sb.from("element_log").delete().eq("task_id", r.task_id).eq("element_id", r.element_id).eq("done", true).gte("day", yday);
-  if(add.length){ const {error} = await sb.from("element_log").insert(add); if(error) console.error("element_log", error); }
+  if(add.length){
+    let {error} = await sb.from("element_log").insert(add);
+    // Until the database has the status columns, keep logging done, notes and photos as before
+    if(error && (error.code==="PGRST204" || /'(status|reason)' column/.test(error.message||""))){
+      const old = add.map(({status, reason, ...l})=>l).filter(l=>l.done || l.note || l.photo);
+      ({error} = old.length ? await sb.from("element_log").insert(old) : {error:null});
+    }
+    if(error) console.error("element_log", error);
+  }
   if(undo.length && task){ const m = await loadLastTended(undo.map(r=>r.element_id)); undo.forEach(r=>{ if(m.has(r.element_id)) lastTended.set(r.element_id, m.get(r.element_id)); else lastTended.delete(r.element_id); }); }
 }
 function showTended(fs){
@@ -1399,13 +1410,16 @@ $("photoIn").onchange = async e=>{
     toast(autoSend ? "Billede tilføjet" : "Billedet er lagt klar. Tryk Send", 3000);
   }catch(err){ console.error(err); toast("Billedet kunne ikke gemmes. Prøv igen.", 4000); }
 };
+// Older lines have only "done"; newer ones carry the status they were set to
+const histPill = r => { const st = r.status || (r.done ? "done" : null); if(!st) return "";
+  return `<span class="pill ${st}">${st==="blocked" ? "🚧 " : ""}${LABEL[st]}${st==="blocked" && r.reason ? ": " + esc(r.reason) : ""}</span>`; };
 async function showHistory(f){
   const id = f.getId(), L = $("histList");
   $("histTitle").textContent = titleOf(f);
   L.innerHTML = `<p class="muted"><span class="spin"></span> Henter …</p>`;
   $("pHist").hidden = false;
   const waiting = [...pending.values()].filter(r=>r.element_id===id && r._photos?.length);
-  const {data, error} = await sb.from("element_log").select("id,day,done,note,photo,task_id").eq("element_id", id).order("day",{ascending:false}).order("id",{ascending:false}).limit(100);
+  const {data, error} = await sb.from("element_log").select("*").eq("element_id", id).order("day",{ascending:false}).order("id",{ascending:false}).limit(100);
   if($("pHist").hidden) return;
   if(error){ L.innerHTML = `<p class="muted">Historikken kan ikke hentes lige nu. Tjek forbindelsen.</p>`; return; }
   const taskName = tid => tasks.find(t=>t.id===tid)?.name;
@@ -1413,11 +1427,11 @@ async function showHistory(f){
   for(const r of waiting) for(const p of r._photos){ const b = await photoGet(p); if(b) local.push(URL.createObjectURL(b)); }
   L.innerHTML = (local.length ? `<div class="hist"><div class="when"><b>Ikke sendt endnu</b></div>${local.map(u=>`<img src="${u}" alt="Billede, ikke sendt">`).join("")}</div>` : "")
     + (data.length ? data.map(r=>`<div class="hist">
-        <div class="when"><b>${esc(longDate(r.day))}</b><span class="muted">${sinceText(r.day)}</span>${r.done ? `<span class="pill done">Færdig</span>` : ""}</div>
+        <div class="when"><b>${esc(longDate(r.day))}</b><span class="muted">${sinceText(r.day)}</span>${histPill(r)}</div>
         ${taskName(r.task_id) ? `<div class="muted">${esc(taskName(r.task_id))}</div>` : ""}
         ${r.note ? `<div>${esc(r.note)}</div>` : ""}
         ${r.photo ? `<img src="${esc(photoUrl(r.photo))}" loading="lazy" alt="Billede fra ${esc(longDate(r.day))}">` : ""}</div>`).join("")
-      : (local.length ? "" : `<p class="muted">Intet registreret endnu. Når elementet sendes som færdigt, eller får en note eller et billede, kommer det her.</p>`));
+      : (local.length ? "" : `<p class="muted">Intet registreret endnu. Når elementets status sendes, eller det får en note eller et billede, kommer det her.</p>`));
   L.querySelectorAll("img").forEach(i=>i.onclick=()=>{ $("photoImg").src = i.src; $("photoView").hidden = false; });
 }
 $("btnHist").onclick = ()=>{ if(selected) showHistory(selected); };

@@ -27,6 +27,9 @@ create view public.last_tended with (security_invoker = on) as
   from public.element_log where done group by element_id, code;
 grant select on public.last_tended to anon, authenticated;
 
+-- Every status change gets a line (todo/doing/blocked/done), with the blocked reason
+alter table public.element_log add column status text, add column reason text;
+
 -- Photos: public bucket, jpegs up to 3 MB; the app can upload but not overwrite or delete
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('photos', 'photos', true, 3145728, array['image/jpeg']);
