@@ -15,6 +15,7 @@ A phone web app for Captain's idverde crew (Ikast-Brande Kommune contract). Boss
   - Filter field `elementkode`; geometry column `wkb_geometry`; stable id `ogc_fid`. CRS EPSG:25832.
   - Pur and fortov have no street name; the app borrows the nearest road's `vejnavn`.
   - Code → name list is in `CODES` in `index.html` (from the WMS capabilities titles).
+  - Per-type "definition of done" and safety requirements are in `REQS` in `index.html` (`{done:[], safety:[]}` per code), shown in a folded "Krav og sikkerhed" section in the element panel. Hidden for types with nothing filled in. Empty until the user supplies their requirements PDF; never invent requirements.
 - **Aerial photo (WMS, MapServer):** `https://kort.ikast-brande.dk/wms`, `SERVICENAME=entreprenoer_udbud`, layer `theme-ortofoto2024`. `theme-orto_foraar_daf` (from the kommune's own map link) does NOT exist in this service.
 - **Place search:** Photon (photon.komoot.io) while typing; Nominatim only on Enter / "Søg grundigere" (its usage policy forbids autocomplete). Typing "… station" adds a Photon `osm_tag=railway:station` query. **DAWA is shut down (HTTP 410).**
 - The kommune's `robots.txt` is `Disallow: /`. Therefore: **no nightly server job / scraper** without the kommune's written OK. Phones fetch only when a person opens a task.
