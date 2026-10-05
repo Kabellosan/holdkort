@@ -34,11 +34,14 @@ A phone web app for Captain's idverde crew (Ikast-Brande Kommune contract). Boss
 - Trigger `progress_day_only` truncates `updated_at` to the day **in the database**.
 - RLS (anon): read/insert/update on all three; delete on `progress` only when its task is archived; no deletes on tasks/people.
 - Realtime on `tasks` and `progress`.
+- `element_log` (id, element_id, code, task_id, day, done, note, photo): append-only tending log, **no worker name**, survives archiving. Written on Send for elements newly done, with a new note, or with a photo; un-doing within a day deletes that task's done line (RLS allows delete only for day >= yesterday, insert only for today ± 1). View `last_tended` (element_id, code, last_day; security_invoker) feeds "Sidst passet" in the element pane/list (RECENT = 14 days warning) and Overblik's "Sidst passet" mode (AGES buckets). SQL in `supabase/element_log.sql`.
+- Storage bucket `photos` (public, jpeg ≤ 3 MB, insert-only for anon). Photos are re-encoded on the phone via canvas (strips EXIF/GPS), kept in Cache API `photos-v1` with the pending mark until Send, path `<day>/<uuid>.jpg`.
+- Pending rows carry `_was`, `_note0`, `_code`, `_photos` for the log; anything starting with `_` is stripped before the `progress` upsert.
 
 ## Decisions the user made (don't undo without asking)
 - **Individual elements**, multi-select by tapping more elements. An earlier auto-grouping into "stops" was rejected.
 - **Login = name + shared code**, roles crew/boss. Codes are SHA-256 hashes in `index.html` (`CREW_CODE_SHA`, `BOSS_CODE_SHA`); placeholders `hold` / `chef`. Trust-based, not real security.
-- **Privacy:** the worker decides when data is sent (outbox + "Send"; auto-send is opt-in). GPS never leaves the phone. Only the day is stored/shown. Bosses see progress, not who did what. Closing a task deletes all its marks; only `summary {done,total}` remains. A "Hvad deles?" screen explains this in Danish.
+- **Privacy:** the worker decides when data is sent (outbox + "Send"; auto-send is opt-in). GPS never leaves the phone. Only the day is stored/shown. Bosses see progress, not who did what. Closing a task deletes all its marks; only `summary {done,total}` and the nameless `element_log` (day, task, note, photo per element) remain. A "Hvad deles?" screen explains this in Danish.
 - Assigned names match case- and whitespace-insensitively.
 - **Task visibility:** crew sees only tasks assigned to them by name or to everyone (empty `assignees`); bosses see all, plus a "Holdet" tab (per-person cards from `people` crew + assignee names). App-level only: with the shared anon key and name login, RLS cannot tell users apart. A firm version needs per-person Supabase Auth and RLS on `tasks`/`progress` by user id.
 
