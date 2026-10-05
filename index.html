@@ -212,7 +212,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button data-s="done"><i style="background:var(--done)"></i><span>Færdig</span></button>
     </div>
     <div class="row"><input type="text" id="note" placeholder="Note til holdet"><button class="btn" id="btnNote">Gem</button></div>
-    <div class="row"><span class="muted grow" id="elMeta"></span><button class="btn primary" id="btnNext2">Næste ▸</button></div>
+    <div class="row"><span class="muted grow" id="elMeta"></span><button class="btn" id="btnRoute">🧭 Vis vej</button><button class="btn primary" id="btnNext2">Næste ▸</button></div>
   </div>
 
   <!-- List -->
@@ -1235,6 +1235,16 @@ document.querySelectorAll(".status [data-s]").forEach(b=>b.onclick=()=>{
 });
 $("btnNote").onclick = ()=>{ setStatus([...selSet].map(g=>g.getId()), null, $("note").value); toast("Note gemt"); };
 $("btnElClose").onclick = ()=>select(null);
+// Directions in Google Maps (opens the Maps app on phones). Goes to the marked element nearest you,
+// at the point of it closest to its middle, so long lines and odd shapes still get a spot on the element.
+$("btnRoute").onclick = ()=>{
+  const fs = [...selSet]; if(!fs.length) return;
+  const gps = geo.getPosition();
+  const f = gps ? fs.reduce((a,b)=>distTo(b,gps)<distTo(a,gps)?b:a) : selected;
+  const g = f.getGeometry(), c = g.getClosestPoint(ol.extent.getCenter(g.getExtent()));
+  const [lon, lat] = ol.proj.toLonLat(c, proj);
+  window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat.toFixed(6)},${lon.toFixed(6)}`, "_blank", "noopener");
+};
 
 // ================= NEXT / LIST / GPS =================
 const geo = new ol.Geolocation({projection:proj, trackingOptions:{enableHighAccuracy:true, maximumAge:10000}});
