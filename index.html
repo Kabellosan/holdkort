@@ -81,6 +81,18 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .person{display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:var(--r);border:1px solid var(--line)}
 .person h3{margin:0;font-size:17px;display:flex;justify-content:space-between;gap:8px}
 .person h3 span{font-weight:400;color:var(--ink2);font-size:14px}
+/* Krav og sikkerhed: folded away under the element until someone wants it */
+#pEl{overflow-y:auto;-webkit-overflow-scrolling:touch;margin:0 -4px;padding:0 4px}
+.reqs{border-top:1px solid var(--line);padding-top:4px}
+.reqs summary{list-style:none;min-height:44px;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;color:var(--ink2);cursor:pointer}
+.reqs summary::-webkit-details-marker{display:none}
+.reqs summary::after{content:"▾";margin-left:auto;transition:transform .15s}
+.reqs[open] summary::after{transform:rotate(180deg)}
+.reqs .rbody{display:flex;flex-direction:column;gap:10px;padding-bottom:4px}
+.reqs h3{margin:0;font-size:15px}
+.reqs h4{margin:0;font-size:13px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink2)}
+.reqs ul{margin:2px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:4px;font-size:15px}
+.reqs .empty{font-size:14px;color:var(--ink2);font-style:italic}
 
 /* Full-screen panel for creating a task */
 .panel{position:absolute;inset:0;background:var(--card);display:flex;flex-direction:column;z-index:10}
@@ -227,6 +239,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="blockinfo" id="elBlock" hidden></div>
     <div class="row"><input type="text" id="note" placeholder="Note til holdet"><button class="btn" id="btnNote">Gem</button></div>
     <div class="row"><span class="muted grow" id="elMeta"></span><button class="btn" id="btnRoute">🧭 Vis vej</button><button class="btn primary" id="btnNext2">Næste ▸</button></div>
+    <details class="reqs" id="reqs"><summary>📋 Krav og sikkerhed</summary><div class="rbody" id="reqsBody"></div></details>
   </div>
 
   <!-- List -->
@@ -369,6 +382,13 @@ const CODES = {
  UD8:"Trådhegn",UD84a:"Saltværn",UD8c:"Hegnselementer",UD8d:"Dyrehegn",UD9:"Træhulsrist",
  VA3:"Grøft",VA3c:"Grøfteunderføring",VA3d:"Rabat",
  SB4a:"Sportsbelægning, gummi",SB4b:"Sportsbelægning, rødgrus",SB4e:"Kunstgræs, indendørs",SB4f:"Kunstgræs, udendørs",SB4g:"Faldsand",SB4h:"Strandsand"
+};
+
+// "Krav og sikkerhed" shown folded under each element, per type code.
+// done = when the element counts as Færdig; safety = what to watch out for. One line per bullet.
+// Example:  HA3: { done:["…","…"], safety:["…"] },
+// The section only appears for types with something filled in; an empty list next to a filled one shows "Ikke skrevet ind endnu".
+const REQS = {
 };
 
 // ================= MAP =================
@@ -1239,6 +1259,7 @@ function showEl(zoom){
     $("elSub").textContent = subOf(f);
     $("multiHint").textContent = "Tryk på flere for at markere dem.";
   }
+  showReqs([...new Set(fs.map(g=>g.get("elementkode")))]);
   $("btnClearSel").textContent = n>1 ? `✕ Ryd ${n} markerede` : "✕ Ryd markerede";
   const sts = new Set(fs.map(g=>statusOf(g.getId())));
   const s = sts.size===1 ? [...sts][0] : null;
@@ -1254,10 +1275,24 @@ function showEl(zoom){
     : latest ? (isBoss() ? `Sendt ${ago(latest.updated_at)}` : `${latest.worker||"?"} · ${ago(latest.updated_at)}`)
     : (n>1 ? "Ingen har rørt dem endnu" : "Ingen har rørt den endnu");
   if(zoom){
+    $("pEl").scrollTop = 0;
     const ext = ol.extent.createEmpty(); fs.forEach(g=>ol.extent.extend(ext, g.getGeometry().getExtent()));
     map.getView().fit(ext, {padding:[80,40,sheetPad(),40], maxZoom:12, duration:350});
   }
 }
+// Krav og sikkerhed for the selected type(s); remembers whether the person keeps it open
+// Hidden when none of the types has anything written in yet
+function showReqs(codes){
+  const has = c => REQS[c]?.done?.length || REQS[c]?.safety?.length;
+  $("reqs").hidden = !codes.some(has);
+  if($("reqs").hidden) return;
+  const list = (title, items) => `<div><h4>${title}</h4>${items?.length ? `<ul>${items.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>` : `<div class="empty">Ikke skrevet ind endnu.</div>`}</div>`;
+  $("reqsBody").innerHTML = codes.map(c=>{ const r = REQS[c] || {};
+    return `${codes.length>1 ? `<h3>${esc(typeName(c))}</h3>` : ""}${list("Færdig når", r.done)}${list("Sikkerhed", r.safety)}`; }).join("");
+  $("reqs").open = store.get("reqsOpen", false);
+}
+$("reqs").addEventListener("toggle", ()=>{ store.set("reqsOpen", $("reqs").open); });
+$("reqs").querySelector("summary").addEventListener("click", ()=>setTimeout(()=>{ if($("reqs").open) $("reqs").scrollIntoView({block:"nearest", behavior:"smooth"}); }, 0));
 map.on("singleclick", e=>{
   if(areaEd) return;
   if(over && !task){
