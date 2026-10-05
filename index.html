@@ -77,6 +77,9 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .pill.none{background:#7c5cff}
 .item .swatch{flex:none;width:6px;align-self:stretch;border-radius:3px;margin:-4px 0}
 .item.on{border-color:var(--ink2)}
+.person{display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:var(--r);border:1px solid var(--line)}
+.person h3{margin:0;font-size:17px;display:flex;justify-content:space-between;gap:8px}
+.person h3 span{font-weight:400;color:var(--ink2);font-size:14px}
 
 /* Full-screen panel for creating a task */
 .panel{position:absolute;inset:0;background:var(--card);display:flex;flex-direction:column;z-index:10}
@@ -142,6 +145,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 
   <!-- Task list -->
   <div class="pane" id="pTasks">
+    <div class="seg" id="bossView" role="group" aria-label="Visning" hidden>
+      <button data-v="tasks">Opgaver</button>
+      <button data-v="team">Holdet</button>
+    </div>
     <div class="scroll" id="taskList"></div>
     <div class="row" id="bossRow" hidden>
       <button class="btn primary fill" id="btnNewTask">+ Ny opgave</button>
@@ -296,6 +303,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <li><i>📤</i><span><b>Intet sendes, før du trykker Send</b> (medmindre du selv slår automatisk til).</span></li>
       <li><i>🧾</i><span><b>Det, der sendes:</b> hvilket element, status (mangler / i gang / færdig), en evt. note, dit navn og <i>dagen</i> det blev sendt. Ikke klokkeslæt for hver markering, og ingen rute.</span></li>
       <li><i>👀</i><span><b>Holdet</b> kan se, hvem der har markeret hvad, så I ikke tager det samme. <b>Cheferne</b> ser kun, hvor meget af opgaven der er færdigt.</span></li>
+      <li><i>📋</i><span><b>Du ser kun dine egne opgaver</b> og dem, der er til alle. Cheferne kan se, hvem der er sat på hvilke opgaver.</span></li>
       <li><i>🗑️</i><span><b>Når en opgave afsluttes,</b> slettes alle markeringer. Kun "færdig, 47 af 47" bliver gemt.</span></li>
     </ul>
     <p class="muted" id="profHonest"></p>
@@ -472,6 +480,7 @@ $("btnLogin").onclick = async ()=>{
   if(!role){ $("loginErr").textContent = "Koden passer ikke. Spørg din chef."; return; }
   user = {name, role}; me = name; store.set("user", user);
   if(sb) sb.from("people").upsert({name, role}).then(()=>{});
+  bossView = "tasks";
   applyUser(); loadTasks();
 };
 $("loginCode").onkeydown = e=>{ if(e.key==="Enter") $("btnLogin").click(); };
@@ -551,6 +560,7 @@ async function loadTasks(){
     else { tasks = data; store.set("tasks",tasks); }
   } else tasks = store.get("tasks",[]);
   renderTasks();
+  if(isBoss()) loadCrew();
 }
 // Freehand areas live in tasks.area; until that column exists the task is saved with its rectangle (extent) only
 const noAreaCol = e => e && (e.code==="PGRST204" || /'area' column/.test(e.message||""));
@@ -718,25 +728,50 @@ function subOf(f){
 const norm = n => cleanName(n).toLowerCase();
 const forMe = t => !t.assignees?.length || t.assignees.some(a=>norm(a)===norm(me));
 const whoFor = t => !t.assignees?.length ? "Alle" : t.assignees.join(", ");
-function taskRow(t){
+// Bosses can switch between the task list and "Holdet": who is on which task
+let bossView = store.get("bossView","tasks"), crew = [];
+async function loadCrew(){
+  if(!sb) return;
+  const {data} = await sb.from("people").select("name,role").eq("role","crew").order("name");
+  if(data){ crew = data.map(p=>cleanName(p.name)); if(bossView==="team") renderTasks(); }
+}
+document.querySelectorAll("#bossView [data-v]").forEach(b=>b.onclick=()=>{ bossView = b.dataset.v; store.set("bossView",bossView); renderTasks(); });
+function taskRow(t, noClose){
   const done = store.get("count:"+t.id, null);
   return `<div class="row">
     <button class="item grow" data-open="${esc(t.id)}"><div class="grow"><div class="t">${esc(t.name)}</div>
     <div class="s">${esc(codeNames(t.codes))} · ${esc(whoFor(t))}</div></div>
     ${done ? `<span class="pill ${done[0]===done[1]?"done":"todo"} num">${done[0]}/${done[1]}</span>` : ""}</button>
-    ${isBoss() ? `<button class="btn ghost" data-arch="${esc(t.id)}">Afslut</button>` : ""}</div>`;
+    ${isBoss() && !noClose ? `<button class="btn ghost" data-arch="${esc(t.id)}">Afslut</button>` : ""}</div>`;
+}
+// One card per person with the tasks they are on; tasks for everyone get their own card
+function teamHtml(){
+  const names = new Map();
+  [...crew, ...tasks.flatMap(t=>t.assignees||[])].forEach(n=>{ n = cleanName(n); if(n && !names.has(norm(n))) names.set(norm(n), n); });
+  const list = [...names.values()].sort((a,b)=>a.localeCompare(b,"da"));
+  const all = tasks.filter(t=>!t.assignees?.length);
+  const card = (title, ts, empty) => `<div class="person"><h3>${esc(title)}<span>${ts.length ? ts.length+(ts.length===1?" opgave":" opgaver") : ""}</span></h3>`
+    + (ts.length ? ts.map(t=>taskRow(t, true)).join("") : `<p class="muted" style="margin:0">${empty}</p>`) + `</div>`;
+  return `<h2>Holdet</h2>`
+    + (all.length ? card("Til alle", all, "") : "")
+    + (list.length ? list.map(n=>card(n, tasks.filter(t=>t.assignees?.some(a=>norm(a)===norm(n))), "Ingen opgaver lige nu.")).join("")
+      : `<p class="muted" style="margin:0">Ingen fra holdet har logget ind endnu.</p>`);
 }
 function renderTasks(){
   const L = $("taskList");
+  $("bossView").hidden = !user || !isBoss();
+  document.querySelectorAll("#bossView [data-v]").forEach(b=>b.classList.toggle("on", b.dataset.v===bossView));
   if(!user){ L.innerHTML = ""; return; }
-  if(!tasks.length){ L.innerHTML = isBoss()
+  if(isBoss() && bossView==="team") L.innerHTML = teamHtml();
+  else if(!tasks.length) L.innerHTML = isBoss()
       ? `<h2>Opgaver</h2><p class="muted" style="margin:0">Ingen opgaver endnu. Tryk <b>Ny opgave</b> og tegn området på kortet.</p>`
-      : `<h2>Dine opgaver</h2><p class="muted" style="margin:0">Ingen opgaver lige nu. Når en chef giver dig en, dukker den op her.</p>`; return; }
-  if(isBoss()) L.innerHTML = `<h2>Opgaver</h2>` + tasks.map(taskRow).join("");
+      : `<h2>Dine opgaver</h2><p class="muted" style="margin:0">Ingen opgaver lige nu. Når en chef giver dig en, dukker den op her.</p>`;
+  else if(isBoss()) L.innerHTML = `<h2>Opgaver</h2>` + tasks.map(t=>taskRow(t)).join("");
   else {
-    const mine = tasks.filter(forMe), other = tasks.filter(t=>!forMe(t));
-    L.innerHTML = `<h2>Dine opgaver</h2>` + (mine.length ? mine.map(taskRow).join("") : `<p class="muted" style="margin:0">Ingen tildelt dig lige nu.</p>`)
-      + (other.length ? `<div class="section">Andres opgaver</div>` + other.map(taskRow).join("") : "");
+    // The crew only sees tasks given to them by name, or to everyone
+    const mine = tasks.filter(forMe);
+    L.innerHTML = `<h2>Dine opgaver</h2>` + (mine.length ? mine.map(t=>taskRow(t)).join("")
+      : `<p class="muted" style="margin:0">Ingen opgaver til dig lige nu. Når en chef giver dig en, dukker den op her.</p>`);
   }
   L.querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openTask(tasks.find(t=>t.id===b.dataset.open)));
   L.querySelectorAll("[data-arch]").forEach(b=>b.onclick=()=>{

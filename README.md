@@ -10,6 +10,8 @@ Shared task map for the idverde crew in Ikast-Brande. The kommune's maintenance 
 5. **Liste** shows everything nearest first, with notes like "kun nordsiden mangler".
 6. When the job is done, tap **Afslut** on the task. Next season, make a new task and everything starts red again.
 
+**Who sees which tasks:** the crew only sees tasks with their name on them, plus tasks for everyone ("Alle"). Bosses see every task, and the **Holdet** tab shows one card per person with the tasks they are on. This is enforced by the app, not the database (see Login below).
+
 **Overblik (bosses):** pick a type, e.g. *Pur*, to see every pur bed in the whole kommune. Beds inside a task show that task's status; purple ones aren't in any task yet. Each task's area has its own outline colour, matching the stripe next to it in the list, so overlapping tasks can be told apart. Tap a task in the list to zoom to it and fade the others; tap it again to show all. Tapping a bed lists every task it's in. **+ Ny opgave med pur** lets you draw a new task right around the purple ones, and while drawing it shows how many the area catches.
 
 Sidewalks (`FB2a`) come split into stretches by street and station, so you can mark "Rosenstien 0–25" done without the whole street.

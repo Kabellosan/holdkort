@@ -39,6 +39,7 @@ A phone web app for Captain's idverde crew (Ikast-Brande Kommune contract). Boss
 - **Login = name + shared code**, roles crew/boss. Codes are SHA-256 hashes in `index.html` (`CREW_CODE_SHA`, `BOSS_CODE_SHA`); placeholders `hold` / `chef`. Trust-based, not real security.
 - **Privacy:** the worker decides when data is sent (outbox + "Send"; auto-send is opt-in). GPS never leaves the phone. Only the day is stored/shown. Bosses see progress, not who did what. Closing a task deletes all its marks; only `summary {done,total}` remains. A "Hvad deles?" screen explains this in Danish.
 - Assigned names match case- and whitespace-insensitively.
+- **Task visibility:** crew sees only tasks assigned to them by name or to everyone (empty `assignees`); bosses see all, plus a "Holdet" tab (per-person cards from `people` crew + assignee names). App-level only: with the shared anon key and name login, RLS cannot tell users apart. A firm version needs per-person Supabase Auth and RLS on `tasks`/`progress` by user id.
 
 ## Open items
 - Real login codes (user to choose).
