@@ -3,7 +3,7 @@
 Read this first. It's the source of truth for decisions made so far; the README is the user-facing guide.
 
 ## What it is
-A phone web app for Captain's idverde crew (Ikast-Brande Kommune contract). Bosses create tasks ("all HA3 Pur in Brande"), assign them to people, and the crew marks each kommune element **Mangler / I gang / Færdig**. Replaces calling each other to say where you've been.
+A phone web app for Captain's idverde crew (Ikast-Brande Kommune contract). Bosses create tasks ("all HA3 Pur in Brande"), assign them to people, and the crew marks each kommune element **Mangler / I gang / Færdig / Blokeret**. Replaces calling each other to say where you've been.
 
 - Live: https://kabellosan.github.io/holdkort/ (GitHub Pages, branch `main`, repo root)
 - Repo: `Kabellosan/holdkort`. Everything is in `index.html` (one file, OpenLayers 10 + proj4 + supabase-js from jsDelivr), `sw.js`, `manifest.json`.
@@ -15,6 +15,7 @@ A phone web app for Captain's idverde crew (Ikast-Brande Kommune contract). Boss
   - Filter field `elementkode`; geometry column `wkb_geometry`; stable id `ogc_fid`. CRS EPSG:25832.
   - Pur and fortov have no street name; the app borrows the nearest road's `vejnavn`.
   - Code → name list is in `CODES` in `index.html` (from the WMS capabilities titles).
+  - Per-type "definition of done" and safety requirements are in `REQS` in `index.html` (`{done:[], safety:[]}` per code), shown in a folded "Krav og sikkerhed" section in the element panel. Hidden for types with nothing filled in. Empty until the user supplies their requirements PDF; never invent requirements.
 - **Aerial photo (WMS, MapServer):** `https://kort.ikast-brande.dk/wms`, `SERVICENAME=entreprenoer_udbud`, layer `theme-ortofoto2024`. `theme-orto_foraar_daf` (from the kommune's own map link) does NOT exist in this service.
 - **Place search:** Photon (photon.komoot.io) while typing; Nominatim only on Enter / "Søg grundigere" (its usage policy forbids autocomplete). Typing "… station" adds a Photon `osm_tag=railway:station` query. **DAWA is shut down (HTTP 410).**
 - The kommune's `robots.txt` is `Disallow: /`. Therefore: **no nightly server job / scraper** without the kommune's written OK. Phones fetch only when a person opens a task.
@@ -24,12 +25,12 @@ A phone web app for Captain's idverde crew (Ikast-Brande Kommune contract). Boss
 - Aerial tiles: fixed 256 px grid in EPSG:25832, service worker cache-first, 180 days.
 - A task only auto-zooms the first time it's opened; map position is remembered.
 - Task areas: a rectangle (`extent` only, `area` null) or a freehand polygon (`area` = GeoJSON Polygon in EPSG:25832, `extent` = its bounding box). The WFS request uses the bbox; elements are cut to the polygon on the phone (`hitsArea`). Max bbox 60 km². If the `area` column is missing, saves fall back to the rectangle. Stored element data carries an area key, so redrawing a task re-downloads it.
-- Overblik (boss): one type for the whole kommune via `elementkode IN (...)` with no bbox, cached as `type:<code>` with the same once-a-day rules. Status per element comes from the tasks covering it (done > doing > todo); purple = in no task. Each task area gets an outline colour from `TASK_COLORS` (by created_at order, avoiding the status colours), shown as a stripe in the task list; tapping a task focuses it.
+- Overblik (boss): one type for the whole kommune via `elementkode IN (...)` with no bbox, cached as `type:<code>` with the same once-a-day rules. Status per element comes from the tasks covering it (done > blocked > doing > todo); purple = in no task. Each task area gets an outline colour from `TASK_COLORS` (by created_at order, avoiding the status colours), shown as a stripe in the task list; tapping a task focuses it.
 
 ## Backend: Supabase
 - Project `rvfwmmctqndfqvbuuoyi` (org "Kabellosan's Org", region eu-west-1), connected via the Supabase connector.
 - Publishable key is in `index.html` (public by design). Never put the service_role key in the repo.
-- Tables: `tasks` (id, name, codes[], extent, assignees[], created_by, created_at, archived, summary, area), `progress` (task_id, element_id, status, note, worker, updated_at; PK task_id+element_id), `people` (name, role).
+- Tables: `tasks` (id, name, codes[], extent, assignees[], created_by, created_at, archived, summary, area), `progress` (task_id, element_id, status todo|doing|done|blocked, note, reason (only for blocked: Bil parkeret / Vejarbejde / Andet), worker, updated_at; PK task_id+element_id), `people` (name, role).
 - Trigger `progress_day_only` truncates `updated_at` to the day **in the database**.
 - RLS (anon): read/insert/update on all three; delete on `progress` only when its task is archived; no deletes on tasks/people.
 - Realtime on `tasks` and `progress`.
