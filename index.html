@@ -65,7 +65,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .item .s{font-size:14px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pill{font-size:13px;font-weight:600;padding:4px 10px;border-radius:999px;color:#fff;white-space:nowrap;flex:none}
 .pill.todo{background:var(--todo)} .pill.doing{background:var(--doing);color:#2a1d00} .pill.done{background:var(--done)}
-.bar{height:10px;border-radius:99px;background:var(--paper);overflow:hidden;display:flex}
+.bar{flex:none;height:10px;border-radius:99px;background:var(--paper);overflow:hidden;display:flex}
 .bar i{display:block;height:100%}
 .num{font-variant-numeric:tabular-nums}
 .big{font-size:28px;font-weight:700;line-height:1}
@@ -80,6 +80,17 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .person{display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:var(--r);border:1px solid var(--line)}
 .person h3{margin:0;font-size:17px;display:flex;justify-content:space-between;gap:8px}
 .person h3 span{font-weight:400;color:var(--ink2);font-size:14px}
+.tended{font-size:14px;color:var(--ink2)}
+.sheet:has(#pOver:not([hidden])){max-height:68vh} /* the overview has a mode switch, legend and task list */
+#overMode button{min-height:38px}
+.tended.warn{color:#8a5a00;font-weight:600}
+@media (prefers-color-scheme:dark){.tended.warn{color:var(--doing)}}
+.hist{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:var(--r);background:var(--paper)}
+.hist .when{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.hist img{width:100%;max-height:240px;object-fit:cover;border-radius:10px;cursor:zoom-in;background:var(--line)}
+.photo-view{position:absolute;inset:0;background:#000e;display:flex;align-items:center;justify-content:center;z-index:40;padding:12px}
+.photo-view img{max-width:100%;max-height:100%;border-radius:8px}
+.photo-view .btn{position:absolute;top:calc(env(safe-area-inset-top,0px) + 12px);right:12px;background:var(--card)}
 
 /* Full-screen panel for creating a task */
 .panel{position:absolute;inset:0;background:var(--card);display:flex;flex-direction:column;z-index:10}
@@ -179,6 +190,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button class="btn ghost" id="btnOverType">Skift type</button>
     </div>
     <div><div class="eyebrow" id="overCode"></div><h2 id="overName"></h2></div>
+    <div class="seg" id="overMode" role="group" aria-label="Farver">
+      <button data-o="status">Status</button>
+      <button data-o="age">Sidst passet</button>
+    </div>
     <div class="bar" id="overBar"></div>
     <div class="legend" id="overLegend"></div>
     <div class="row"><span class="muted grow" id="overAge"></span><button class="btn ghost" id="btnOverRefresh" style="min-height:36px;padding:4px 8px">Opdater</button></div>
@@ -219,6 +234,8 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button data-s="done"><i style="background:var(--done)"></i><span>Færdig</span></button>
     </div>
     <div class="row"><input type="text" id="note" placeholder="Note til holdet"><button class="btn" id="btnNote">Gem</button></div>
+    <div class="row"><span class="tended grow" id="elTended"></span><button class="btn" id="btnPhoto">📷 Billede</button><button class="btn" id="btnHist">Historik</button></div>
+    <input type="file" id="photoIn" accept="image/*" hidden>
     <div class="row"><span class="muted grow" id="elMeta"></span><button class="btn" id="btnRoute">🧭 Vis vej</button><button class="btn primary" id="btnNext2">Næste ▸</button></div>
   </div>
 
@@ -270,6 +287,13 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <footer><div class="muted">Viser alle elementer af typen i hele kommunen, og hvilke der er med i en opgave. Hentes fra kommunen højst én gang om dagen.</div></footer>
 </div>
 
+<!-- One element's log: when it was tended, notes and photos -->
+<div class="panel" id="pHist" hidden>
+  <header><div class="row"><div class="grow"><div class="eyebrow">Historik</div><h2 id="histTitle"></h2></div><button class="btn ghost" id="btnHistClose">Luk</button></div></header>
+  <div class="body" id="histList"></div>
+</div>
+<div class="photo-view" id="photoView" hidden role="dialog" aria-modal="true" aria-label="Billede"><img id="photoImg" alt=""><button class="btn" id="btnPhotoClose">✕ Luk</button></div>
+
 <!-- Place search, full screen -->
 <div class="panel" id="pSearch" hidden>
   <header>
@@ -304,7 +328,8 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <li><i>🧾</i><span><b>Det, der sendes:</b> hvilket element, status (mangler / i gang / færdig), en evt. note, dit navn og <i>dagen</i> det blev sendt. Ikke klokkeslæt for hver markering, og ingen rute.</span></li>
       <li><i>👀</i><span><b>Holdet</b> kan se, hvem der har markeret hvad, så I ikke tager det samme. <b>Cheferne</b> ser kun, hvor meget af opgaven der er færdigt.</span></li>
       <li><i>📋</i><span><b>Du ser kun dine egne opgaver</b> og dem, der er til alle. Cheferne kan se, hvem der er sat på hvilke opgaver.</span></li>
-      <li><i>🗑️</i><span><b>Når en opgave afsluttes,</b> slettes alle markeringer. Kun "færdig, 47 af 47" bliver gemt.</span></li>
+      <li><i>📷</i><span><b>Billeder</b> gøres mindre på telefonen, og placering og andre skjulte oplysninger fjernes, før de sendes. De sendes også først, når du trykker Send.</span></li>
+      <li><i>🗑️</i><span><b>Når en opgave afsluttes,</b> slettes alle markeringer. Tilbage er kun "færdig, 47 af 47" og en log over hvert element: hvilken <i>dag</i> det blev passet, og evt. note og billede. Loggen har <b>intet navn</b> på, så ingen kan se, hvem der passede hvad.</span></li>
     </ul>
     <p class="muted" id="profHonest"></p>
     <button class="btn" id="btnLogout">Log ud</button>
@@ -363,6 +388,11 @@ const ortoLayer = new ol.layer.Tile({source:ortoSrc, preload:2});
 
 const COLORS = {todo:"#d64545", doing:"#e8a317", done:"#2e9e5b", none:"#7c5cff"}; // none: not in any task (overview)
 const LABEL  = {todo:"Mangler", doing:"I gang", done:"Færdig", none:"Ikke i en opgave"};
+// Overview "Sidst passet": days since an element was last sent as done, fresh green to old red; grey = not in the log
+const AGES = [{k:"a0", max:7, c:"#1a9850", l:"0–7 dage"}, {k:"a1", max:14, c:"#91cf60", l:"8–14 dage"}, {k:"a2", max:30, c:"#fee08b", l:"15–30 dage"},
+              {k:"a3", max:60, c:"#fc8d59", l:"31–60 dage"}, {k:"a4", max:Infinity, c:"#d73027", l:"over 60 dage"}, {k:"never", c:"#8a8f99", l:"ikke registreret"}];
+AGES.forEach(a=>COLORS[a.k] = a.c);
+const ageKey = day => day ? AGES.find(a=>daysSince(day) <= a.max).k : "never";
 const elSrc = new ol.source.Vector();
 const styleCache = {};
 const elStyle = (f, res) => shapeStyle(statusOf(f.getId()), selSet.has(f), res > 3.2);
@@ -392,7 +422,7 @@ function shapeStyle(s, sel, far){
 }
 const elLayer = new ol.layer.Vector({source:elSrc, style:elStyle, renderBuffer:200});
 const overSrc = new ol.source.Vector(); // overview: one type in the whole kommune
-const overLayer = new ol.layer.Vector({source:overSrc, style:(f,res)=>shapeStyle(f.get("_s")||"none", false, res > 3.2), renderBuffer:200});
+const overLayer = new ol.layer.Vector({source:overSrc, style:(f,res)=>shapeStyle((over?.mode==="age" ? f.get("_a") : f.get("_s")) || "none", false, res > 3.2), renderBuffer:200});
 const areaSrc = new ol.source.Vector();
 const areaDash = new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffdd",width:2,lineDash:[10,8]})});
 // Overview: each task gets its own outline colour so overlapping areas can be told apart (none of them red/yellow/green/purple)
@@ -452,6 +482,11 @@ function pane(id){ PANES.forEach(p=>$(p).hidden = p!==id); }
 function ago(ts){ if(!ts) return ""; const d=new Date(ts), t=new Date(); const day=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate());
   const diff=Math.round((day(t)-day(d))/864e5);
   return diff<=0?"i dag":diff===1?"i går":d.toLocaleDateString("da-DK",{day:"numeric",month:"short"}); }
+// The phone's own calendar day as YYYY-MM-DD, so "today" means today in Denmark
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+const daysSince = day => Math.round((Date.parse(today()) - Date.parse(day)) / 864e5);
+const sinceText = day => { const n = daysSince(day); return n<=0 ? "i dag" : n===1 ? "i går" : `for ${n} dage siden`; };
+const longDate = day => new Date(day + "T12:00").toLocaleDateString("da-DK",{day:"numeric", month:"short", year:"numeric"});
 function fmtDist(m){ return m<1000 ? `${Math.round(m/10)*10} m` : `${(m/1000).toFixed(1).replace(".",",")} km`; }
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2));
 // "Pur (HA3)": the plain name with the kommune's code, so crew and the GIS data use the same words
@@ -523,10 +558,14 @@ function renderOutbox(){
 async function sendPending(){
   if(!pending.size) return;
   const now = new Date().toISOString();
-  const rows = [...pending.values()].map(r=>({...r, updated_at: now})); // only the send time is stored
+  const all = [...pending.values()];
+  const rows = all.map(r=>{ const o = {}; for(const k in r) if(k[0]!=="_") o[k] = r[k]; o.updated_at = now; return o; }); // only the send time is stored
   if(sb){
+    const paths = await uploadPhotos(all); // first, so a failed upload keeps everything in the outbox
+    if(!paths){ toast("Ikke sendt. Prøv igen, når du har forbindelse.", 4000); return; }
     const {error} = await sb.from("progress").upsert(rows);
     if(error){ toast("Ikke sendt. Prøv igen, når du har forbindelse.", 4000); return; }
+    await writeLog(all, paths);
   } else {
     const byTask = {}; rows.forEach(r=>(byTask[r.task_id] ||= []).push(r));
     for(const [tid, rs] of Object.entries(byTask)){
@@ -535,6 +574,7 @@ async function sendPending(){
     }
   }
   rows.forEach(r=>{ if(task && r.task_id===task.id) progress.set(r.element_id, r); });
+  all.forEach(r=>(r._photos||[]).forEach(photoDel));
   pending.clear(); store.set("pending", []);
   renderOutbox(); refresh();
   toast(`Sendt: ${rows.length} ${rows.length===1?"ændring":"ændringer"} ✓`);
@@ -547,6 +587,7 @@ $("btnDiscard").onclick = ()=>{
   if(!b.dataset.armed){ b.dataset.armed=1; b.textContent="Slet dem?"; setTimeout(()=>{delete b.dataset.armed; b.textContent="Annuller";},3000); return; }
   delete b.dataset.armed; b.textContent="Annuller";
   const n = pending.size;
+  pending.forEach(r=>(r._photos||[]).forEach(photoDel));
   pending.clear(); store.set("pending", []);
   renderOutbox(); refresh();
   toast(`${n} ${n===1?"ændring":"ændringer"} slettet`);
@@ -582,7 +623,7 @@ async function archiveTask(t){
     await sb.from("progress").delete().eq("task_id",t.id);
   }
   store.set("prog:"+t.id, null); elCacheDel(t.id);
-  [...pending.keys()].filter(k=>k.startsWith(t.id+"|")).forEach(k=>pending.delete(k)); store.set("pending",[...pending.values()]);
+  [...pending.keys()].filter(k=>k.startsWith(t.id+"|")).forEach(k=>{ (pending.get(k)._photos||[]).forEach(photoDel); pending.delete(k); }); store.set("pending",[...pending.values()]);
   store.set("tasks",tasks); renderTasks(); renderOutbox();
   toast("Opgaven er afsluttet, og markeringerne er slettet");
 }
@@ -594,12 +635,15 @@ async function loadProgress(taskId){
   }
   store.get("prog:"+taskId,[]).forEach(r=>progress.set(r.element_id,r));
 }
-function setStatus(ids, status, note){
+function setStatus(ids, status, note, photo){
   ids.forEach(id=>{ const prev = eff(id) || {}, key = task.id+"|"+id;
-    const r = {task_id:task.id, element_id:id, status: status ?? prev.status ?? "todo", note: note ?? prev.note ?? "", worker:me};
-    // Setting an element back to what the team already has is not a change, so it leaves the outbox
     const base = progress.get(id) || {status:"todo", note:""};
-    if(r.status===base.status && r.note===(base.note||"")) pending.delete(key); else pending.set(key, r); });
+    const photos = [...(pending.get(key)?._photos || []), ...(photo ? [photo] : [])];
+    // _fields are for the log only: what the team had before, the element's type, photos waiting to be sent
+    const r = {task_id:task.id, element_id:id, status: status ?? prev.status ?? "todo", note: note ?? prev.note ?? "", worker:me,
+      _was: base.status==="done", _note0: base.note||"", _code: elSrc.getFeatureById(id)?.get("elementkode") || null, _photos: photos};
+    // Setting an element back to what the team already has is not a change, so it leaves the outbox
+    if(r.status===base.status && r.note===(base.note||"") && !photos.length) pending.delete(key); else pending.set(key, r); });
   store.set("pending", [...pending.values()]);
   renderOutbox(); refresh();
   if(autoSend) sendPending();
@@ -792,6 +836,7 @@ function showDataAge(saved){
   $("dataAge").textContent = `Kortdata hentet ${ago(new Date(saved).toISOString())} · gemt på telefonen`;
 }
 function swapElements(fs){
+  loadLastTended(fs.map(f=>f.getId())).then(m=>{ if(task){ lastTended = m; refresh(); } });
   const ids = new Set([...selSet].map(f=>f.getId()));
   elSrc.clear(); elSrc.addFeatures(fs);
   selSet = new Set(fs.filter(f=>ids.has(f.getId()))); selected = [...selSet][0] || null;
@@ -829,6 +874,7 @@ async function openTask(t){
   if(task !== t) return;
   elSrc.addFeatures(feats);
   refresh();
+  loadLastTended(feats.map(f=>f.getId())).then(m=>{ if(task===t){ lastTended = m; refresh(); } });
   if(!feats.length) toast("Ingen elementer af den type i området", 4000);
   // Stale data: refresh quietly later, spread out over a few minutes so phones don't all ask at once
   if(cached && Date.now() - cached.saved > DAY && !rushHour())
@@ -1082,7 +1128,7 @@ function closeOverview(){
 }
 async function openOverview(code){
   closeOverview();
-  const o = over = {code};
+  const o = over = {code, mode: store.get("overMode","status")};
   const name = CODES[code] || code;
   $("overCode").textContent = code; $("overName").textContent = `${name} i hele kommunen`;
   $("overBar").innerHTML = ""; $("overLegend").innerHTML = ""; $("overTasks").innerHTML = "";
@@ -1139,7 +1185,7 @@ async function overPaint(){
   const tl = tasks.filter(t=>(t.codes||[]).includes(o.code)).sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
   const col = new Map(tl.map((t,i)=>[t.id, TASK_COLORS[i % TASK_COLORS.length]]));
   if(o.focus && !col.has(o.focus)) o.focus = null;
-  const prog = await progressFor(tl.map(t=>t.id));
+  const [prog, ages] = await Promise.all([progressFor(tl.map(t=>t.id)), o.mode==="age" ? tendedForCode(o.code) : null]);
   if(over!==o) return;
   areaSrc.clear();
   tl.forEach(t=>{ const f = new ol.Feature(shapeGeom(t)); f.setProperties({label:t.name, tid:t.id, color:col.get(t.id)}); areaSrc.addFeature(f); });
@@ -1155,12 +1201,19 @@ async function overPaint(){
       if(best===null || RANK[st] > RANK[best]) best = st;
     }
     f.set("_s", best || "none", true); f.set("_t", in_, true); c[best || "none"]++;
+    if(ages){ const d = ages.get(f.getId()) || null, k = ageKey(d); f.set("_d", d, true); f.set("_a", k, true); c[k] = (c[k]||0) + 1; }
   });
   overLayer.changed();
+  document.querySelectorAll("#overMode [data-o]").forEach(b=>b.classList.toggle("on", b.dataset.o===(o.mode||"status")));
   const n = overSrc.getFeatures().length, name = (CODES[o.code]||o.code).toLowerCase();
-  $("overBar").innerHTML = n ? ["done","doing","todo","none"].map(s=>`<i style="width:${c[s]/n*100}%;background:${COLORS[s]}"></i>`).join("") : "";
-  const LEG = {none:"ikke i en opgave", todo:"mangler", doing:"i gang", done:"færdige"};
-  $("overLegend").innerHTML = ["none","todo","doing","done"].map(s=>`<span><i style="background:${COLORS[s]}"></i><b class="num">${c[s]}</b> ${LEG[s]}</span>`).join("");
+  if(ages){
+    $("overBar").innerHTML = n ? AGES.map(a=>`<i style="width:${(c[a.k]||0)/n*100}%;background:${a.c}"></i>`).join("") : "";
+    $("overLegend").innerHTML = AGES.map(a=>`<span><i style="background:${a.c}"></i><b class="num">${c[a.k]||0}</b> ${a.l}</span>`).join("");
+  } else {
+    $("overBar").innerHTML = n ? ["done","doing","todo","none"].map(s=>`<i style="width:${c[s]/n*100}%;background:${COLORS[s]}"></i>`).join("") : "";
+    const LEG = {none:"ikke i en opgave", todo:"mangler", doing:"i gang", done:"færdige"};
+    $("overLegend").innerHTML = ["none","todo","doing","done"].map(s=>`<span><i style="background:${COLORS[s]}"></i><b class="num">${c[s]}</b> ${LEG[s]}</span>`).join("");
+  }
   $("overTasks").innerHTML = (c.none ? `<button class="item" data-none="1"><div class="grow"><div class="t">Ikke i en opgave</div><div class="s">Vis hvor de ligger</div></div><span class="pill none num">${c.none}</span></button>` : "")
     + `<div class="section">Opgaver med ${esc(name)}</div>`
     + (tl.length ? tl.map(t=>{ const p = per.get(t.id);
@@ -1180,8 +1233,143 @@ async function overPaint(){
   const nb = $("overTasks").querySelector("[data-none]");
   if(nb) nb.onclick = ()=>{ const ext = ol.extent.createEmpty(); overSrc.getFeatures().forEach(f=>{ if(f.get("_s")==="none") ol.extent.extend(ext, f.getGeometry().getExtent()); }); fit(ext); };
 }
+document.querySelectorAll("#overMode [data-o]").forEach(b=>b.onclick=()=>{
+  if(!over || over.mode===b.dataset.o) return;
+  over.mode = b.dataset.o; store.set("overMode", over.mode);
+  document.querySelectorAll("#overMode [data-o]").forEach(x=>x.classList.toggle("on", x===b));
+  overPaint();
+});
 $("btnOverBack").onclick = ()=>{ closeOverview(); pane("pTasks"); loadTasks(); };
 $("btnOverNew").onclick = ()=>{ if(over) beginNewTask(over.code); };
+
+// ================= LOG: WHEN EACH ELEMENT WAS LAST TENDED, WITH NOTES AND PHOTOS =================
+// element_log keeps a line each time an element is sent as done (or gets a note or photo): the day, the task, never a name.
+// It stays when a task is closed, so the next task can see "sidst passet for 5 dage siden".
+let lastTended = new Map(); // element id -> "YYYY-MM-DD", for the open task
+let logOk = true; // false if the database has no log yet: then no photo button either
+const RECENT = 14; // days: a todo element done this recently gets a warning
+async function loadLastTended(ids){
+  const m = new Map(); if(!sb || !ids.length) return m;
+  for(let i=0; i<ids.length; i+=100){
+    const {data, error} = await sb.from("last_tended").select("element_id,last_day").in("element_id", ids.slice(i, i+100));
+    logOk = !error; if(error) break;
+    data.forEach(r=>{ if(!(m.get(r.element_id) > r.last_day)) m.set(r.element_id, r.last_day); });
+  }
+  return m;
+}
+async function tendedForCode(code){ // the whole kommune, for the overview
+  const m = new Map(); if(!sb) return m;
+  for(let i=0;; i+=1000){
+    const {data, error} = await sb.from("last_tended").select("element_id,last_day").eq("code", code).range(i, i+999);
+    if(error) break;
+    data.forEach(r=>{ if(!(m.get(r.element_id) > r.last_day)) m.set(r.element_id, r.last_day); });
+    if(data.length < 1000) break;
+  }
+  return m;
+}
+// After the marks are saved: a line per element newly done, with a new note, or with a photo.
+// Done taken back (e.g. a wrong tap) removes this task's done line from the last two days.
+async function writeLog(rows, paths){
+  const day = today(), add = [], undo = [];
+  rows.forEach(r=>{
+    if(r._was && r.status!=="done") undo.push(r);
+    const done = r.status==="done" && !r._was, noted = !!r.note && r.note!==r._note0;
+    const photos = (r._photos||[]).map(p=>paths[p]).filter(Boolean);
+    if(!done && !noted && !photos.length) return;
+    const line = {element_id:r.element_id, code:r._code, task_id:r.task_id, day, done, note: (done || noted) && r.note ? r.note : null, photo:null};
+    if(!photos.length) add.push(line);
+    else photos.forEach((p,i)=>add.push({...line, done: done && i===0, note: i===0 ? line.note : null, photo:p}));
+    if(done) lastTended.set(r.element_id, day);
+  });
+  const back = new Date(Date.now() - 864e5), yday = `${back.getFullYear()}-${String(back.getMonth()+1).padStart(2,"0")}-${String(back.getDate()).padStart(2,"0")}`;
+  for(const r of undo)
+    await sb.from("element_log").delete().eq("task_id", r.task_id).eq("element_id", r.element_id).eq("done", true).gte("day", yday);
+  if(add.length){ const {error} = await sb.from("element_log").insert(add); if(error) console.error("element_log", error); }
+  if(undo.length && task){ const m = await loadLastTended(undo.map(r=>r.element_id)); undo.forEach(r=>{ if(m.has(r.element_id)) lastTended.set(r.element_id, m.get(r.element_id)); else lastTended.delete(r.element_id); }); }
+}
+function showTended(fs){
+  const el = $("elTended"), ids = fs.map(g=>g.getId());
+  $("btnHist").hidden = fs.length !== 1 || !sb || !logOk;
+  $("btnPhoto").hidden = !sb || !logOk;
+  if(!sb || !logOk){ el.textContent = ""; el.classList.remove("warn"); return; }
+  if(fs.length===1){
+    const d = lastTended.get(ids[0]);
+    el.textContent = d ? `Sidst passet ${sinceText(d)}` : "Sidst passet: ikke registreret";
+    el.classList.toggle("warn", !!d && daysSince(d) <= RECENT && statusOf(ids[0])!=="done");
+    if(el.classList.contains("warn")) el.textContent = "⚠ " + el.textContent;
+  } else {
+    const recent = ids.filter(id=>{ const d = lastTended.get(id); return d && daysSince(d) <= RECENT && statusOf(id)!=="done"; }).length;
+    el.textContent = recent ? `⚠ ${recent} af dem er passet inden for ${RECENT} dage` : "";
+    el.classList.toggle("warn", !!recent);
+  }
+}
+
+// Photos: shrunk on the phone (which also drops GPS and other hidden data), kept in the Cache API until Send
+const PHOTO_CACHE = "photos-v1";
+const photoKey = id => new Request("https://holdkort.cache/photos/" + encodeURIComponent(id));
+async function photoPut(id, blob){ await (await caches.open(PHOTO_CACHE)).put(photoKey(id), new Response(blob, {headers:{"Content-Type":"image/jpeg"}})); }
+async function photoGet(id){ try{ const r = await (await caches.open(PHOTO_CACHE)).match(photoKey(id)); return r ? await r.blob() : null; }catch(e){ return null; } }
+async function photoDel(id){ try{ await (await caches.open(PHOTO_CACHE)).delete(photoKey(id)); }catch(e){} }
+const photoUrl = path => sb.storage.from("photos").getPublicUrl(path).data.publicUrl;
+function shrink(file, max=1600){
+  return new Promise((ok, fail)=>{
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = ()=>{
+      const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth*k); c.height = Math.round(img.naturalHeight*k);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      c.toBlob(b=>b ? ok(b) : fail(new Error("toBlob")), "image/jpeg", 0.8);
+    };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); fail(new Error("image")); };
+    img.src = url;
+  });
+}
+// Returns {photo id: storage path}, or null if an upload failed
+async function uploadPhotos(rows){
+  const ids = [...new Set(rows.flatMap(r=>r._photos||[]))], paths = {};
+  for(const id of ids){
+    const path = `${today()}/${id}.jpg`, blob = await photoGet(id);
+    if(!blob) continue; // lost from the phone's storage: send the rest
+    const {error} = await sb.storage.from("photos").upload(path, blob, {contentType:"image/jpeg"});
+    if(error && !/exists|duplicate/i.test(error.message||"")){ console.error(error); return null; }
+    paths[id] = path;
+  }
+  return paths;
+}
+$("btnPhoto").onclick = ()=>$("photoIn").click();
+$("photoIn").onchange = async e=>{
+  const file = e.target.files[0]; e.target.value = "";
+  const ids = [...selSet].map(g=>g.getId()); if(!file || !ids.length) return;
+  try{
+    const id = uuid(); await photoPut(id, await shrink(file));
+    setStatus(ids, null, null, id);
+    toast(autoSend ? "Billede tilføjet" : "Billedet er lagt klar. Tryk Send", 3000);
+  }catch(err){ console.error(err); toast("Billedet kunne ikke gemmes. Prøv igen.", 4000); }
+};
+async function showHistory(f){
+  const id = f.getId(), L = $("histList");
+  $("histTitle").textContent = titleOf(f);
+  L.innerHTML = `<p class="muted"><span class="spin"></span> Henter …</p>`;
+  $("pHist").hidden = false;
+  const waiting = [...pending.values()].filter(r=>r.element_id===id && r._photos?.length);
+  const {data, error} = await sb.from("element_log").select("id,day,done,note,photo,task_id").eq("element_id", id).order("day",{ascending:false}).order("id",{ascending:false}).limit(100);
+  if($("pHist").hidden) return;
+  if(error){ L.innerHTML = `<p class="muted">Historikken kan ikke hentes lige nu. Tjek forbindelsen.</p>`; return; }
+  const taskName = tid => tasks.find(t=>t.id===tid)?.name;
+  const local = [];
+  for(const r of waiting) for(const p of r._photos){ const b = await photoGet(p); if(b) local.push(URL.createObjectURL(b)); }
+  L.innerHTML = (local.length ? `<div class="hist"><div class="when"><b>Ikke sendt endnu</b></div>${local.map(u=>`<img src="${u}" alt="Billede, ikke sendt">`).join("")}</div>` : "")
+    + (data.length ? data.map(r=>`<div class="hist">
+        <div class="when"><b>${esc(longDate(r.day))}</b><span class="muted">${sinceText(r.day)}</span>${r.done ? `<span class="pill done">Færdig</span>` : ""}</div>
+        ${taskName(r.task_id) ? `<div class="muted">${esc(taskName(r.task_id))}</div>` : ""}
+        ${r.note ? `<div>${esc(r.note)}</div>` : ""}
+        ${r.photo ? `<img src="${esc(photoUrl(r.photo))}" loading="lazy" alt="Billede fra ${esc(longDate(r.day))}">` : ""}</div>`).join("")
+      : (local.length ? "" : `<p class="muted">Intet registreret endnu. Når elementet sendes som færdigt, eller får en note eller et billede, kommer det her.</p>`));
+  L.querySelectorAll("img").forEach(i=>i.onclick=()=>{ $("photoImg").src = i.src; $("photoView").hidden = false; });
+}
+$("btnHist").onclick = ()=>{ if(selected) showHistory(selected); };
+$("btnHistClose").onclick = ()=>{ $("pHist").hidden = true; };
+$("btnPhotoClose").onclick = $("photoView").onclick = ()=>{ $("photoView").hidden = true; };
 
 // ================= ELEMENT VIEW =================
 function select(f){
@@ -1217,6 +1405,7 @@ function showEl(zoom){
   $("elMeta").textContent = unsent ? "Ikke sendt endnu"
     : latest ? (isBoss() ? `Sendt ${ago(latest.updated_at)}` : `${latest.worker||"?"} · ${ago(latest.updated_at)}`)
     : (n>1 ? "Ingen har rørt dem endnu" : "Ingen har rørt den endnu");
+  showTended(fs);
   if(zoom){
     const ext = ol.extent.createEmpty(); fs.forEach(g=>ol.extent.extend(ext, g.getGeometry().getExtent()));
     map.getView().fit(ext, {padding:[80,40,sheetPad(),40], maxZoom:12, duration:350});
@@ -1229,7 +1418,8 @@ map.on("singleclick", e=>{
     if(f){ // every task the element is in, grouped by its status there
       const by = {}; (f.get("_t")||[]).forEach(([id,st])=>{ const t = tasks.find(x=>x.id===id); if(t) (by[st] ||= []).push(t.name); });
       const parts = ["done","doing","todo"].filter(s=>by[s]).map(s=>`${LABEL[s]} i ${by[s].join(", ")}`), n = Object.values(by).flat().length;
-      toast(`${titleOf(f)}${subOf(f) ? " · " + subOf(f) : ""} · ${parts.length ? parts.join(" · ") : "ikke i en opgave"}`, 4000 + 1500*Math.max(0, n-1)); }
+      const last = f.get("_d"), age = over.mode==="age" ? ` · ${last ? "sidst passet " + sinceText(last) : "ikke registreret passet"}` : "";
+      toast(`${titleOf(f)}${subOf(f) ? " · " + subOf(f) : ""}${age} · ${parts.length ? parts.join(" · ") : "ikke i en opgave"}`, 4000 + 1500*Math.max(0, n-1)); }
     return;
   }
   if(!task) return;
@@ -1261,7 +1451,7 @@ function closeAsk(){ $("askClear").hidden = true; }
 $("askClearYes").onclick = ()=>{ closeAsk(); select(null); toast("Markeringer fjernet"); };
 $("askClearNo").onclick = closeAsk;
 $("askClear").onclick = e=>{ if(e.target===$("askClear")) closeAsk(); };
-document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !$("askClear").hidden) closeAsk(); });
+document.addEventListener("keydown", e=>{ if(e.key!=="Escape") return; if(!$("photoView").hidden) $("photoView").hidden = true; else if(!$("askClear").hidden) closeAsk(); });
 $("btnClearSel").onclick = ()=>{ const n = selSet.size; select(null); if(n>1) toast("Markeringer fjernet"); };
 document.querySelectorAll(".status [data-s]").forEach(b=>b.onclick=()=>{
   const ids = [...selSet].map(g=>g.getId());
@@ -1308,7 +1498,7 @@ function renderList(){
   const fs = elSrc.getFeatures().filter(f=>!onlyOpen || statusOf(f.getId())!=="done").map(f=>[f, distTo(f,p)]).sort((a,b)=>a[1]-b[1]).slice(0,300);
   $("elList").innerHTML = fs.length ? fs.map(([f,d])=>{ const s=statusOf(f.getId()), pr=eff(f.getId());
     return `<button class="item" data-id="${esc(f.getId())}"><div class="grow"><div class="t">${esc(titleOf(f))}</div>
-      <div class="s num">${fmtDist(d)}${pr?.worker && s!=="todo" && !isBoss() ? " · "+esc(pr.worker) : ""}${pr?.note ? " · "+esc(pr.note) : ""}</div></div>
+      <div class="s num">${fmtDist(d)}${pr?.worker && s!=="todo" && !isBoss() ? " · "+esc(pr.worker) : ""}${lastTended.has(f.getId()) ? " · passet "+sinceText(lastTended.get(f.getId())).replace(" dage siden"," d. siden") : ""}${pr?.note ? " · "+esc(pr.note) : ""}</div></div>
       <span class="pill ${s}">${LABEL[s]}</span></button>`; }).join("") : `<p class="muted" style="margin:0">Intet tilbage. Godt gået.</p>`;
   $("elList").querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>select(elSrc.getFeatureById(b.dataset.id)));
 }

@@ -14,6 +14,12 @@ Shared task map for the idverde crew in Ikast-Brande. The kommune's maintenance 
 
 **Overblik (bosses):** pick a type, e.g. *Pur*, to see every pur bed in the whole kommune. Beds inside a task show that task's status; purple ones aren't in any task yet. Each task's area has its own outline colour, matching the stripe next to it in the list, so overlapping tasks can be told apart. Tap a task in the list to zoom to it and fade the others; tap it again to show all. Tapping a bed lists every task it's in. **+ Ny opgave med pur** lets you draw a new task right around the purple ones, and while drawing it shows how many the area catches.
 
+**Sidst passet (last tended):** every time an element is sent as **Færdig**, the app keeps a line in a log with the day and the task, but no name. The log stays when the task is closed. So when a new task is opened, each element says e.g. *Sidst passet for 5 dage siden*, with a ⚠ when an element still marked Mangler was done in the last 14 days, and the list shows it too. **Historik** on an element lists every logged day with its notes and photos. Tapping **Færdig** by mistake and setting it back the same day removes the line again.
+
+**Photos:** **📷 Billede** on an element takes or picks a photo. It's shrunk on the phone (which also strips GPS and other hidden data) and waits in the outbox like any other change until **Send**.
+
+**Overblik → Sidst passet:** colours every element of the type across the kommune by days since it was last done: green 0–7, light green 8–14, yellow 15–30, orange 31–60, red over 60, grey if it's not in the log yet. Tapping an element shows the day.
+
 Sidewalks (`FB2a`) come split into stretches by street and station, so you can mark "Rosenstien 0–25" done without the whole street.
 
 ## Where the data comes from
@@ -76,6 +82,8 @@ alter publication supabase_realtime add table tasks, progress;
 ```
 
 3. Project Settings → API → copy **Project URL** and the **anon public** key into the top of `index.html` (`SUPABASE_URL`, `SUPABASE_ANON_KEY`). The dot turns green.
+
+**Tending log and photos:** run [`supabase/element_log.sql`](supabase/element_log.sql) as well. Until it's run, the app works as before and simply shows no "sidst passet".
 
 ## Logins and roles
 - Everyone logs in once with **name + code**. The crew code gives the crew view; the boss code also lets you create, assign and close tasks.
