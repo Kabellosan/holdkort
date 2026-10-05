@@ -365,7 +365,7 @@ const CODES = {
 // "Krav og sikkerhed" shown folded under each element, per type code.
 // done = when the element counts as Færdig; safety = what to watch out for. One line per bullet.
 // Example:  HA3: { done:["…","…"], safety:["…"] },
-// Types left out (or with empty lists) show "Ikke skrevet ind endnu" in the app.
+// The section only appears for types with something filled in; an empty list next to a filled one shows "Ikke skrevet ind endnu".
 const REQS = {
 };
 
@@ -1245,7 +1245,11 @@ function showEl(zoom){
   }
 }
 // Krav og sikkerhed for the selected type(s); remembers whether the person keeps it open
+// Hidden when none of the types has anything written in yet
 function showReqs(codes){
+  const has = c => REQS[c]?.done?.length || REQS[c]?.safety?.length;
+  $("reqs").hidden = !codes.some(has);
+  if($("reqs").hidden) return;
   const list = (title, items) => `<div><h4>${title}</h4>${items?.length ? `<ul>${items.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>` : `<div class="empty">Ikke skrevet ind endnu.</div>`}</div>`;
   $("reqsBody").innerHTML = codes.map(c=>{ const r = REQS[c] || {};
     return `${codes.length>1 ? `<h3>${esc(typeName(c))}</h3>` : ""}${list("Færdig når", r.done)}${list("Sikkerhed", r.safety)}`; }).join("");
