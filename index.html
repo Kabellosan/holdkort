@@ -14,7 +14,7 @@
 /* Map fills the screen. One rounded sheet at the bottom; task creation gets a full-screen panel. */
 :root{
   --ink:#17221c; --ink2:#55645b; --paper:#f7f8f4; --card:#ffffff; --moss:#1f3a2e; --moss2:#2c5442; --line:#dde2d6;
-  --todo:#d64545; --doing:#e8a317; --done:#2e9e5b; --focus:#2b6cd4;
+  --todo:#d64545; --doing:#e8a317; --done:#2e9e5b; --blocked:#2b2b33; --focus:#2b6cd4;
   --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --r:14px;
 }
@@ -52,19 +52,20 @@ h2{font-size:19px;line-height:1.2;margin:0;text-wrap:balance}
 .btn.primary{background:var(--moss);border-color:var(--moss);color:#fff;font-weight:600}
 .btn.ghost{border-color:transparent;background:transparent;min-height:44px;padding:8px 10px;color:var(--ink2)}
 .btn.fill{flex:1}
-.status{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.status{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 .status button{border-radius:var(--r);border:2px solid var(--line);background:var(--card);min-height:56px;font-size:15px;font-weight:600;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
 .status button i{width:14px;height:14px;border-radius:50%}
 .status button.on{border-color:currentColor}
 .status [data-s=todo]{color:var(--todo)} .status [data-s=doing]{color:#b07a00} .status [data-s=done]{color:var(--done)}
-@media (prefers-color-scheme:dark){.status [data-s=doing]{color:var(--doing)}}
+.status [data-s=blocked]{color:var(--blocked)}
+@media (prefers-color-scheme:dark){.status [data-s=doing]{color:var(--doing)} .status [data-s=blocked]{color:#c9ccd6}}
 .status [data-s] span{color:var(--ink)}
 input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;padding:12px 14px;border-radius:var(--r);border:1px solid var(--line);background:var(--paper);color:var(--ink);width:100%;min-width:0}
 .item{display:flex;gap:12px;align-items:center;padding:14px;border-radius:var(--r);background:var(--paper);border:1px solid transparent;text-align:left;width:100%;min-height:60px}
 .item .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .item .s{font-size:14px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pill{font-size:13px;font-weight:600;padding:4px 10px;border-radius:999px;color:#fff;white-space:nowrap;flex:none}
-.pill.todo{background:var(--todo)} .pill.doing{background:var(--doing);color:#2a1d00} .pill.done{background:var(--done)}
+.pill.todo{background:var(--todo)} .pill.doing{background:var(--doing);color:#2a1d00} .pill.done{background:var(--done)} .pill.blocked{background:var(--blocked)}
 .bar{height:10px;border-radius:99px;background:var(--paper);overflow:hidden;display:flex}
 .bar i{display:block;height:100%}
 .num{font-variant-numeric:tabular-nums}
@@ -117,6 +118,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .ask>div{background:var(--card);border-radius:20px;padding:20px;max-width:360px;width:100%;display:flex;flex-direction:column;gap:12px;box-shadow:0 10px 40px #0005}
 .ask h2{font-size:20px}
 .ask .btn{width:100%;min-height:56px;font-size:17px}
+.reasons{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.reasons .btn{font-weight:600}
+.reasons .btn.wide{grid-column:1/-1}
+.blockinfo{background:var(--paper);border-left:5px solid var(--blocked);border-radius:8px;padding:8px 12px;font-size:15px}
 .toast{position:absolute;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 64px);background:var(--moss);color:#fff;padding:10px 16px;border-radius:999px;font-size:15px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:88vw;text-align:center;z-index:20}
 .toast.show{opacity:1}
 .spin{display:inline-block;width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-3px}
@@ -217,7 +222,9 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button data-s="todo"><i style="background:var(--todo)"></i><span>Mangler</span></button>
       <button data-s="doing"><i style="background:var(--doing)"></i><span>I gang</span></button>
       <button data-s="done"><i style="background:var(--done)"></i><span>Færdig</span></button>
+      <button data-s="blocked"><i style="background:var(--blocked);outline:2px solid #fff;outline-offset:-1px"></i><span>🚧 Blokeret</span></button>
     </div>
+    <div class="blockinfo" id="elBlock" hidden></div>
     <div class="row"><input type="text" id="note" placeholder="Note til holdet"><button class="btn" id="btnNote">Gem</button></div>
     <div class="row"><span class="muted grow" id="elMeta"></span><button class="btn" id="btnRoute">🧭 Vis vej</button><button class="btn primary" id="btnNext2">Næste ▸</button></div>
   </div>
@@ -240,6 +247,21 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="muted" id="askClearSub"></div>
     <button class="btn primary" id="askClearYes">Ja, fjern dem</button>
     <button class="btn" id="askClearNo">Nej, behold dem</button>
+  </div>
+</div>
+
+<!-- Why an element is blocked -->
+<div class="ask" id="askBlock" hidden role="dialog" aria-modal="true" aria-labelledby="askBlockQ">
+  <div>
+    <h2 id="askBlockQ">Midlertidigt blokeret</h2>
+    <div class="muted">Hvad forhindrer jer i at blive færdige? Elementet tæller som ikke færdigt, så I kan komme tilbage.</div>
+    <input type="text" id="blockNote" placeholder="Evt. note, fx 'halvdelen er klippet'">
+    <div class="reasons">
+      <button class="btn" data-r="Bil parkeret">🚗 Bil parkeret</button>
+      <button class="btn" data-r="Vejarbejde">🚧 Vejarbejde</button>
+      <button class="btn wide" data-r="Andet">Andet</button>
+    </div>
+    <button class="btn ghost" id="askBlockNo">Annullér</button>
   </div>
 </div>
 
@@ -301,7 +323,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <ul class="facts">
       <li><i>📍</i><span><b>Din position forlader aldrig telefonen.</b> GPS bruges kun til at finde det nærmeste element. Den gemmes og sendes ikke.</span></li>
       <li><i>📤</i><span><b>Intet sendes, før du trykker Send</b> (medmindre du selv slår automatisk til).</span></li>
-      <li><i>🧾</i><span><b>Det, der sendes:</b> hvilket element, status (mangler / i gang / færdig), en evt. note, dit navn og <i>dagen</i> det blev sendt. Ikke klokkeslæt for hver markering, og ingen rute.</span></li>
+      <li><i>🧾</i><span><b>Det, der sendes:</b> hvilket element, status (mangler / i gang / færdig / blokeret og hvorfor), en evt. note, dit navn og <i>dagen</i> det blev sendt. Ikke klokkeslæt for hver markering, og ingen rute.</span></li>
       <li><i>👀</i><span><b>Holdet</b> kan se, hvem der har markeret hvad, så I ikke tager det samme. <b>Cheferne</b> ser kun, hvor meget af opgaven der er færdigt.</span></li>
       <li><i>📋</i><span><b>Du ser kun dine egne opgaver</b> og dem, der er til alle. Cheferne kan se, hvem der er sat på hvilke opgaver.</span></li>
       <li><i>🗑️</i><span><b>Når en opgave afsluttes,</b> slettes alle markeringer. Kun "færdig, 47 af 47" bliver gemt.</span></li>
@@ -361,8 +383,8 @@ const ortoSrc = new ol.source.TileWMS({url:WMS_URL, tileGrid, projection:proj, t
   params:{SERVICE:"WMS",VERSION:"1.1.1",LAYERS:LAYER_ORTO,FORMAT:"image/jpeg",SERVICENAME:WMS_SERVICE,STYLES:""}});
 const ortoLayer = new ol.layer.Tile({source:ortoSrc, preload:2});
 
-const COLORS = {todo:"#d64545", doing:"#e8a317", done:"#2e9e5b", none:"#7c5cff"}; // none: not in any task (overview)
-const LABEL  = {todo:"Mangler", doing:"I gang", done:"Færdig", none:"Ikke i en opgave"};
+const COLORS = {todo:"#d64545", doing:"#e8a317", done:"#2e9e5b", blocked:"#2b2b33", none:"#7c5cff"}; // none: not in any task (overview)
+const LABEL  = {todo:"Mangler", doing:"I gang", done:"Færdig", blocked:"Blokeret", none:"Ikke i en opgave"};
 const elSrc = new ol.source.Vector();
 const styleCache = {};
 const elStyle = (f, res) => shapeStyle(statusOf(f.getId()), selSet.has(f), res > 3.2);
@@ -386,6 +408,15 @@ function shapeStyle(s, sel, far){
       geometry: f => { const g = f.getGeometry(); return g.getType()==="Point" ? null : new ol.geom.Point(ol.extent.getCenter(g.getExtent())); },
       image:new ol.style.Circle({radius: sel?9:6, fill:new ol.style.Fill({color:c}), stroke:new ol.style.Stroke({color:"#fff",width:2})}),
       zIndex: sel ? 32 : s==="done" ? 2 : 12
+    }));
+    if(s==="blocked") styleCache[key].push(new ol.style.Style({ // a roadwork sign in the middle, so blocked stands out from far away too
+      geometry: f => { const g = f.getGeometry(), t = g.getType();
+        if(t==="Point") return g;
+        if(t==="Polygon") return g.getInteriorPoint();
+        if(t==="MultiPolygon") return new ol.geom.Point(g.getInteriorPoints().getCoordinates()[0]);
+        return new ol.geom.Point(g.getClosestPoint(ol.extent.getCenter(g.getExtent()))); },
+      text:new ol.style.Text({text:"🚧", font:`${sel ? 24 : far ? 16 : 20}px sans-serif`}),
+      zIndex: sel ? 33 : 13
     }));
   }
   return styleCache[key];
@@ -594,12 +625,14 @@ async function loadProgress(taskId){
   }
   store.get("prog:"+taskId,[]).forEach(r=>progress.set(r.element_id,r));
 }
-function setStatus(ids, status, note){
+function setStatus(ids, status, note, reason){
   ids.forEach(id=>{ const prev = eff(id) || {}, key = task.id+"|"+id;
     const r = {task_id:task.id, element_id:id, status: status ?? prev.status ?? "todo", note: note ?? prev.note ?? "", worker:me};
+    // The reason only belongs to "blocked"; any other status clears it
+    r.reason = r.status==="blocked" ? (reason ?? prev.reason ?? "Andet") : null;
     // Setting an element back to what the team already has is not a change, so it leaves the outbox
     const base = progress.get(id) || {status:"todo", note:""};
-    if(r.status===base.status && r.note===(base.note||"")) pending.delete(key); else pending.set(key, r); });
+    if(r.status===base.status && r.note===(base.note||"") && r.reason===(base.reason||null)) pending.delete(key); else pending.set(key, r); });
   store.set("pending", [...pending.values()]);
   renderOutbox(); refresh();
   if(autoSend) sendPending();
@@ -841,10 +874,10 @@ function refresh(){
   elLayer.changed();
   if(!task) return;
   const ids = elSrc.getFeatures().map(f=>f.getId()), n = ids.length;
-  const c = {todo:0,doing:0,done:0}; ids.forEach(id=>c[statusOf(id)]++);
+  const c = {todo:0,doing:0,done:0,blocked:0}; ids.forEach(id=>c[statusOf(id)]++);
   $("workCount").innerHTML = `${c.done}<span class="muted" style="font-size:18px">/${n}</span>`;
   store.set("count:"+task.id, [c.done, n]);
-  $("bar").innerHTML = n ? ["done","doing","todo"].map(s=>`<i style="width:${c[s]/n*100}%;background:${COLORS[s]}"></i>`).join("") : "";
+  $("bar").innerHTML = n ? ["done","doing","blocked","todo"].map(s=>`<i style="width:${c[s]/n*100}%;background:${COLORS[s]}"></i>`).join("") : "";
   if(selected && !$("pEl").hidden) showEl(false);
   if(!$("pList").hidden) renderList();
 }
@@ -1143,14 +1176,14 @@ async function overPaint(){
   if(over!==o) return;
   areaSrc.clear();
   tl.forEach(t=>{ const f = new ol.Feature(shapeGeom(t)); f.setProperties({label:t.name, tid:t.id, color:col.get(t.id)}); areaSrc.addFeature(f); });
-  const shapes = tl.map(t=>({t, s:prepShape(t)})), RANK = {todo:0, doing:1, done:2};
-  const per = new Map(tl.map(t=>[t.id, {done:0, total:0}])), c = {none:0, todo:0, doing:0, done:0};
+  const shapes = tl.map(t=>({t, s:prepShape(t)})), RANK = {todo:0, doing:1, blocked:2, done:3};
+  const per = new Map(tl.map(t=>[t.id, {done:0, blocked:0, total:0}])), c = {none:0, todo:0, doing:0, blocked:0, done:0};
   overSrc.getFeatures().forEach(f=>{
     const g = f.getGeometry(); let best = null; const in_ = [];
     for(const {t,s} of shapes){
       if(!inShape(g, s)) continue;
       const st = prog.get(t.id+"|"+f.getId()) || "todo", p = per.get(t.id);
-      p.total++; if(st==="done") p.done++;
+      p.total++; if(st==="done") p.done++; if(st==="blocked") p.blocked++;
       in_.push([t.id, st]);
       if(best===null || RANK[st] > RANK[best]) best = st;
     }
@@ -1158,13 +1191,13 @@ async function overPaint(){
   });
   overLayer.changed();
   const n = overSrc.getFeatures().length, name = (CODES[o.code]||o.code).toLowerCase();
-  $("overBar").innerHTML = n ? ["done","doing","todo","none"].map(s=>`<i style="width:${c[s]/n*100}%;background:${COLORS[s]}"></i>`).join("") : "";
-  const LEG = {none:"ikke i en opgave", todo:"mangler", doing:"i gang", done:"færdige"};
-  $("overLegend").innerHTML = ["none","todo","doing","done"].map(s=>`<span><i style="background:${COLORS[s]}"></i><b class="num">${c[s]}</b> ${LEG[s]}</span>`).join("");
+  $("overBar").innerHTML = n ? ["done","doing","blocked","todo","none"].map(s=>`<i style="width:${c[s]/n*100}%;background:${COLORS[s]}"></i>`).join("") : "";
+  const LEG = {none:"ikke i en opgave", todo:"mangler", doing:"i gang", blocked:"blokeret", done:"færdige"};
+  $("overLegend").innerHTML = ["none","todo","doing","blocked","done"].map(s=>`<span><i style="background:${COLORS[s]}"></i><b class="num">${c[s]}</b> ${LEG[s]}</span>`).join("");
   $("overTasks").innerHTML = (c.none ? `<button class="item" data-none="1"><div class="grow"><div class="t">Ikke i en opgave</div><div class="s">Vis hvor de ligger</div></div><span class="pill none num">${c.none}</span></button>` : "")
     + `<div class="section">Opgaver med ${esc(name)}</div>`
     + (tl.length ? tl.map(t=>{ const p = per.get(t.id);
-        return `<div class="row"><button class="item grow${o.focus===t.id ? " on" : ""}" data-fit="${esc(t.id)}"><i class="swatch" style="background:${col.get(t.id)}"></i><div class="grow"><div class="t">${esc(t.name)}</div><div class="s">${esc(whoFor(t))}</div></div>
+        return `<div class="row"><button class="item grow${o.focus===t.id ? " on" : ""}" data-fit="${esc(t.id)}"><i class="swatch" style="background:${col.get(t.id)}"></i><div class="grow"><div class="t">${esc(t.name)}</div><div class="s">${esc(whoFor(t))}${p.blocked ? ` · 🚧 ${p.blocked} blokeret` : ""}</div></div>
           <span class="pill ${p.total && p.done===p.total ? "done" : "todo"} num">${p.done}/${p.total}</span></button>
           <button class="btn ghost" data-open="${esc(t.id)}">Åbn</button></div>`; }).join("")
       : `<p class="muted" style="margin:0">Ingen aktive opgaver med ${esc(name)}.</p>`);
@@ -1211,6 +1244,9 @@ function showEl(zoom){
   const s = sts.size===1 ? [...sts][0] : null;
   document.querySelectorAll(".status [data-s]").forEach(b=>b.classList.toggle("on", b.dataset.s===s));
   const p = eff(f.getId());
+  const why = [...new Set(fs.map(g=>eff(g.getId())).filter(x=>x?.status==="blocked").map(x=>x.reason||"Andet"))];
+  $("elBlock").hidden = !why.length;
+  $("elBlock").textContent = why.length ? `🚧 Midlertidigt blokeret: ${why.join(", ")}` : "";
   if(document.activeElement !== $("note")) $("note").value = n>1 ? "" : (p?.note || "");
   const unsent = fs.some(g=>pending.has(task.id+"|"+g.getId()));
   const latest = fs.map(g=>progress.get(g.getId())).filter(Boolean).sort((a,b)=>a.updated_at<b.updated_at?1:-1)[0];
@@ -1228,7 +1264,7 @@ map.on("singleclick", e=>{
     const f = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===overLayer, hitTolerance:12})[0];
     if(f){ // every task the element is in, grouped by its status there
       const by = {}; (f.get("_t")||[]).forEach(([id,st])=>{ const t = tasks.find(x=>x.id===id); if(t) (by[st] ||= []).push(t.name); });
-      const parts = ["done","doing","todo"].filter(s=>by[s]).map(s=>`${LABEL[s]} i ${by[s].join(", ")}`), n = Object.values(by).flat().length;
+      const parts = ["done","doing","blocked","todo"].filter(s=>by[s]).map(s=>`${LABEL[s]} i ${by[s].join(", ")}`), n = Object.values(by).flat().length;
       toast(`${titleOf(f)}${subOf(f) ? " · " + subOf(f) : ""} · ${parts.length ? parts.join(" · ") : "ikke i en opgave"}`, 4000 + 1500*Math.max(0, n-1)); }
     return;
   }
@@ -1265,9 +1301,21 @@ document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !$("askClear").
 $("btnClearSel").onclick = ()=>{ const n = selSet.size; select(null); if(n>1) toast("Markeringer fjernet"); };
 document.querySelectorAll(".status [data-s]").forEach(b=>b.onclick=()=>{
   const ids = [...selSet].map(g=>g.getId());
+  if(b.dataset.s==="blocked"){ askBlock(); return; } // asks why first
   setStatus(ids, b.dataset.s);
   if(b.dataset.s==="done") toast(ids.length>1 ? `${ids.length} færdige ✓ Tryk Næste` : "Færdig ✓ Tryk Næste for den nærmeste");
 });
+function askBlock(){ $("blockNote").value = $("note").value; $("askBlock").hidden = false; }
+function closeBlock(){ $("askBlock").hidden = true; }
+$("askBlock").querySelectorAll("[data-r]").forEach(b=>b.onclick=()=>{
+  const ids = [...selSet].map(g=>g.getId()), note = $("blockNote").value.trim();
+  closeBlock(); $("note").value = note;
+  setStatus(ids, "blocked", note, b.dataset.r);
+  toast(`${ids.length>1 ? ids.length + " blokeret" : "Blokeret"}: ${b.dataset.r}. Tryk Næste`, 3000);
+});
+$("askBlockNo").onclick = closeBlock;
+$("askBlock").onclick = e=>{ if(e.target===$("askBlock")) closeBlock(); };
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !$("askBlock").hidden) closeBlock(); });
 $("btnNote").onclick = ()=>{ setStatus([...selSet].map(g=>g.getId()), null, $("note").value); toast("Note gemt"); };
 $("btnElClose").onclick = ()=>select(null);
 // Directions in Google Maps (opens the Maps app on phones). Goes to the marked element nearest you,
@@ -1292,8 +1340,9 @@ function next(){
   const p = here();
   const open = elSrc.getFeatures().filter(f=>!selSet.has(f) && statusOf(f.getId())!=="done");
   if(!open.length){ toast("Alt i opgaven er færdigt 🎉", 4000); return; }
-  const untouched = open.filter(f=>statusOf(f.getId())==="todo"); // skip what a colleague is on
-  const pool = untouched.length ? untouched : open;
+  // Untouched first (skip what a colleague is on); blocked ones only when nothing else is left
+  const untouched = open.filter(f=>statusOf(f.getId())==="todo"), notBlocked = open.filter(f=>statusOf(f.getId())!=="blocked");
+  const pool = untouched.length ? untouched : notBlocked.length ? notBlocked : open;
   pool.sort((a,b)=>distTo(a,p)-distTo(b,p));
   select(pool[0]);
   toast(`${fmtDist(distTo(pool[0],p))} væk`);
@@ -1308,7 +1357,7 @@ function renderList(){
   const fs = elSrc.getFeatures().filter(f=>!onlyOpen || statusOf(f.getId())!=="done").map(f=>[f, distTo(f,p)]).sort((a,b)=>a[1]-b[1]).slice(0,300);
   $("elList").innerHTML = fs.length ? fs.map(([f,d])=>{ const s=statusOf(f.getId()), pr=eff(f.getId());
     return `<button class="item" data-id="${esc(f.getId())}"><div class="grow"><div class="t">${esc(titleOf(f))}</div>
-      <div class="s num">${fmtDist(d)}${pr?.worker && s!=="todo" && !isBoss() ? " · "+esc(pr.worker) : ""}${pr?.note ? " · "+esc(pr.note) : ""}</div></div>
+      <div class="s num">${fmtDist(d)}${pr?.worker && s!=="todo" && !isBoss() ? " · "+esc(pr.worker) : ""}${s==="blocked" ? " · 🚧 "+esc(pr.reason||"Andet") : ""}${pr?.note ? " · "+esc(pr.note) : ""}</div></div>
       <span class="pill ${s}">${LABEL[s]}</span></button>`; }).join("") : `<p class="muted" style="margin:0">Intet tilbage. Godt gået.</p>`;
   $("elList").querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>select(elSrc.getFeatureById(b.dataset.id)));
 }
