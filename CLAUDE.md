@@ -25,6 +25,7 @@ A phone web app for Captain's idverde crew (Ikast-Brande Kommune contract). Boss
 - Aerial tiles: fixed 256 px grid in EPSG:25832, service worker cache-first, 180 days.
 - A task only auto-zooms the first time it's opened; map position is remembered.
 - Task areas: a rectangle (`extent` only, `area` null) or a freehand polygon (`area` = GeoJSON Polygon in EPSG:25832, `extent` = its bounding box). The WFS request uses the bbox; elements are cut to the polygon on the phone (`hitsArea`). Max bbox 60 km². If the `area` column is missing, saves fall back to the rectangle. Stored element data carries an area key, so redrawing a task re-downloads it.
+- Every fetch must be complete: if a layer fails, the whole fetch fails and the stored data is kept (no partial maps). If the server's GeoJSON says `totalFeatures`/`numberMatched` is more than it returned (a feature cap), the rest is fetched with `startIndex`; if it still doesn't add up, the fetch fails. The real cap on the kommune's server hasn't been checked (it can't be reached from the cloud container).
 - Overblik (boss): one type for the whole kommune via `elementkode IN (...)` with no bbox, cached as `type:<code>` with the same once-a-day rules. Status per element comes from the tasks covering it (done > blocked > doing > todo); purple = in no task. Each task area gets an outline colour from `TASK_COLORS` (by created_at order, avoiding the status colours), shown as a stripe in the task list; tapping a task focuses it.
 
 ## Backend: Supabase

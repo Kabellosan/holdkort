@@ -726,22 +726,42 @@ function wfs(layer, extra){
     if(!res.ok) throw new Error(`${layer}: HTTP ${res.status}`);
     const txt = await res.text();
     if(!txt.trim().startsWith("{")) throw new Error(`${layer}: serveren svarede ikke med data`);
-    return fmt.readFeatures(txt);
+    const j = JSON.parse(txt), fs = fmt.readFeatures(j);
+    fs.total = typeof j.totalFeatures === "number" ? j.totalFeatures : typeof j.numberMatched === "number" ? j.numberMatched : null;
+    return fs;
   });
 }
-// Each layer tries the CQL filters in order; keep() decides what stays
+// The server may cap how many elements one answer holds. If it says there are more, fetch the rest page by page;
+// if they still don't add up, fail rather than show a map with elements quietly missing
+async function wfsAll(layer, extra){
+  const fs = await wfs(layer, extra);
+  if(fs.total == null || fs.length >= fs.total) return fs;
+  const all = [...fs];
+  while(all.length < fs.total){
+    const more = await wfs(layer, {...extra, startIndex:String(all.length)});
+    if(!more.length) break;
+    all.push(...more);
+  }
+  if(all.length < fs.total) throw new Error(`${layer}: fik kun ${all.length} af ${fs.total} elementer`);
+  return all;
+}
+// Each layer tries the CQL filters in order; keep() decides what stays.
+// Every layer must answer: one that failed would silently drop all its elements (and the gap would be stored
+// for a day), so the whole fetch fails instead and the phone keeps the data it already has
 async function fetchLayers(cqls, keep){
   const results = await Promise.allSettled(WFS_LAYERS.map(async layer=>{
     let fs, err;
-    for(const cql of cqls){ try{ fs = await wfs(layer,{CQL_FILTER:cql}); break; }catch(e){ err = e; } }
+    for(const cql of cqls){ try{ fs = await wfsAll(layer,{CQL_FILTER:cql}); break; }catch(e){ err = e; } }
     if(!fs) throw err;
     const short = layer.replace("element_","").replace("_distribution","");
     return fs.filter(f=>f.getGeometry() && keep(f.getGeometry()))
              .map(f=>{ f.setId(short + ":" + (f.get("ogc_fid") ?? f.get("unik_id") ?? f.getId())); return f; });
   }));
-  const ok = results.filter(r=>r.status==="fulfilled");
-  if(!ok.length) throw new Error(results.map(r=>r.reason?.message).join("; "));
-  return ok.flatMap(r=>r.value);
+  const bad = results.filter(r=>r.status==="rejected");
+  if(bad.length) throw new Error(bad.map(r=>r.reason?.message).join("; "));
+  // Pages can overlap if the server's order shifts between requests; keep each element once
+  const seen = new Set();
+  return results.flatMap(r=>r.value).filter(f=>!seen.has(f.getId()) && seen.add(f.getId()));
 }
 const codeIn = codes => `elementkode IN (${codes.map(c=>`'${c.replace(/'/g,"")}'`).join(",")})`;
 async function fetchElements(codes, extent, area){
