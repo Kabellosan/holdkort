@@ -100,6 +100,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 @media (prefers-color-scheme:dark){.tended.warn{color:var(--doing)}}
 .hist{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:var(--r);background:var(--paper)}
 .hist .when{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.hist .go{align-self:flex-start}
 .hist img{width:100%;max-height:240px;object-fit:cover;border-radius:10px;cursor:zoom-in;background:var(--line)}
 .photo-view{position:absolute;inset:0;background:#000e;display:flex;align-items:center;justify-content:center;z-index:40;padding:12px}
 .photo-view img{max-width:100%;max-height:100%;border-radius:8px}
@@ -315,6 +316,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="row">
       <button class="btn primary fill" id="btnNext">Næste ▸</button>
       <button class="btn" id="btnList">Liste</button>
+      <button class="btn" id="btnTaskPhotos" hidden>📷 Billeder</button>
     </div>
   </div>
 
@@ -430,7 +432,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 
 <!-- One element's log: when it was tended, notes and photos -->
 <div class="panel" id="pHist" hidden>
-  <header><div class="row"><div class="grow"><div class="eyebrow">Historik</div><h2 id="histTitle"></h2></div><button class="btn ghost" id="btnHistClose">Luk</button></div></header>
+  <header><div class="row"><div class="grow"><div class="eyebrow" id="histEyebrow">Historik</div><h2 id="histTitle"></h2></div><button class="btn ghost" id="btnHistClose">Luk</button></div></header>
   <div class="body" id="histList"></div>
 </div>
 <div class="photo-view" id="photoView" hidden role="dialog" aria-modal="true" aria-label="Billede"><img id="photoImg" alt=""><button class="btn" id="btnPhotoClose">✕ Luk</button></div>
@@ -1195,6 +1197,7 @@ async function openTask(t){
   geo.setTracking(true);
   areaSrc.addFeature(new ol.Feature(shapeGeom(t)));
   $("btnEditArea").hidden = $("btnPick").hidden = !isBoss();
+  $("btnTaskPhotos").hidden = !sb || !logOk;
   $("workName").textContent = t.name; $("workCodes").textContent = packCodes(t.codes) + scopeOf(t);
   $("workCount").innerHTML = `<span class="spin"></span>`; $("bar").innerHTML = ""; $("dataAge").textContent = "";
   pane("pWork");
@@ -2003,6 +2006,7 @@ const histPill = r => { const st = r.status || (r.done ? "done" : null); if(!st)
   return `<span class="pill ${st}">${st==="blocked" ? "🚧 " : ""}${LABEL[st]}${st==="blocked" && r.reason ? ": " + esc(r.reason) : ""}</span>`; };
 async function showHistory(f){
   const id = f.getId(), L = $("histList");
+  $("histEyebrow").textContent = "Historik";
   $("histTitle").textContent = titleOf(f);
   L.innerHTML = `<p class="muted"><span class="spin"></span> Henter …</p>`;
   $("pHist").hidden = false;
@@ -2023,6 +2027,34 @@ async function showHistory(f){
   L.querySelectorAll("img").forEach(i=>i.onclick=()=>{ $("photoImg").src = i.src; $("photoView").hidden = false; });
 }
 $("btnHist").onclick = ()=>{ if(selected) showHistory(selected); };
+// Every photo in the open task, newest first, so nobody has to tap each element to find them
+async function showTaskPhotos(){
+  if(!task || !sb) return;
+  const t = task, L = $("histList");
+  $("histEyebrow").textContent = "Billeder";
+  $("histTitle").textContent = t.name;
+  L.innerHTML = `<p class="muted"><span class="spin"></span> Henter …</p>`;
+  $("pHist").hidden = false;
+  const {data, error} = await sb.from("element_log").select("*").eq("task_id", t.id).not("photo", "is", null)
+    .order("day",{ascending:false}).order("id",{ascending:false}).limit(200);
+  if($("pHist").hidden || task !== t) return;
+  if(error){ L.innerHTML = `<p class="muted">Billederne kan ikke hentes lige nu. Tjek forbindelsen.</p>`; return; }
+  const local = [];
+  for(const r of pending.values()) if(r.task_id===t.id) for(const p of (r._photos||[])){ const b = await photoGet(p); if(b) local.push({id:r.element_id, url:URL.createObjectURL(b)}); }
+  const name = id => { const f = elSrc.getFeatureById(id); return f ? titleOf(f) : ""; };
+  const go = id => elSrc.getFeatureById(id) ? `<button class="btn go" data-go="${esc(id)}">Vis på kortet ›</button>` : "";
+  L.innerHTML = (local.length ? `<div class="hist"><div class="when"><b>Ikke sendt endnu</b></div>${local.map(x=>`
+        ${name(x.id) ? `<div>${esc(name(x.id))}</div>` : ""}<img src="${x.url}" alt="Billede, ikke sendt">${go(x.id)}`).join("")}</div>` : "")
+    + (data.length ? data.map(r=>`<div class="hist">
+        <div class="when"><b>${esc(longDate(r.day))}</b><span class="muted">${sinceText(r.day)}</span></div>
+        ${name(r.element_id) || (isBoss() && r.worker) ? `<div class="muted">${[esc(name(r.element_id)), isBoss() && r.worker ? esc(r.worker) : ""].filter(Boolean).join(" · ")}</div>` : ""}
+        ${r.note ? `<div>${esc(r.note)}</div>` : ""}
+        <img src="${esc(photoUrl(r.photo))}" loading="lazy" alt="Billede fra ${esc(longDate(r.day))}">${go(r.element_id)}</div>`).join("")
+      : (local.length ? "" : `<p class="muted">Ingen billeder i denne opgave endnu. Tryk på et sted på kortet og så på "📷 Billede" for at tage et.</p>`));
+  L.querySelectorAll("img").forEach(i=>i.onclick=()=>{ $("photoImg").src = i.src; $("photoView").hidden = false; });
+  L.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{ const f = elSrc.getFeatureById(b.dataset.go); $("pHist").hidden = true; if(f) select(f); });
+}
+$("btnTaskPhotos").onclick = showTaskPhotos;
 $("btnHistClose").onclick = ()=>{ $("pHist").hidden = true; };
 $("btnPhotoClose").onclick = $("photoView").onclick = ()=>{ $("photoView").hidden = true; };
 
