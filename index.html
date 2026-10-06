@@ -119,6 +119,14 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;color:var(--ink2);min-width:3.6em}
 .chosen{display:flex;gap:6px;flex-wrap:wrap}
 .chosen span{background:var(--moss);color:#fff;border-radius:999px;padding:5px 11px;font-size:14px}
+/* Packages: saved groups of types */
+.packs{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.packs button{border-radius:999px;border:2px solid var(--line);background:var(--card);padding:8px 14px;min-height:44px;font-size:15px}
+.packs button.on{border-color:var(--moss2);background:var(--moss);color:#fff}
+.packs button.edit{border-style:dashed;color:var(--ink2)}
+.pack{display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:var(--r);background:var(--paper)}
+.pack h3{margin:0;font-size:17px}
+.pack .s{font-size:14px;color:var(--ink2)}
 
 .outbox{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;background:var(--paper);border:2px solid var(--doing);border-radius:var(--r);padding:8px 8px 8px 14px;margin-bottom:12px}
 .outbox .grow{flex-basis:100%}
@@ -227,6 +235,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button class="btn ghost" id="btnBack" aria-label="Tilbage til opgaver">‹ Opgaver</button>
       <div class="grow"></div>
       <button class="btn ghost" id="btnEditArea" hidden>▭ Område</button>
+      <button class="btn ghost" id="btnPick" hidden>☝ Steder</button>
       <button class="btn ghost" id="btnGps">◎ Min position</button>
     </div>
     <div class="row">
@@ -238,6 +247,17 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="row">
       <button class="btn primary fill" id="btnNext">Næste ▸</button>
       <button class="btn" id="btnList">Liste</button>
+    </div>
+  </div>
+
+  <!-- A boss picks which elements of the area belong to the task -->
+  <div class="pane" id="pPick" hidden>
+    <div><div class="eyebrow">Vælg steder</div><h2 id="pickName"></h2></div>
+    <div class="muted">Tryk på de steder, holdet skal tage. Tryk igen for at fjerne et sted. Blå er med, grå er ikke.</div>
+    <div class="row"><span class="grow"><b class="num" id="pickCount">0</b> <span class="muted" id="pickOf"></span></span><button class="btn" id="btnPickAll">Hele området</button></div>
+    <div class="row">
+      <button class="btn" id="btnPickCancel">Annullér</button>
+      <button class="btn primary fill" id="btnPickOk">Gem steder</button>
     </div>
   </div>
 
@@ -302,17 +322,31 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 <div class="panel" id="pNew" hidden>
   <header>
     <div class="row"><h2 class="grow">Ny opgave</h2><button class="btn ghost" id="btnNewCancel">Annullér</button></div>
+    <div class="section" style="margin:0">Pakker</div>
+    <div class="packs" id="packList"></div>
     <input type="search" id="codeSearch" placeholder="Søg type: pur, fortov, græs, bænk …" autocomplete="off">
   </header>
   <div class="list" id="codeList"></div>
   <footer>
     <div class="chosen" id="chosen"></div>
     <input type="text" id="taskTitle" placeholder="Navn, fx 'Pur i Brande, uge 41'">
+    <label class="switch"><input type="checkbox" id="newPick"><span><b>Kun udvalgte steder</b><br><span class="muted">Du trykker stederne af på kortet bagefter, fx der hvor den store maskine ikke kan komme til.</span></span></label>
     <div class="section">Hvem skal lave den?</div>
     <div class="people" id="assignList"></div>
     <div class="row"><span class="muted grow" id="newAreaInfo"></span><button class="btn ghost" id="btnNewArea">Ret område</button></div>
     <button class="btn primary" id="btnCreate">Opret opgave</button>
   </footer>
+</div>
+
+<!-- Packages: list, and one package being made or changed (bosses), full screen -->
+<div class="panel" id="pPack" hidden>
+  <header>
+    <div class="row"><h2 class="grow" id="packTitle">Pakker</h2><button class="btn ghost" id="btnPackClose">Luk</button></div>
+    <input type="text" id="packName" placeholder="Pakkens navn, fx 'Fast belægning'" autocomplete="off" hidden>
+    <input type="search" id="packSearch" placeholder="Søg type: pur, fortov, græs …" autocomplete="off" hidden>
+  </header>
+  <div class="list" id="packBody"></div>
+  <footer id="packFoot"></footer>
 </div>
 
 <!-- Pick a type for the overview, full screen -->
@@ -438,7 +472,8 @@ const ortoSrc = new ol.source.TileWMS({url:WMS_URL, tileGrid, projection:proj, t
   params:{SERVICE:"WMS",VERSION:"1.1.1",LAYERS:LAYER_ORTO,FORMAT:"image/jpeg",SERVICENAME:WMS_SERVICE,STYLES:""}});
 const ortoLayer = new ol.layer.Tile({source:ortoSrc, preload:2});
 
-const COLORS = {todo:"#d64545", doing:"#e8a317", done:"#2e9e5b", blocked:"#2b2b33", none:"#7c5cff"}; // none: not in any task (overview)
+const COLORS = {todo:"#d64545", doing:"#e8a317", done:"#2e9e5b", blocked:"#2b2b33", none:"#7c5cff", // none: not in any task (overview)
+                pick:"#1f6feb", off:"#9aa0a6"}; // while a boss picks a task's spots: in it / not in it
 const LABEL  = {todo:"Mangler", doing:"I gang", done:"Færdig", blocked:"Blokeret", none:"Ikke i en opgave"};
 // Overview "Sidst passet": days since an element was last sent as done, fresh green to old red; grey = not in the log
 const AGES = [{k:"a0", max:7, c:"#1a9850", l:"0–7 dage"}, {k:"a1", max:14, c:"#91cf60", l:"8–14 dage"}, {k:"a2", max:30, c:"#fee08b", l:"15–30 dage"},
@@ -447,27 +482,28 @@ AGES.forEach(a=>COLORS[a.k] = a.c);
 const ageKey = day => day ? AGES.find(a=>daysSince(day) <= a.max).k : "never";
 const elSrc = new ol.source.Vector();
 const styleCache = {};
-const elStyle = (f, res) => shapeStyle(statusOf(f.getId()), selSet.has(f), res > 3.2);
+const elStyle = (f, res) => pick ? shapeStyle(pick.ids.has(f.getId()) ? "pick" : "off", false, res > 3.2)
+  : shapeStyle(statusOf(f.getId()), selSet.has(f), res > 3.2);
 function shapeStyle(s, sel, far){
   const key = s + sel + (far ? "far" : "near");
   if(!styleCache[key]){
-    const c = COLORS[s];
+    const c = COLORS[s], low = s==="done" || s==="off"; // done and not-picked sit underneath and fade
     styleCache[key] = [
       new ol.style.Style({ // white halo so shapes pop on the aerial photo
         stroke:new ol.style.Stroke({color:"#ffffffcc", width: sel ? 9 : far ? 6 : 5}),
         image:new ol.style.Circle({radius: sel?13:10, fill:new ol.style.Fill({color:"#fff"})}),
-        zIndex: sel ? 30 : s==="done" ? 0 : 10
+        zIndex: sel ? 30 : low ? 0 : 10
       }),
       new ol.style.Style({
-        fill:new ol.style.Fill({color: c + (sel ? "aa" : s==="done" ? "66" : "99")}),
+        fill:new ol.style.Fill({color: c + (sel ? "aa" : low ? "66" : "99")}),
         stroke:new ol.style.Stroke({color:c, width: sel ? 5 : far ? 4 : 3}),
         image:new ol.style.Circle({radius: sel?10:7, fill:new ol.style.Fill({color:c})}),
-        zIndex: sel ? 31 : s==="done" ? 1 : 11
+        zIndex: sel ? 31 : low ? 1 : 11
       })];
     if(far) styleCache[key].push(new ol.style.Style({ // a dot on every element so small hedges are findable zoomed out
       geometry: f => { const g = f.getGeometry(); return g.getType()==="Point" ? null : new ol.geom.Point(ol.extent.getCenter(g.getExtent())); },
       image:new ol.style.Circle({radius: sel?9:6, fill:new ol.style.Fill({color:c}), stroke:new ol.style.Stroke({color:"#fff",width:2})}),
-      zIndex: sel ? 32 : s==="done" ? 2 : 12
+      zIndex: sel ? 32 : low ? 2 : 12
     }));
     if(s==="blocked") styleCache[key].push(new ol.style.Style({ // a roadwork sign in the middle, so blocked stands out from far away too
       geometry: f => { const g = f.getGeometry(), t = g.getType();
@@ -536,7 +572,7 @@ const sheetPad = () => $("sheet").offsetHeight + 20;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function toast(t, ms=2600){const el=$("toast"); el.textContent=t; el.classList.add("show"); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove("show"),ms);}
-const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver"];
+const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick"];
 const curPane = () => PANES.find(p=>!$(p).hidden);
 function pane(id){ PANES.forEach(p=>$(p).hidden = p!==id); }
 // Only the day is ever shown, never the clock time
@@ -856,6 +892,7 @@ function subOf(f){
 const norm = n => cleanName(n).toLowerCase();
 const forMe = t => !t.assignees?.length || t.assignees.some(a=>norm(a)===norm(me));
 const whoFor = t => !t.assignees?.length ? "Alle" : t.assignees.join(", ");
+const scopeOf = t => t.elements ? ` · ${t.elements.length} udvalgte ${t.elements.length===1?"sted":"steder"}` : "";
 // Bosses can switch between the task list and "Holdet": who is on which task
 let bossView = store.get("bossView","tasks"), crew = [], peopleRows = [];
 // Everyone in people; someone a boss took off the team has a "removed" day (the row stays so history keeps the name)
@@ -880,7 +917,7 @@ function taskRow(t, noClose){
   const done = store.get("count:"+t.id, null);
   return `<div class="row">
     <button class="item grow" data-open="${esc(t.id)}"><div class="grow"><div class="t">${esc(t.name)}</div>
-    <div class="s">${esc(codeNames(t.codes))} · ${esc(whoFor(t))}</div></div>
+    <div class="s">${esc(codeNames(t.codes) + scopeOf(t))} · ${esc(whoFor(t))}</div></div>
     ${done ? `<span class="pill ${done[0]===done[1]?"done":"todo"} num">${done[0]}/${done[1]}</span>` : ""}</button>
     ${isBoss() && !noClose ? `<button class="btn ghost" data-arch="${esc(t.id)}">Afslut</button>` : ""}</div>`;
 }
@@ -992,7 +1029,14 @@ function showDataAge(saved){
   if(!saved){ $("dataAge").textContent = ""; return; }
   $("dataAge").textContent = `Kortdata hentet ${ago(new Date(saved).toISOString())} · gemt på telefonen`;
 }
+// A task can be limited to hand-picked elements. The phone keeps the whole area's data (taskAll),
+// so a boss can change the pick without asking the kommune again
+let taskAll = [], pick = null; // pick: {t, ids} while a boss picks spots
+const onlyPicked = (t, fs) => { if(!t.elements) return fs; const ids = new Set(t.elements); return fs.filter(f=>ids.has(f.getId())); };
 function swapElements(fs){
+  taskAll = fs;
+  if(pick){ elSrc.clear(); elSrc.addFeatures(fs); pickCount(); return; }
+  fs = onlyPicked(task, fs);
   loadLastTended(fs.map(f=>f.getId())).then(m=>{ if(task){ lastTended = m; refresh(); } });
   const ids = new Set([...selSet].map(f=>f.getId()));
   elSrc.clear(); elSrc.addFeatures(fs);
@@ -1009,10 +1053,11 @@ async function refreshElements(t, manual){
 async function openTask(t){
   closeOverview();
   task = t; selected = null; selSet.clear(); elSrc.clear(); areaSrc.clear(); clearTimeout(refreshTimer);
+  taskAll = []; pick = null;
   geo.setTracking(true);
   areaSrc.addFeature(new ol.Feature(shapeGeom(t)));
-  $("btnEditArea").hidden = !isBoss();
-  $("workName").textContent = t.name; $("workCodes").textContent = codeNames(t.codes);
+  $("btnEditArea").hidden = $("btnPick").hidden = !isBoss();
+  $("workName").textContent = t.name; $("workCodes").textContent = codeNames(t.codes) + scopeOf(t);
   $("workCount").innerHTML = `<span class="spin"></span>`; $("bar").innerHTML = ""; $("dataAge").textContent = "";
   pane("pWork");
   // Only jump to the task area the first time; after that the map stays where you left it
@@ -1029,10 +1074,11 @@ async function openTask(t){
     catch(e){ console.error(e); toast("Kunne ikke hente elementer fra kommunen. Prøv igen om lidt.", 5000); $("workCount").textContent="–"; return; }
   }
   if(task !== t) return;
+  taskAll = feats; feats = onlyPicked(t, feats);
   elSrc.addFeatures(feats);
   refresh();
   loadLastTended(feats.map(f=>f.getId())).then(m=>{ if(task===t){ lastTended = m; refresh(); } });
-  if(!feats.length) toast("Ingen elementer af den type i området", 4000);
+  if(!feats.length && !t.elements) toast("Ingen elementer af den type i området", 4000);
   // Stale data: refresh quietly later, spread out over a few minutes so phones don't all ask at once
   if(cached && Date.now() - cached.saved > DAY && !rushHour())
     refreshTimer = setTimeout(()=>{ if(task===t && navigator.onLine && !rushHour()) refreshElements(t, false); }, 15000 + Math.random()*180000);
@@ -1042,7 +1088,7 @@ $("btnBack").onclick = ()=>{ clearTimeout(refreshTimer); task=null; selected=nul
 
 function refresh(){
   elLayer.changed();
-  if(!task) return;
+  if(!task || pick) return;
   const ids = elSrc.getFeatures().map(f=>f.getId()), n = ids.length;
   const c = {todo:0,doing:0,done:0,blocked:0}; ids.forEach(id=>c[statusOf(id)]++);
   $("workCount").innerHTML = `${c.done}<span class="muted" style="font-size:18px">/${n}</span>`;
@@ -1051,6 +1097,43 @@ function refresh(){
   if(selected && !$("pEl").hidden) showEl(false);
   if(!$("pList").hidden) renderList();
 }
+
+// ================= PICKING SPOTS: a boss chooses which elements of the area are in the task =================
+// fresh: a new task starts with nothing picked; an existing whole-area task starts with everything picked
+function startPick(t, fresh){
+  if(task!==t || !taskAll.length){ toast("Kortet er ikke hentet endnu. Prøv igen om lidt.", 4000); return; }
+  pick = {t, ids:new Set(t.elements || (fresh ? [] : taskAll.map(f=>f.getId())))};
+  selected = null; selSet.clear();
+  elSrc.clear(); elSrc.addFeatures(taskAll);
+  $("pickName").textContent = t.name; pane("pPick"); pickCount();
+}
+function pickCount(){
+  $("pickCount").textContent = pick.ids.size;
+  $("pickOf").textContent = `valgt af ${taskAll.length} i området`;
+  elLayer.changed();
+}
+function endPick(){
+  const t = pick.t; pick = null;
+  elSrc.clear(); elSrc.addFeatures(onlyPicked(t, taskAll));
+  $("workCodes").textContent = codeNames(t.codes) + scopeOf(t);
+  pane("pWork"); refresh();
+}
+async function savePick(ids){
+  const t = pick.t;
+  if(sb){
+    const {error} = await sb.from("tasks").update({elements:ids}).eq("id", t.id);
+    if(error){ toast("Stederne blev ikke gemt. Tjek forbindelsen og prøv igen.", 4000); return; }
+  }
+  t.elements = ids; store.set("tasks", tasks);
+  endPick(); toast(ids ? `${ids.length} ${ids.length===1?"sted":"steder"} gemt` : "Hele området er med i opgaven");
+}
+$("btnPick").onclick = ()=>{ if(task) startPick(task, false); };
+$("btnPickCancel").onclick = endPick;
+$("btnPickAll").onclick = ()=>savePick(null);
+$("btnPickOk").onclick = ()=>{
+  if(!pick.ids.size){ toast("Tryk på mindst ét sted, eller vælg Hele området", 4000); return; }
+  savePick(taskAll.map(f=>f.getId()).filter(id=>pick.ids.has(id)));
+};
 
 // ================= NEW TASK (full screen) =================
 let picked = new Set(), newShape = null, assignees = new Set(), people = [];
@@ -1067,31 +1150,113 @@ function renderAssign(){
   $("assignList").querySelector("[data-add]").onclick = ()=>{
     let n = cleanName(window.prompt("Navn på medarbejder:")); if(n){ n = people.find(p=>norm(p)===norm(n)) || n; if(!people.includes(n)) people.push(n); assignees.add(n); renderAssign(); } };
 }
-function renderCodes(){
-  const q = $("codeSearch").value.trim().toLowerCase();
+// A checklist of every type; set holds the ticked codes
+function codeChecks(el, q, set, changed){
+  q = q.trim().toLowerCase();
   const list = Object.entries(CODES).filter(([k,v])=>!q || k.toLowerCase().includes(q) || v.toLowerCase().includes(q));
-  $("codeList").innerHTML = list.map(([k,v])=>`<label class="code-item ${picked.has(k)?"on":""}"><input type="checkbox" value="${k}" ${picked.has(k)?"checked":""}><span class="grow">${esc(v)}</span><span class="code">${k}</span></label>`).join("")
+  el.innerHTML = list.map(([k,v])=>`<label class="code-item ${set.has(k)?"on":""}"><input type="checkbox" value="${k}" ${set.has(k)?"checked":""}><span class="grow">${esc(v)}</span><span class="code">${k}</span></label>`).join("")
     || `<p class="muted">Ingen typer matcher "${esc(q)}"</p>`;
-  $("codeList").querySelectorAll("input").forEach(i=>i.onchange=()=>{
-    i.checked ? picked.add(i.value) : picked.delete(i.value);
+  el.querySelectorAll("input").forEach(i=>i.onchange=()=>{
+    i.checked ? set.add(i.value) : set.delete(i.value);
     i.closest(".code-item").classList.toggle("on", i.checked);
-    renderChosen();
+    changed();
   });
 }
+function renderCodes(){ codeChecks($("codeList"), $("codeSearch").value, picked, renderChosen); }
+const sameCodes = (a, b) => a.length===b.size && a.every(c=>b.has(c));
 function renderChosen(){
-  $("chosen").innerHTML = [...picked].map(c=>`<span>${esc(typeName(c))}</span>`).join("") || `<span class="muted" style="background:none;color:var(--ink2);padding:0">Ingen typer valgt</span>`;
+  $("chosen").innerHTML = ([...picked].map(c=>`<span>${esc(typeName(c))}</span>`).join("") || `<span class="muted" style="background:none;color:var(--ink2);padding:0">Ingen typer valgt</span>`)
+    + (picked.size > 1 && !packs.some(p=>sameCodes(p.codes, picked)) ? `<button class="btn ghost" id="btnSavePack" style="min-height:36px;padding:4px 10px">📦 Gem som pakke</button>` : "");
+  if($("btnSavePack")) $("btnSavePack").onclick = ()=>packEdit({name:"", codes:[...picked]}, true);
   if(!$("taskTitle").dataset.touched) $("taskTitle").value = plainNames([...picked]);
+  renderPacks();
+}
+
+// ---- Packages: named groups of types a boss gives together, e.g. "Fast belægning" ----
+let packs = store.get("packs", []), packEd = null; // packEd: {p, codes, fromTask} while making or changing one
+async function loadPacks(){
+  if(sb){ const {data, error} = await sb.from("packages").select("*").order("name"); if(!error){ packs = data; store.set("packs", packs); } }
+  renderChosen();
+}
+const packOn = p => p.codes.length > 0 && p.codes.every(c=>picked.has(c));
+function renderPacks(){
+  $("packList").innerHTML = packs.map(p=>`<button data-k="${esc(p.id)}" class="${packOn(p)?"on":""}">📦 ${esc(p.name)}</button>`).join("")
+    + `<button class="edit" id="btnPacks">${packs.length ? "✎ Ret pakker" : "+ Ny pakke"}</button>`;
+  $("packList").querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{
+    const p = packs.find(x=>x.id===b.dataset.k), on = packOn(p);
+    p.codes.forEach(c=>on ? picked.delete(c) : picked.add(c));
+    renderCodes(); renderChosen();
+  });
+  $("btnPacks").onclick = ()=>packs.length ? packList() : packEdit({name:"", codes:[]}, true);
+}
+function packList(){
+  packEd = null;
+  $("packTitle").textContent = "Pakker"; $("btnPackClose").textContent = "Luk";
+  $("packName").hidden = $("packSearch").hidden = true;
+  $("packBody").innerHTML = packs.length ? packs.map(p=>`<div class="pack"><h3>📦 ${esc(p.name)}</h3><div class="s">${esc(plainNames(p.codes))}</div>
+      <div class="row"><button class="btn" data-ed="${esc(p.id)}">✎ Ret</button><button class="btn ghost" data-del="${esc(p.id)}">Slet</button></div></div>`).join("")
+    : `<p class="muted">Ingen pakker endnu. En pakke er nogle typer, du ofte giver sammen, fx al fast belægning.</p>`;
+  $("packFoot").innerHTML = `<button class="btn primary" id="btnPackNew">+ Ny pakke</button>`;
+  $("btnPackNew").onclick = ()=>packEdit({name:"", codes:[]}, false);
+  $("packBody").querySelectorAll("[data-ed]").forEach(b=>b.onclick=()=>packEdit(packs.find(p=>p.id===b.dataset.ed), false));
+  $("packBody").querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{
+    if(b.dataset.armed){ delPack(packs.find(p=>p.id===b.dataset.del)); return; }
+    b.dataset.armed = 1; b.textContent = "Slet? Tryk igen"; b.classList.add("danger");
+    setTimeout(()=>{ delete b.dataset.armed; b.textContent = "Slet"; b.classList.remove("danger"); }, 3000);
+  });
+  $("pPack").hidden = false;
+}
+function packEdit(p, fromTask){
+  packEd = {p, codes:new Set(p.codes), fromTask};
+  $("packTitle").textContent = p.id ? "Ret pakke" : "Ny pakke"; $("btnPackClose").textContent = "Annullér";
+  $("packName").hidden = $("packSearch").hidden = false;
+  $("packName").value = p.name || ""; $("packSearch").value = "";
+  $("packFoot").innerHTML = `<div class="chosen" id="packChosen"></div><div class="err" id="packErr"></div><button class="btn primary" id="btnPackSave">Gem pakke</button>`;
+  $("btnPackSave").onclick = savePack;
+  renderPackCodes(); $("pPack").hidden = false;
+  if(!p.name) $("packName").focus();
+}
+function renderPackCodes(){
+  codeChecks($("packBody"), $("packSearch").value, packEd.codes, renderPackChosen); renderPackChosen();
+}
+function renderPackChosen(){
+  $("packChosen").innerHTML = [...packEd.codes].map(c=>`<span>${esc(typeName(c))}</span>`).join("") || `<span class="muted" style="background:none;color:var(--ink2);padding:0">Ingen typer valgt</span>`;
+}
+$("packSearch").oninput = ()=>{ if(packEd) renderPackCodes(); };
+$("btnPackClose").onclick = ()=>{ if(packEd && !packEd.fromTask) packList(); else { packEd = null; $("pPack").hidden = true; } };
+async function savePack(){
+  const e = packEd, name = $("packName").value.trim(), codes = [...e.codes], err = t=>{ $("packErr").textContent = t; };
+  if(!name){ err("Giv pakken et navn"); $("packName").focus(); return; }
+  if(!codes.length){ err("Vælg mindst én type"); return; }
+  if(packs.some(p=>p.id!==e.p.id && p.name.toLowerCase()===name.toLowerCase())){ err(`Der er allerede en pakke, der hedder "${name}"`); return; }
+  let saved = {...e.p, name, codes, id: e.p.id || uuid()};
+  if(sb){
+    $("btnPackSave").disabled = true;
+    const {data, error} = e.p.id ? await sb.from("packages").update({name, codes}).eq("id", e.p.id).select().single()
+                                 : await sb.from("packages").insert({name, codes, created_by:me}).select().single();
+    if(error){ $("btnPackSave").disabled = false; err("Det lykkedes ikke. Tjek forbindelsen og prøv igen."); return; }
+    saved = data;
+  }
+  packs = packs.filter(p=>p.id!==saved.id).concat(saved).sort((a,b)=>a.name.localeCompare(b.name, "da")); store.set("packs", packs);
+  toast(`Pakken "${name}" er gemt`);
+  if(e.fromTask){ packEd = null; $("pPack").hidden = true; } else packList();
+  if(!$("pNew").hidden) renderChosen();
+}
+async function delPack(p){
+  if(sb){ const {error} = await sb.from("packages").delete().eq("id", p.id); if(error){ toast("Pakken blev ikke slettet. Tjek forbindelsen og prøv igen.", 4000); return; } }
+  packs = packs.filter(x=>x.id!==p.id); store.set("packs", packs);
+  toast(`Pakken "${p.name}" er slettet`); packList(); if(!$("pNew").hidden) renderChosen();
 }
 // Step 1: draw the area on the map. Step 2: pick types and people.
 function beginNewTask(code){
-  picked = new Set(code ? [code] : []); $("codeSearch").value=""; $("taskTitle").value=""; delete $("taskTitle").dataset.touched;
+  picked = new Set(code ? [code] : []); $("codeSearch").value=""; $("taskTitle").value=""; delete $("taskTitle").dataset.touched; $("newPick").checked = false;
   assignees = new Set();
   startArea({shape:null, done:s=>{ newShape = s; showNewPanel(); }});
 }
 function showNewPanel(){
   $("newAreaInfo").textContent = `Område: ${fmtArea(shapeGeom(newShape).getArea())}${newShape.area ? ", tegnet frit" : ""}`;
   renderCodes(); renderChosen(); renderAssign(); $("pNew").hidden = false;
-  loadPeople().then(renderAssign);
+  loadPeople().then(renderAssign); loadPacks();
 }
 $("btnNewTask").onclick = ()=>beginNewTask(null);
 $("btnNewArea").onclick = ()=>{ $("pNew").hidden = true;
@@ -1103,7 +1268,7 @@ $("btnCreate").onclick = async ()=>{
   if(!picked.size){ toast("Vælg mindst én type"); return; }
   const t = {id:uuid(), name:$("taskTitle").value.trim() || plainNames([...picked]), codes:[...picked],
     extent:newShape.extent, area:newShape.area, assignees:[...assignees], created_by:me, created_at:new Date().toISOString(), archived:false};
-  if(await saveTask(t)){ $("pNew").hidden = true; openTask(t); }
+  if(await saveTask(t)){ $("pNew").hidden = true; await openTask(t); if($("newPick").checked) startPick(t, true); }
 };
 
 // ================= DRAWING THE AREA =================
@@ -1346,12 +1511,12 @@ async function overPaint(){
   if(over!==o) return;
   areaSrc.clear();
   tl.forEach(t=>{ const f = new ol.Feature(shapeGeom(t)); f.setProperties({label:t.name, tid:t.id, color:col.get(t.id)}); areaSrc.addFeature(f); });
-  const shapes = tl.map(t=>({t, s:prepShape(t)})), RANK = {todo:0, doing:1, blocked:2, done:3};
+  const shapes = tl.map(t=>({t, s:prepShape(t), pk: t.elements ? new Set(t.elements) : null})), RANK = {todo:0, doing:1, blocked:2, done:3};
   const per = new Map(tl.map(t=>[t.id, {done:0, blocked:0, total:0}])), c = {none:0, todo:0, doing:0, blocked:0, done:0};
   overSrc.getFeatures().forEach(f=>{
     const g = f.getGeometry(); let best = null; const in_ = [];
-    for(const {t,s} of shapes){
-      if(!inShape(g, s)) continue;
+    for(const {t,s,pk} of shapes){
+      if(!inShape(g, s) || (pk && !pk.has(f.getId()))) continue;
       const st = prog.get(t.id+"|"+f.getId()) || "todo", p = per.get(t.id);
       p.total++; if(st==="done") p.done++; if(st==="blocked") p.blocked++;
       in_.push([t.id, st]);
@@ -1602,6 +1767,12 @@ $("reqs").addEventListener("toggle", ()=>{ store.set("reqsOpen", $("reqs").open)
 $("reqs").querySelector("summary").addEventListener("click", ()=>setTimeout(()=>{ if($("reqs").open) $("reqs").scrollIntoView({block:"nearest", behavior:"smooth"}); }, 0));
 map.on("singleclick", e=>{
   if(areaEd) return;
+  if(pick){ // tapping a spot puts it in the task or takes it out
+    const f = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:0})[0]
+           || map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:12})[0];
+    if(f){ const id = f.getId(); pick.ids.has(id) ? pick.ids.delete(id) : pick.ids.add(id); pickCount(); }
+    return;
+  }
   if(over && !task){
     const f = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===overLayer, hitTolerance:12})[0];
     if(f){ // every task the element is in, grouped by its status there
