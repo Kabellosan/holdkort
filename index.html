@@ -93,7 +93,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .photo-view img{max-width:100%;max-height:100%;border-radius:8px}
 .photo-view .btn{position:absolute;top:calc(env(safe-area-inset-top,0px) + 12px);right:12px;background:var(--card)}
 /* Krav og sikkerhed: folded away under the element until someone wants it */
-#pEl{overflow-y:auto;-webkit-overflow-scrolling:touch;margin:0 -4px;padding:0 4px}
+#pEl{gap:12px;overflow-y:auto;-webkit-overflow-scrolling:touch;margin:0 -4px;padding:0 4px}
 .reqs{border-top:1px solid var(--line);padding-top:4px}
 .reqs summary{list-style:none;min-height:44px;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;color:var(--ink2);cursor:pointer}
 .reqs summary::-webkit-details-marker{display:none}
@@ -244,18 +244,18 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <div class="grow"><div class="eyebrow" id="elCode"></div><h2 id="elTitle"></h2><div class="muted" id="elSub"></div></div>
       <button class="btn ghost" id="btnElClose" aria-label="Luk">✕</button>
     </div>
-    <div class="row selrow"><span class="muted grow" id="multiHint">Tryk på flere for at markere dem.</span><button class="btn clear" id="btnClearSel">✕ Ryd markerede</button></div>
     <div class="status">
       <button data-s="todo"><i style="background:var(--todo)"></i><span>Mangler</span></button>
       <button data-s="doing"><i style="background:var(--doing)"></i><span>I gang</span></button>
       <button data-s="done"><i style="background:var(--done)"></i><span>Færdig</span></button>
       <button data-s="blocked"><i style="background:var(--blocked);outline:2px solid #fff;outline-offset:-1px"></i><span>🚧 Blokeret</span></button>
     </div>
+    <div class="row"><span class="muted grow" id="elMeta"></span><button class="btn" id="btnRoute">🧭 Vis vej</button><button class="btn primary" id="btnNext2">Næste ▸</button></div>
     <div class="blockinfo" id="elBlock" hidden></div>
     <div class="row"><input type="text" id="note" placeholder="Note til holdet"><button class="btn" id="btnNote">Gem</button></div>
     <div class="row"><span class="tended grow" id="elTended"></span><button class="btn" id="btnPhoto">📷 Billede</button><button class="btn" id="btnHist">Historik</button></div>
     <input type="file" id="photoIn" accept="image/*" hidden>
-    <div class="row"><span class="muted grow" id="elMeta"></span><button class="btn" id="btnRoute">🧭 Vis vej</button><button class="btn primary" id="btnNext2">Næste ▸</button></div>
+    <div class="row selrow"><span class="muted grow" id="multiHint">Tryk på flere for at markere dem.</span><button class="btn clear" id="btnClearSel">✕ Ryd markerede</button></div>
     <details class="reqs" id="reqs"><summary>📋 Krav og sikkerhed</summary><div class="rbody" id="reqsBody"></div></details>
   </div>
 
