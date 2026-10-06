@@ -30,6 +30,7 @@ Sidewalks (`FB2a`) come split into stretches by street and station, so you can m
 ## Where the data comes from
 - **Elements:** the kommune's open GeoServer, workspace `entreprenoer_udbud` (`element_arealer_distribution`, `element_arealer_vej_sti_distribution`, lines, points, curbs).
 - **Aerial photo:** the kommune's WMS (`theme-ortofoto2024`).
+- **Plain map:** OpenStreetMap tiles, shown paler so the status colours stand out. The "Luftfoto / Kort" switch under the zoom buttons picks one; each phone remembers its choice.
 
 ### Easy on the kommune's server
 - Each task's elements are downloaded **once** and stored on the phone. Reopening a task is instant and costs the server nothing.
