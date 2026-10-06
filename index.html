@@ -316,7 +316,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="row">
       <button class="btn primary fill" id="btnNext">Næste ▸</button>
       <button class="btn" id="btnList">Liste</button>
-      <button class="btn" id="btnTaskPhotos" hidden>📷 Billeder</button>
+      <button class="btn" id="btnTaskPhotos" hidden>📷 <span id="taskPhotoN">Billeder</span></button>
     </div>
   </div>
 
@@ -569,7 +569,16 @@ const ageKey = day => day ? AGES.find(a=>daysSince(day) <= a.max).k : "never";
 const elSrc = new ol.source.Vector();
 const styleCache = {};
 const elStyle = (f, res) => pick ? shapeStyle(pick.ids.has(f.getId()) ? "pick" : "off", false, res > 3.2)
+  : hasMedia(f.getId()) ? [...shapeStyle(statusOf(f.getId()), selSet.has(f), res > 3.2), CAMERA]
   : shapeStyle(statusOf(f.getId()), selSet.has(f), res > 3.2);
+// 📷 beside elements that have a photo in the open task, so the boss can see where to look
+const centerPoint = f => { const g = f.getGeometry(), t = g.getType();
+  if(t==="Point") return g;
+  if(t==="Polygon") return g.getInteriorPoint();
+  if(t==="MultiPolygon") return new ol.geom.Point(g.getInteriorPoints().getCoordinates()[0]);
+  return new ol.geom.Point(g.getClosestPoint(ol.extent.getCenter(g.getExtent()))); };
+const CAMERA = new ol.style.Style({geometry:centerPoint, zIndex:40,
+  text:new ol.style.Text({text:"📷", font:"20px sans-serif", offsetX:18, offsetY:-14, backgroundFill:new ol.style.Fill({color:"#ffffffdd"}), padding:[2,3,0,3]})});
 function shapeStyle(s, sel, far){
   const key = s + sel + (far ? "far" : "near");
   if(!styleCache[key]){
@@ -592,11 +601,7 @@ function shapeStyle(s, sel, far){
       zIndex: sel ? 32 : low ? 2 : 12
     }));
     if(s==="blocked") styleCache[key].push(new ol.style.Style({ // a roadwork sign in the middle, so blocked stands out from far away too
-      geometry: f => { const g = f.getGeometry(), t = g.getType();
-        if(t==="Point") return g;
-        if(t==="Polygon") return g.getInteriorPoint();
-        if(t==="MultiPolygon") return new ol.geom.Point(g.getInteriorPoints().getCoordinates()[0]);
-        return new ol.geom.Point(g.getClosestPoint(ol.extent.getCenter(g.getExtent()))); },
+      geometry: centerPoint,
       text:new ol.style.Text({text:"🚧", font:`${sel ? 24 : far ? 16 : 20}px sans-serif`}),
       zIndex: sel ? 33 : 13
     }));
@@ -802,6 +807,7 @@ async function sendPending(){
     const {error} = await sb.from("progress").upsert(rows);
     if(error){ toast("Ikke sendt. Prøv igen, når du har forbindelse.", 4000); return; }
     await writeLog(all, paths);
+    if(task) loadTaskMedia(task);
   } else {
     const byTask = {}; rows.forEach(r=>(byTask[r.task_id] ||= []).push(r));
     for(const [tid, rs] of Object.entries(byTask)){
@@ -1197,7 +1203,7 @@ async function openTask(t){
   geo.setTracking(true);
   areaSrc.addFeature(new ol.Feature(shapeGeom(t)));
   $("btnEditArea").hidden = $("btnPick").hidden = !isBoss();
-  $("btnTaskPhotos").hidden = !sb || !logOk;
+  $("btnTaskPhotos").hidden = !sb || !logOk; taskMedia = new Map(); $("taskPhotoN").textContent = "Billeder";
   $("workName").textContent = t.name; $("workCodes").textContent = packCodes(t.codes) + scopeOf(t);
   $("workCount").innerHTML = `<span class="spin"></span>`; $("bar").innerHTML = ""; $("dataAge").textContent = "";
   pane("pWork");
@@ -1219,6 +1225,7 @@ async function openTask(t){
   elSrc.addFeatures(feats);
   refresh();
   loadLastTended(feats.map(f=>f.getId())).then(m=>{ if(task===t){ lastTended = m; refresh(); } });
+  loadTaskMedia(t);
   if(!feats.length && !t.elements) toast("Ingen elementer af den type i området", 4000);
   // Stale data: refresh quietly later, spread out over a few minutes so phones don't all ask at once
   if(cached && Date.now() - cached.saved > DAY && !rushHour())
@@ -2027,15 +2034,26 @@ async function showHistory(f){
   L.querySelectorAll("img").forEach(i=>i.onclick=()=>{ $("photoImg").src = i.src; $("photoView").hidden = false; });
 }
 $("btnHist").onclick = ()=>{ if(selected) showHistory(selected); };
-// Every photo in the open task, newest first, so nobody has to tap each element to find them
+// Which elements of the open task have sent photos (from the log) or photos waiting in the outbox
+let taskMedia = new Map(); // element id -> number of sent photos
+const hasMedia = id => taskMedia.has(id) || !!(task && pending.get(task.id+"|"+id)?._photos?.length);
+async function loadTaskMedia(t){
+  if(!sb) return;
+  const {data, error} = await sb.from("element_log").select("element_id").eq("task_id", t.id).not("photo", "is", null).limit(1000);
+  if(error || task !== t) return;
+  const m = new Map(); data.forEach(r=>m.set(r.element_id, (m.get(r.element_id)||0) + 1)); taskMedia = m;
+  const n = data.length; $("taskPhotoN").textContent = n ? `Billeder (${n})` : "Billeder";
+  refresh();
+}
+// Every photo and note in the open task, newest first, so nobody has to tap each element to find them
 async function showTaskPhotos(){
   if(!task || !sb) return;
   const t = task, L = $("histList");
-  $("histEyebrow").textContent = "Billeder";
+  $("histEyebrow").textContent = "Billeder og noter";
   $("histTitle").textContent = t.name;
   L.innerHTML = `<p class="muted"><span class="spin"></span> Henter …</p>`;
   $("pHist").hidden = false;
-  const {data, error} = await sb.from("element_log").select("*").eq("task_id", t.id).not("photo", "is", null)
+  const {data, error} = await sb.from("element_log").select("*").eq("task_id", t.id).or("photo.not.is.null,note.not.is.null")
     .order("day",{ascending:false}).order("id",{ascending:false}).limit(200);
   if($("pHist").hidden || task !== t) return;
   if(error){ L.innerHTML = `<p class="muted">Billederne kan ikke hentes lige nu. Tjek forbindelsen.</p>`; return; }
@@ -2049,8 +2067,8 @@ async function showTaskPhotos(){
         <div class="when"><b>${esc(longDate(r.day))}</b><span class="muted">${sinceText(r.day)}</span></div>
         ${name(r.element_id) || (isBoss() && r.worker) ? `<div class="muted">${[esc(name(r.element_id)), isBoss() && r.worker ? esc(r.worker) : ""].filter(Boolean).join(" · ")}</div>` : ""}
         ${r.note ? `<div>${esc(r.note)}</div>` : ""}
-        <img src="${esc(photoUrl(r.photo))}" loading="lazy" alt="Billede fra ${esc(longDate(r.day))}">${go(r.element_id)}</div>`).join("")
-      : (local.length ? "" : `<p class="muted">Ingen billeder i denne opgave endnu. Tryk på et sted på kortet og så på "📷 Billede" for at tage et.</p>`));
+        ${r.photo ? `<img src="${esc(photoUrl(r.photo))}" loading="lazy" alt="Billede fra ${esc(longDate(r.day))}">` : ""}${go(r.element_id)}</div>`).join("")
+      : (local.length ? "" : `<p class="muted">Ingen billeder eller noter i denne opgave endnu. Tryk på et sted på kortet og så på "📷 Billede" for at tage et.</p>`));
   L.querySelectorAll("img").forEach(i=>i.onclick=()=>{ $("photoImg").src = i.src; $("photoView").hidden = false; });
   L.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{ const f = elSrc.getFeatureById(b.dataset.go); $("pHist").hidden = true; if(f) select(f); });
 }
@@ -2232,7 +2250,7 @@ function renderList(){
   const fs = elSrc.getFeatures().filter(f=>!onlyOpen || statusOf(f.getId())!=="done").map(f=>[f, distTo(f,p)]).sort((a,b)=>a[1]-b[1]).slice(0,300);
   $("elList").innerHTML = fs.length ? fs.map(([f,d])=>{ const s=statusOf(f.getId()), pr=eff(f.getId());
     return `<button class="item" data-id="${esc(f.getId())}"><div class="grow"><div class="t">${esc(titleOf(f))}</div>
-      <div class="s num">${fmtDist(d)}${pr?.worker && s!=="todo" && !isBoss() ? " · "+esc(pr.worker) : ""}${lastTended.has(f.getId()) ? " · passet "+sinceText(lastTended.get(f.getId())).replace(" dage siden"," d. siden") : ""}${s==="blocked" ? " · 🚧 "+esc(pr.reason||"Andet") : ""}${pr?.note ? " · "+esc(pr.note) : ""}</div></div>
+      <div class="s num">${fmtDist(d)}${pr?.worker && s!=="todo" && !isBoss() ? " · "+esc(pr.worker) : ""}${lastTended.has(f.getId()) ? " · passet "+sinceText(lastTended.get(f.getId())).replace(" dage siden"," d. siden") : ""}${s==="blocked" ? " · 🚧 "+esc(pr.reason||"Andet") : ""}${hasMedia(f.getId()) ? " · 📷" : ""}${pr?.note ? " · "+esc(pr.note) : ""}</div></div>
       <span class="pill ${s}">${LABEL[s]}</span></button>`; }).join("") : `<p class="muted" style="margin:0">Intet tilbage. Godt gået.</p>`;
   $("elList").querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>select(elSrc.getFeatureById(b.dataset.id)));
 }
