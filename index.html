@@ -267,7 +267,6 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div><div class="eyebrow" id="overCode"></div><h2 id="overName"></h2></div>
     <button class="btn" id="btnOverFind">⌕ Kun én by eller vej</button>
     <div class="row filt" id="overFilt" hidden><span class="grow">Kun i <b id="overFiltName"></b></span><button class="btn ghost" id="btnOverAll">✕ Hele kommunen</button></div>
-    <button class="btn" id="btnOverPlace" hidden>Alle typer her</button>
     <div class="seg" id="overMode" role="group" aria-label="Farver">
       <button data-o="status">Status</button>
       <button data-o="age">Sidst passet</button>
@@ -646,6 +645,18 @@ const filterSrc = new ol.source.Vector();
 const filterLayer = new ol.layer.Vector({source:filterSrc, style:[
   new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffcc", width:6})}),
   new ol.style.Style({stroke:new ol.style.Stroke({color:"#2b6cd4", width:3, lineDash:[10,8]})})]});
+// Narrowed to a town, street or drawn area: elements and task outlines are drawn only inside it,
+// so a long road or a big task that merely touches the area doesn't spill across the map
+const clipShape = () => place?.shape || (over && overFilter?.shape) || null;
+[overLayer, areaLayer].forEach(l=>{
+  l.on("prerender", e=>{
+    const s = clipShape(); if(!s) return;
+    const ctx = e.context; ctx.save(); ctx.beginPath();
+    shapeGeom(s).getCoordinates()[0].forEach((c,i)=>{ const [x,y] = ol.render.getRenderPixel(e, map.getPixelFromCoordinate(c)); i ? ctx.lineTo(x,y) : ctx.moveTo(x,y); });
+    ctx.closePath(); ctx.clip();
+  });
+  l.on("postrender", e=>{ if(clipShape()) e.context.restore(); });
+});
 const map = new ol.Map({target:"map", layers:[ortoLayer, osmLayer, filterLayer, areaLayer, overLayer, elLayer, labelLayer, editLayer, gpsLayer],
   view:new ol.View({projection:proj, center:START_CENTER, zoom:START_ZOOM, resolutions:RES, constrainResolution:true}),
   controls: ol.control.defaults.defaults({attribution:false, rotate:false})});
@@ -1539,7 +1550,7 @@ $("btnAreaPeek").onclick = ()=>{
   const s = curShape();
   if(!s){ toast("Tegn området først"); return; }
   if(ol.extent.getArea(s.extent) > MAX_AREA){ toast("Området er for stort. Gør det mindre.", 4000); return; }
-  endArea(); openPlace(s.place || null, {extent:s.extent, area:s.area});
+  endArea(); openPlace(s.place || null, {extent:s.extent, area:s.area}, true);
 };
 $("btnAreaOk").onclick = ()=>{
   const s = curShape();
@@ -1617,8 +1628,10 @@ function overHead(){
   const name = CODES[over.code] || over.code, f = overFilter;
   $("overName").textContent = f ? `${name} i ${f.name}` : `${name} i hele kommunen`;
   $("btnOverNew").textContent = `+ Ny opgave med ${name.toLowerCase()}${f ? " i " + f.name : ""}`;
-  $("btnOverFind").hidden = !!f; $("overFilt").hidden = $("btnOverPlace").hidden = !f;
-  if(f){ $("overFiltName").textContent = f.name; $("btnOverPlace").textContent = `Alle typer i ${f.name}`; }
+  $("btnOverFind").hidden = !!f; $("overFilt").hidden = !f;
+  if(f) $("overFiltName").textContent = f.name;
+  // Narrowed to a place: back goes to everything in that place, not all the way out
+  $("btnOverBack").textContent = f ? "‹ Alle typer her" : "‹ Opgaver";
   filterSrc.clear();
   if(f) filterSrc.addFeature(new ol.Feature(shapeGeom(f.shape)));
 }
@@ -1718,7 +1731,10 @@ document.querySelectorAll("#overMode [data-o]").forEach(b=>b.onclick=()=>{
   document.querySelectorAll("#overMode [data-o]").forEach(x=>x.classList.toggle("on", x===b));
   overPaint();
 });
-$("btnOverBack").onclick = ()=>{ closeOverview(); pane("pTasks"); loadTasks(); };
+$("btnOverBack").onclick = ()=>{
+  if(overFilter){ openPlace(overFilter.drawn ? null : overFilter.name, overFilter.shape, overFilter.fromArea); return; }
+  closeOverview(); pane("pTasks"); loadTasks();
+};
 $("btnOverNew").onclick = ()=>{ if(over) beginNewTask(over.code, overFilter ? {...overFilter.shape, place:overFilter.drawn ? null : overFilter.name} : null); };
 
 // ================= ONE PLACE: EVERY TYPE IN A TOWN OR ALONG A STREET =================
@@ -1735,10 +1751,11 @@ async function downloadPlace(p){
   await elCachePut(p.key, fs, areaKey(p.shape)); return fs;
 }
 function placeAge(saved){ $("placeAge").textContent = `Kortdata hentet ${ago(new Date(saved).toISOString())} · gemt på telefonen`; }
-async function openPlace(name, shape){
+async function openPlace(name, shape, fromArea){
   closeOverview();
   if(ol.extent.getArea(shape.extent) > MAX_AREA){ toast(`${name || "Området"} er for stort til at hente det hele på én gang. Vælg en vej eller en mindre by.`, 5000); return; }
-  const p = place = {name, shape, prep:prepShape(shape), key:placeId(shape)}; // name null: an area drawn by hand
+  const p = place = {name, shape, fromArea:!!fromArea, prep:prepShape(shape), key:placeId(shape)}; // name null: an area drawn by hand
+  $("btnPlaceBack").textContent = fromArea ? "‹ Tilbage til området" : "‹ Opgaver";
   $("placeName").textContent = name || "Det valgte område"; $("btnPlaceNew").textContent = name ? `+ Ny opgave i ${name}` : "+ Ny opgave her";
   $("placeBar").innerHTML = ""; $("placeLegend").innerHTML = ""; $("placeList").innerHTML = "";
   pane("pPlace");
@@ -1802,25 +1819,28 @@ async function placePaint(){
         <div class="s">${!ty.inTask ? "Ikke i en opgave" : ty.inTask===ty.n ? (ty.done===ty.n ? "Alle færdige" : `Alle i opgaver · ${ty.done} færdige`) : `${ty.inTask} i opgaver · ${ty.n - ty.inTask} ikke`}</div></div>
         <span class="code">${esc(k)}</span><span class="pill ${ty.done===ty.n ? "done" : ty.inTask===ty.n ? "todo" : "none"} num">${ty.n}</span></button>`).join("")
     + (n ? `<div class="section">Opgaver her</div>` + (tl.length ? tl.map(t=>{ const q = per.get(t.id);
-        return `<div class="row"><div class="item grow"><i class="swatch" style="background:${col.get(t.id)}"></i><div class="grow"><div class="t">${esc(t.name)}</div><div class="s">${esc(whoFor(t))}${q.blocked ? ` · 🚧 ${q.blocked} blokeret` : ""}</div></div>
+        return `<div class="row"><div class="item grow"><i class="swatch" style="background:${col.get(t.id)}"></i><div class="grow"><div class="t">${esc(t.name)}</div><div class="s">${ol.extent.containsExtent(p.shape.extent, t.extent) ? "" : "Kun delvis her · "}${esc(whoFor(t))}${q.blocked ? ` · 🚧 ${q.blocked} blokeret` : ""}</div></div>
           <span class="pill ${q.done===q.total ? "done" : "todo"} num">${q.done}/${q.total}</span></div>
           <button class="btn ghost" data-open="${esc(t.id)}">Åbn</button></div>`; }).join("")
         : `<p class="muted" style="margin:0">Ingen aktive opgaver her endnu.</p>`) : "");
   // A type opens the one-type overview, kept to this place
   $("placeList").querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{
-    overFilter = {name:p.name || "det valgte område", drawn:!p.name, shape:p.shape, prep:p.prep}; openOverview(b.dataset.c);
+    overFilter = {name:p.name || "det valgte område", drawn:!p.name, fromArea:p.fromArea, shape:p.shape, prep:p.prep}; openOverview(b.dataset.c);
   });
   $("placeList").querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openTask(tasks.find(t=>t.id===b.dataset.open)));
 }
 $("btnPlaceFind").onclick = ()=>openFind((s, it)=>{ $("pType").hidden = true; openPlace(it.label, s); });
 $("btnPlaceOther").onclick = ()=>openFind((s, it)=>openPlace(it.label, s));
-$("btnOverPlace").onclick = ()=>{ if(overFilter) openPlace(overFilter.drawn ? null : overFilter.name, overFilter.shape); };
-$("btnPlaceBack").onclick = ()=>{ closePlace(); pane("pTasks"); loadTasks(); };
+$("btnPlaceBack").onclick = ()=>{
+  // Came from drawing a new task: back to that same area on the map
+  if(place?.fromArea){ const p = place, here = placeCounts(); closePlace(); beginNewTask(null, {...p.shape, place:p.name}, here); return; }
+  closePlace(); pane("pTasks"); loadTasks();
+};
 $("btnPlaceRefresh").onclick = ()=>{ if(place) refreshPlace(place, true); };
+function placeCounts(){ const here = {}; overSrc.getFeatures().forEach(f=>{ const k = f.get("elementkode"); here[k] = (here[k]||0) + 1; }); return here; }
 $("btnPlaceNew").onclick = ()=>{
   if(!place) return;
-  const here = {}; overSrc.getFeatures().forEach(f=>{ const k = f.get("elementkode"); here[k] = (here[k]||0) + 1; });
-  beginNewTask(null, {...place.shape, place:place.name}, here);
+  beginNewTask(null, {...place.shape, place:place.name}, placeCounts());
 };
 
 // ================= LOG: WHEN EACH ELEMENT WAS LAST TENDED, WITH NOTES AND PHOTOS =================
