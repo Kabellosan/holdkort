@@ -94,7 +94,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .person .who h3{flex:1}
 .btn.danger{background:#b3261e;border-color:#b3261e;color:#fff;font-weight:600}
 .tended{font-size:14px;color:var(--ink2)}
-.sheet:has(#pOver:not([hidden])){max-height:68vh} /* the overview has a mode switch, legend and task list */
+.sheet:has(#pOver:not([hidden])),.sheet:has(#pPlace:not([hidden])){max-height:68vh} /* the overviews have a legend and lists */
 #overMode button{min-height:38px}
 .tended.warn{color:#8a5a00;font-weight:600}
 @media (prefers-color-scheme:dark){.tended.warn{color:var(--doing)}}
@@ -179,7 +179,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   .top{left:calc(var(--side) + 12px)}
   .basemap{left:calc(var(--side) + 12px)}
   .toast{left:calc(var(--side) + (100% - var(--side)) / 2)}
-  .sheet,.sheet:has(#pOver:not([hidden])){top:0;right:auto;width:var(--side);max-height:none;border-radius:0;border-right:1px solid var(--line);
+  .sheet,.sheet:has(#pOver:not([hidden])),.sheet:has(#pPlace:not([hidden])){top:0;right:auto;width:var(--side);max-height:none;border-radius:0;border-right:1px solid var(--line);
     box-shadow:4px 0 18px #0002;padding:calc(env(safe-area-inset-top,0px) + 18px) 22px 18px;z-index:5}
   .grip{display:none}
   .sheet>.pane{flex:1}
@@ -264,6 +264,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div><div class="eyebrow" id="overCode"></div><h2 id="overName"></h2></div>
     <button class="btn" id="btnOverFind">⌕ Kun én by eller vej</button>
     <div class="row filt" id="overFilt" hidden><span class="grow">Kun i <b id="overFiltName"></b></span><button class="btn ghost" id="btnOverAll">✕ Hele kommunen</button></div>
+    <button class="btn" id="btnOverPlace" hidden>Alle typer her</button>
     <div class="seg" id="overMode" role="group" aria-label="Farver">
       <button data-o="status">Status</button>
       <button data-o="age">Sidst passet</button>
@@ -273,6 +274,21 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="row"><span class="muted grow" id="overAge"></span><button class="btn ghost" id="btnOverRefresh" style="min-height:36px;padding:4px 8px">Opdater</button></div>
     <div class="scroll" id="overTasks"></div>
     <button class="btn primary" id="btnOverNew">+ Ny opgave</button>
+  </div>
+
+  <!-- Everything in one town or along one street: all types, and the tasks there -->
+  <div class="pane" id="pPlace" hidden>
+    <div class="row">
+      <button class="btn ghost" id="btnPlaceBack">‹ Opgaver</button>
+      <div class="grow"></div>
+      <button class="btn ghost" id="btnPlaceOther">⌕ Andet sted</button>
+    </div>
+    <div><div class="eyebrow">Alt hvad kommunen har registreret i</div><h2 id="placeName"></h2></div>
+    <div class="bar" id="placeBar"></div>
+    <div class="legend" id="placeLegend"></div>
+    <div class="row"><span class="muted grow" id="placeAge"></span><button class="btn ghost" id="btnPlaceRefresh" style="min-height:36px;padding:4px 8px">Opdater</button></div>
+    <div class="scroll" id="placeList"></div>
+    <button class="btn primary" id="btnPlaceNew">+ Ny opgave her</button>
   </div>
 
   <!-- Working a task -->
@@ -399,7 +415,8 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 <div class="panel" id="pType" hidden>
   <header>
     <div class="row"><h2 class="grow">Overblik: vælg type</h2><button class="btn ghost" id="btnTypeClose">Luk</button></div>
-    <input type="search" id="typeSearch" placeholder="Søg type: pur, fortov, græs …" autocomplete="off">
+    <button class="btn" id="btnPlaceFind">⌕ Se alt i en by eller på en vej</button>
+    <input type="search" id="typeSearch" placeholder="Eller søg type: pur, fortov, græs …" autocomplete="off">
   </header>
   <div class="list" id="typeList"></div>
   <footer><div class="muted">Viser alle elementer af typen i hele kommunen, og hvilke der er med i en opgave. Hentes fra kommunen højst én gang om dagen.</div></footer>
@@ -647,7 +664,7 @@ const sheetPad = () => sheetH() + 20;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function toast(t, ms=2600){const el=$("toast"); el.textContent=t; el.classList.add("show"); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove("show"),ms);}
-const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick"];
+const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick","pPlace"];
 const curPane = () => PANES.find(p=>!$(p).hidden);
 function pane(id){ PANES.forEach(p=>$(p).hidden = p!==id); }
 // Only the day is ever shown, never the clock time
@@ -841,13 +858,14 @@ if(sb){
     .on("postgres_changes",{event:"*",schema:"public",table:"progress"},p=>{
       const r = p.new;
       if(over && !task){ clearTimeout(over.t); over.t = setTimeout(overPaint, 1500); return; }
+      if(place && !task){ clearTimeout(place.t); place.t = setTimeout(placePaint, 1500); return; }
       if(!task || !r || r.task_id!==task.id) return;
       progress.set(r.element_id, r); refresh();
       if(norm(r.worker) !== norm(me)){ const f = elSrc.getFeatureById(r.element_id);
         const k = r.worker + r.updated_at; remoteBatch[k] = (remoteBatch[k]||0) + 1; const n = remoteBatch[k];
         toast(`${isBoss() ? "Opdateret" : (r.worker||"Nogen")}: ${LABEL[r.status]}${n>1 ? ` · ${n} elementer` : f ? " · " + titleOf(f) : ""}`); }
     })
-    .on("postgres_changes",{event:"*",schema:"public",table:"tasks"},()=>{ if(!task) loadTasks().then(()=>{ if(over) overPaint(); }); })
+    .on("postgres_changes",{event:"*",schema:"public",table:"tasks"},()=>{ if(!task) loadTasks().then(()=>{ if(over) overPaint(); if(place) placePaint(); }); })
     .subscribe();
 }
 
@@ -1238,10 +1256,11 @@ function renderAssign(){
     let n = cleanName(window.prompt("Navn på medarbejder:")); if(n){ n = people.find(p=>norm(p)===norm(n)) || n; if(!people.includes(n)) people.push(n); assignees.add(n); renderAssign(); } };
 }
 // A checklist of every type; set holds the ticked codes
-function codeChecks(el, q, set, changed){
+function codeChecks(el, q, set, changed, here){
   q = q.trim().toLowerCase();
   const list = Object.entries(CODES).filter(([k,v])=>!q || k.toLowerCase().includes(q) || v.toLowerCase().includes(q));
-  el.innerHTML = list.map(([k,v])=>`<label class="code-item ${set.has(k)?"on":""}"><input type="checkbox" value="${k}" ${set.has(k)?"checked":""}><span class="grow">${esc(v)}</span><span class="code">${k}</span></label>`).join("")
+  if(here) list.sort((a,b)=>(here[b[0]]||0) - (here[a[0]]||0));
+  el.innerHTML = list.map(([k,v])=>`<label class="code-item ${set.has(k)?"on":""}"><input type="checkbox" value="${k}" ${set.has(k)?"checked":""}><span class="grow">${esc(v)}${here?.[k] ? ` <span class="muted">· ${here[k]} her</span>` : ""}</span><span class="code">${k}</span></label>`).join("")
     || `<p class="muted">Ingen typer matcher "${esc(q)}"</p>`;
   el.querySelectorAll("input").forEach(i=>i.onchange=()=>{
     i.checked ? set.add(i.value) : set.delete(i.value);
@@ -1249,7 +1268,7 @@ function codeChecks(el, q, set, changed){
     changed();
   });
 }
-function renderCodes(){ codeChecks($("codeList"), $("codeSearch").value, picked, renderChosen); }
+function renderCodes(){ codeChecks($("codeList"), $("codeSearch").value, picked, renderChosen, newHere); }
 const sameCodes = (a, b) => a.length===b.size && a.every(c=>b.has(c));
 function renderChosen(){
   // whole packages show as one chip, so a big package doesn't push the type list off the screen
@@ -1338,7 +1357,9 @@ async function delPack(p){
   toast(`Pakken "${p.name}" er slettet`); packList(); if(!$("pNew").hidden) renderChosen();
 }
 // Step 1: draw the area on the map. Step 2: pick types and people.
-function beginNewTask(code, shape){
+let newHere = null; // types counted in the place the task was started from: {code: count}
+function beginNewTask(code, shape, here){
+  newHere = here || null;
   picked = new Set(code ? [code] : []); $("codeSearch").value=""; $("taskTitle").value=""; delete $("taskTitle").dataset.touched; $("newPick").checked = false;
   assignees = new Set();
   startArea({shape:shape||null, done:s=>{ newShape = s; showNewPanel(); }});
@@ -1350,7 +1371,7 @@ function showNewPanel(){
 }
 $("btnNewTask").onclick = ()=>beginNewTask(null);
 $("btnNewArea").onclick = ()=>{ $("pNew").hidden = true;
-  startArea({shape:newShape, done:s=>{ newShape = s; showNewPanel(); }, cancel:()=>{ $("pNew").hidden = false; }}); };
+  startArea({shape:newShape, done:s=>{ if(areaKey(s)!==areaKey(newShape)) newHere = null; newShape = s; showNewPanel(); }, cancel:()=>{ $("pNew").hidden = false; }}); };
 $("codeSearch").oninput = renderCodes;
 $("taskTitle").oninput = ()=>$("taskTitle").dataset.touched = 1;
 $("btnNewCancel").onclick = ()=>{ $("pNew").hidden = true; };
@@ -1545,6 +1566,7 @@ $("btnOverview").onclick = $("btnOverType").onclick = ()=>{ $("typeSearch").valu
 $("typeSearch").oninput = renderTypes;
 $("btnTypeClose").onclick = ()=>{ $("pType").hidden = true; };
 function closeOverview(){
+  closePlace();
   if(!over) return;
   clearTimeout(over.t); clearTimeout(over.refresh); over = null; overSrc.clear(); areaSrc.clear(); filterSrc.clear();
 }
@@ -1581,8 +1603,8 @@ function overHead(){
   const name = CODES[over.code] || over.code, f = overFilter;
   $("overName").textContent = f ? `${name} i ${f.name}` : `${name} i hele kommunen`;
   $("btnOverNew").textContent = `+ Ny opgave med ${name.toLowerCase()}${f ? " i " + f.name : ""}`;
-  $("btnOverFind").hidden = !!f; $("overFilt").hidden = !f;
-  if(f) $("overFiltName").textContent = f.name;
+  $("btnOverFind").hidden = !!f; $("overFilt").hidden = $("btnOverPlace").hidden = !f;
+  if(f){ $("overFiltName").textContent = f.name; $("btnOverPlace").textContent = `Alle typer i ${f.name}`; }
   filterSrc.clear();
   if(f) filterSrc.addFeature(new ol.Feature(shapeGeom(f.shape)));
 }
@@ -1684,6 +1706,108 @@ document.querySelectorAll("#overMode [data-o]").forEach(b=>b.onclick=()=>{
 });
 $("btnOverBack").onclick = ()=>{ closeOverview(); pane("pTasks"); loadTasks(); };
 $("btnOverNew").onclick = ()=>{ if(over) beginNewTask(over.code, overFilter ? {...overFilter.shape, place:overFilter.name} : null); };
+
+// ================= ONE PLACE: EVERY TYPE IN A TOWN OR ALONG A STREET =================
+// "What is there on Odinsgade?": all elements in the place (any type), counted per type, and the tasks that cover them.
+// Fetched from the kommune by the place's bounding box and cut to its outline here; same once-a-day rules as tasks.
+let place = null; // {name, shape, prep, key, t, refresh}
+function closePlace(){
+  if(!place) return;
+  clearTimeout(place.t); clearTimeout(place.refresh); place = null; overSrc.clear(); areaSrc.clear(); filterSrc.clear();
+}
+const placeId = s => { let h = 0; for(const ch of areaKey(s)) h = (h*31 + ch.charCodeAt(0)) | 0; return "place:" + (h >>> 0).toString(36); };
+async function downloadPlace(p){
+  const fs = (await fetchLayers([`BBOX(wkb_geometry,${p.shape.extent.join(",")})`], g=>inShape(g, p.prep))).filter(f=>f.get("elementkode"));
+  await elCachePut(p.key, fs, areaKey(p.shape)); return fs;
+}
+function placeAge(saved){ $("placeAge").textContent = `Kortdata hentet ${ago(new Date(saved).toISOString())} · gemt på telefonen`; }
+async function openPlace(name, shape){
+  closeOverview();
+  if(ol.extent.getArea(shape.extent) > MAX_AREA){ toast(`${name} er for stort til at hente det hele på én gang. Vælg en vej eller en mindre by.`, 5000); return; }
+  const p = place = {name, shape, prep:prepShape(shape), key:placeId(shape)};
+  $("placeName").textContent = name; $("btnPlaceNew").textContent = `+ Ny opgave i ${name}`;
+  $("placeBar").innerHTML = ""; $("placeLegend").innerHTML = ""; $("placeList").innerHTML = "";
+  pane("pPlace");
+  filterSrc.addFeature(new ol.Feature(shapeGeom(shape)));
+  map.getView().fit(shape.extent, {padding:[70,30,sheetPad(),30], duration:350});
+  const cached = await elCacheGet(p.key);
+  let feats;
+  if(cached && cached.key===areaKey(shape)){ feats = fmt.readFeatures(cached.geojson); placeAge(cached.saved); }
+  else {
+    $("placeAge").innerHTML = `<span class="spin"></span> Henter fra kommunen …`;
+    try{ feats = await downloadPlace(p); placeAge(Date.now()); }
+    catch(e){ console.error(e); if(place===p) $("placeAge").textContent = "Kunne ikke hente fra kommunen. Prøv igen senere."; return; }
+  }
+  if(place!==p) return;
+  overSrc.addFeatures(feats);
+  await placePaint();
+  if(cached && Date.now() - cached.saved > DAY && !rushHour())
+    p.refresh = setTimeout(()=>{ if(place===p && navigator.onLine && !rushHour()) refreshPlace(p, false); }, 15000 + Math.random()*180000);
+}
+async function refreshPlace(p, manual){
+  if(manual) $("placeAge").innerHTML = `<span class="spin"></span> Henter fra kommunen …`;
+  try{
+    const fs = await downloadPlace(p); if(place!==p) return;
+    overSrc.clear(); overSrc.addFeatures(fs); await placePaint(); placeAge(Date.now()); if(manual) toast("Kortdata opdateret");
+  }catch(e){ console.error(e); if(manual && place===p){ toast("Kunne ikke hente fra kommunen. Prøv igen senere.", 4000); const c = await elCacheGet(p.key); if(c) placeAge(c.saved); else $("placeAge").textContent = ""; } }
+}
+async function placePaint(){
+  const p = place; if(!p) return;
+  const feats = overSrc.getFeatures(), here = new Set(feats.map(f=>f.get("elementkode")));
+  // Tasks with at least one of the types found here, whose area reaches into the place
+  const cand = tasks.filter(t=>(t.codes||[]).some(c=>here.has(c)) && ol.extent.intersects(t.extent, p.shape.extent))
+    .sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
+  const prog = await progressFor(cand.map(t=>t.id));
+  if(place!==p) return;
+  const shapes = cand.map(t=>({t, s:prepShape(t), cs:new Set(t.codes), pk: t.elements ? new Set(t.elements) : null})), RANK = {todo:0, doing:1, blocked:2, done:3};
+  const per = new Map(cand.map(t=>[t.id, {done:0, blocked:0, total:0}])), c = {none:0, todo:0, doing:0, blocked:0, done:0}, types = {};
+  feats.forEach(f=>{
+    const g = f.getGeometry(), code = f.get("elementkode"); let best = null;
+    for(const {t,s,cs,pk} of shapes){
+      if(!cs.has(code) || (pk && !pk.has(f.getId())) || !inShape(g, s)) continue;
+      const st = prog.get(t.id+"|"+f.getId()) || "todo", q = per.get(t.id);
+      q.total++; if(st==="done") q.done++; if(st==="blocked") q.blocked++;
+      if(best===null || RANK[st] > RANK[best]) best = st;
+    }
+    f.set("_s", best || "none", true); c[best || "none"]++;
+    const ty = types[code] ||= {n:0, inTask:0, done:0}; ty.n++; if(best) ty.inTask++; if(best==="done") ty.done++;
+  });
+  overLayer.changed();
+  const tl = cand.filter(t=>per.get(t.id).total);
+  areaSrc.clear();
+  const col = new Map(tl.map((t,i)=>[t.id, TASK_COLORS[i % TASK_COLORS.length]]));
+  tl.forEach(t=>{ const f = new ol.Feature(shapeGeom(t)); f.setProperties({label:t.name, tid:t.id, color:col.get(t.id)}); areaSrc.addFeature(f); });
+  const n = feats.length;
+  $("placeBar").innerHTML = n ? ["done","doing","blocked","todo","none"].map(s=>`<i style="width:${c[s]/n*100}%;background:${COLORS[s]}"></i>`).join("") : "";
+  const LEG = {none:"ikke i en opgave", todo:"mangler", doing:"i gang", blocked:"blokeret", done:"færdige"};
+  $("placeLegend").innerHTML = n ? ["none","todo","doing","blocked","done"].filter(s=>c[s]).map(s=>`<span><i style="background:${COLORS[s]}"></i><b class="num">${c[s]}</b> ${LEG[s]}</span>`).join("") : "";
+  const tys = Object.entries(types).sort((a,b)=>b[1].n - a[1].n);
+  $("placeList").innerHTML = (n ? "" : `<p class="muted" style="margin:0">Kommunen har ingen elementer registreret i ${esc(p.name)}.</p>`)
+    + (tys.length ? `<div class="section">${tys.length} ${tys.length===1 ? "type" : "typer"} · ${n} elementer</div>` : "")
+    + tys.map(([k,ty])=>`<button class="item" data-c="${esc(k)}"><div class="grow"><div class="t">${esc(CODES[k] || k)}</div>
+        <div class="s">${!ty.inTask ? "Ikke i en opgave" : ty.inTask===ty.n ? (ty.done===ty.n ? "Alle færdige" : `Alle i opgaver · ${ty.done} færdige`) : `${ty.inTask} i opgaver · ${ty.n - ty.inTask} ikke`}</div></div>
+        <span class="code">${esc(k)}</span><span class="pill ${ty.done===ty.n ? "done" : ty.inTask===ty.n ? "todo" : "none"} num">${ty.n}</span></button>`).join("")
+    + (n ? `<div class="section">Opgaver her</div>` + (tl.length ? tl.map(t=>{ const q = per.get(t.id);
+        return `<div class="row"><div class="item grow"><i class="swatch" style="background:${col.get(t.id)}"></i><div class="grow"><div class="t">${esc(t.name)}</div><div class="s">${esc(whoFor(t))}${q.blocked ? ` · 🚧 ${q.blocked} blokeret` : ""}</div></div>
+          <span class="pill ${q.done===q.total ? "done" : "todo"} num">${q.done}/${q.total}</span></div>
+          <button class="btn ghost" data-open="${esc(t.id)}">Åbn</button></div>`; }).join("")
+        : `<p class="muted" style="margin:0">Ingen aktive opgaver her endnu.</p>`) : "");
+  // A type opens the one-type overview, kept to this place
+  $("placeList").querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{
+    overFilter = {name:p.name, shape:p.shape, prep:p.prep}; openOverview(b.dataset.c);
+  });
+  $("placeList").querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openTask(tasks.find(t=>t.id===b.dataset.open)));
+}
+$("btnPlaceFind").onclick = ()=>openFind((s, it)=>{ $("pType").hidden = true; openPlace(it.label, s); });
+$("btnPlaceOther").onclick = ()=>openFind((s, it)=>openPlace(it.label, s));
+$("btnOverPlace").onclick = ()=>{ if(overFilter) openPlace(overFilter.name, overFilter.shape); };
+$("btnPlaceBack").onclick = ()=>{ closePlace(); pane("pTasks"); loadTasks(); };
+$("btnPlaceRefresh").onclick = ()=>{ if(place) refreshPlace(place, true); };
+$("btnPlaceNew").onclick = ()=>{
+  if(!place) return;
+  const here = {}; overSrc.getFeatures().forEach(f=>{ const k = f.get("elementkode"); here[k] = (here[k]||0) + 1; });
+  beginNewTask(null, {...place.shape, place:place.name}, here);
+};
 
 // ================= LOG: WHEN EACH ELEMENT WAS LAST TENDED, WITH NOTES AND PHOTOS =================
 // element_log keeps a line each time an element is sent as done (or gets a note or photo): the day, the task, never a name.
