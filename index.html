@@ -153,6 +153,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .facts li{display:flex;gap:10px;align-items:flex-start}
 .facts li i{font-style:normal;flex:none;width:22px;text-align:center}
 .people{display:flex;flex-wrap:wrap;gap:8px}
+.filt{background:var(--paper);border-radius:var(--r);padding:4px 4px 4px 14px}
 .people button{border-radius:999px;border:2px solid var(--line);background:var(--card);padding:8px 14px;min-height:42px;font-size:15px}
 .people button.on{border-color:var(--moss2);background:var(--moss);color:#fff}
 .err{color:var(--todo);font-size:14px;min-height:1.2em}
@@ -239,6 +240,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button data-m="box">▭ Firkant</button>
       <button data-m="draw">✎ Tegn frit</button>
     </div>
+    <button class="btn" id="btnAreaFind">⌕ Vælg en by eller en vej</button>
     <div class="muted" id="areaHint"></div>
     <div class="row">
       <span class="muted grow num" id="areaSize"></span>
@@ -255,6 +257,8 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button class="btn ghost" id="btnOverType">Skift type</button>
     </div>
     <div><div class="eyebrow" id="overCode"></div><h2 id="overName"></h2></div>
+    <button class="btn" id="btnOverFind">⌕ Kun én by eller vej</button>
+    <div class="row filt" id="overFilt" hidden><span class="grow">Kun i <b id="overFiltName"></b></span><button class="btn ghost" id="btnOverAll">✕ Hele kommunen</button></div>
     <div class="seg" id="overMode" role="group" aria-label="Farver">
       <button data-o="status">Status</button>
       <button data-o="age">Sidst passet</button>
@@ -412,6 +416,16 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <footer><div class="muted" style="font-size:12px">Søgning: Photon og Nominatim · data © OpenStreetMap-bidragydere</div></footer>
 </div>
 
+<!-- Pick a town or a street; its outline becomes the task area or the overview filter -->
+<div class="panel" id="pFind" hidden>
+  <header>
+    <div class="row"><h2 class="grow">Vælg en by eller en vej</h2><button class="btn ghost" id="btnFindClose">Luk</button></div>
+    <input type="search" id="findQ" placeholder="Fx Brande, Ejstrupholm eller Storegade" autocomplete="off" enterkeyhint="search">
+  </header>
+  <div class="list" id="findList"></div>
+  <footer><div class="muted" style="font-size:13px">En by går så langt, som der ligger huse (fra OpenStreetMap). En vej får 25 m til hver side. Du kan rette formen bagefter.</div></footer>
+</div>
+
 <!-- Login, full screen -->
 <div class="panel" id="pLogin" hidden>
   <div class="body" style="justify-content:center">
@@ -558,7 +572,7 @@ function shapeStyle(s, sel, far){
 }
 const elLayer = new ol.layer.Vector({source:elSrc, style:elStyle, renderBuffer:200});
 const overSrc = new ol.source.Vector(); // overview: one type in the whole kommune
-const overLayer = new ol.layer.Vector({source:overSrc, style:(f,res)=>shapeStyle((over?.mode==="age" ? f.get("_a") : f.get("_s")) || "none", false, res > 3.2), renderBuffer:200});
+const overLayer = new ol.layer.Vector({source:overSrc, style:(f,res)=>f.get("_out") ? null : shapeStyle((over?.mode==="age" ? f.get("_a") : f.get("_s")) || "none", false, res > 3.2), renderBuffer:200});
 const areaSrc = new ol.source.Vector();
 const areaDash = new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffdd",width:2,lineDash:[10,8]})});
 // Overview: each task gets its own outline colour so overlapping areas can be told apart (none of them red/yellow/green/purple)
@@ -599,7 +613,12 @@ const gpsFeat = new ol.Feature();
 gpsFeat.setStyle(new ol.style.Style({image:new ol.style.Circle({radius:9,fill:new ol.style.Fill({color:"#2b6cd4"}),stroke:new ol.style.Stroke({color:"#fff",width:3})})}));
 const gpsLayer = new ol.layer.Vector({source:new ol.source.Vector({features:[gpsFeat]})});
 
-const map = new ol.Map({target:"map", layers:[ortoLayer, osmLayer, areaLayer, overLayer, elLayer, labelLayer, editLayer, gpsLayer],
+// The overview's "only this town/street" outline
+const filterSrc = new ol.source.Vector();
+const filterLayer = new ol.layer.Vector({source:filterSrc, style:[
+  new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffcc", width:6})}),
+  new ol.style.Style({stroke:new ol.style.Stroke({color:"#2b6cd4", width:3, lineDash:[10,8]})})]});
+const map = new ol.Map({target:"map", layers:[ortoLayer, osmLayer, filterLayer, areaLayer, overLayer, elLayer, labelLayer, editLayer, gpsLayer],
   view:new ol.View({projection:proj, center:START_CENTER, zoom:START_ZOOM, resolutions:RES, constrainResolution:true}),
   controls: ol.control.defaults.defaults({attribution:false, rotate:false})});
 const store = {get(k,d){try{const v=localStorage.getItem(k);return v ? (JSON.parse(v) ?? d) : d}catch(e){return d}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
@@ -1243,7 +1262,7 @@ async function loadPacks(){
   if(sb){ const {data, error} = await sb.from("packages").select("*").order("name"); if(!error){ packs = data; store.set("packs", packs); } }
   if(!$("pNew").hidden) renderChosen();
 }
-const autoTitle = () => packNames([...picked]).join(" + ");
+const autoTitle = () => packNames([...picked]).join(" + ") + (picked.size && newShape?.place ? " i " + newShape.place : "");
 const packOn = p => p.codes.length > 0 && p.codes.every(c=>picked.has(c));
 function renderPacks(){
   $("packList").innerHTML = packs.map(p=>`<button data-k="${esc(p.id)}" class="${packOn(p)?"on":""}">📦 ${esc(p.name)}</button>`).join("")
@@ -1314,13 +1333,13 @@ async function delPack(p){
   toast(`Pakken "${p.name}" er slettet`); packList(); if(!$("pNew").hidden) renderChosen();
 }
 // Step 1: draw the area on the map. Step 2: pick types and people.
-function beginNewTask(code){
+function beginNewTask(code, shape){
   picked = new Set(code ? [code] : []); $("codeSearch").value=""; $("taskTitle").value=""; delete $("taskTitle").dataset.touched; $("newPick").checked = false;
   assignees = new Set();
-  startArea({shape:null, done:s=>{ newShape = s; showNewPanel(); }});
+  startArea({shape:shape||null, done:s=>{ newShape = s; showNewPanel(); }});
 }
 function showNewPanel(){
-  $("newAreaInfo").textContent = `Område: ${fmtArea(shapeGeom(newShape).getArea())}${newShape.area ? ", tegnet frit" : ""}`;
+  $("newAreaInfo").textContent = `Område: ${fmtArea(shapeGeom(newShape).getArea())}${newShape.place ? ", " + newShape.place : newShape.area ? ", tegnet frit" : ""}`;
   renderCodes(); renderChosen(); renderAssign(); $("pNew").hidden = false;
   loadPeople().then(renderAssign); loadPacks();
 }
@@ -1395,7 +1414,7 @@ function dropTools(){
   if(a.modI){ map.removeInteraction(a.modI); a.modI = null; }
 }
 function setMode(mode, init){
-  const a = areaEd; dropTools(); a.mode = mode; editSrc.clear();
+  const a = areaEd; dropTools(); a.mode = mode; a.place = null; editSrc.clear();
   document.querySelectorAll("#pArea [data-m]").forEach(b=>b.classList.toggle("on", b.dataset.m===mode));
   if(mode==="box"){
     a.ext = init || defaultExtent(); paintBox();
@@ -1430,7 +1449,8 @@ function curShape(){
   const g = areaGeom(); if(!g) return null;
   const [x0,y0,x1,y1] = g.getExtent();
   return {extent:[Math.floor(x0), Math.floor(y0), Math.ceil(x1), Math.ceil(y1)],
-    area: areaEd.mode==="draw" ? {type:"Polygon", coordinates:[g.getCoordinates()[0].map(c=>[Math.round(c[0]), Math.round(c[1])])]} : null};
+    area: areaEd.mode==="draw" ? {type:"Polygon", coordinates:[g.getCoordinates()[0].map(c=>[Math.round(c[0]), Math.round(c[1])])]} : null,
+    place: areaEd.place || null}; // the town or street it was made from, for the task's name
 }
 // Live size, and when the overview is open, how many of that type the area catches
 shapeFeat.on("change", ()=>areaChanged());
@@ -1461,6 +1481,7 @@ function startArea(opts){
   const s = opts.shape;
   if(s?.area) setMode("draw", new ol.geom.Polygon(s.area.coordinates));
   else setMode("box", s?.extent || null);
+  if(s?.place) placeHint(s.place);
   if(s) map.getView().fit(s.extent, {padding:[80,30,sheetPad(),30], maxZoom:11, duration:300});
 }
 function endArea(){
@@ -1473,6 +1494,12 @@ document.querySelectorAll("#pArea [data-m]").forEach(b=>b.onclick=()=>{
   setMode(m, m==="box" && g ? g.getExtent() : null);
 });
 $("btnRedraw").onclick = ()=>setMode("draw", null);
+function placeHint(name){ areaEd.place = name; $("areaHint").textContent = `Området følger ${name}. Træk i punkterne for at rette det.`; areaChanged(); }
+$("btnAreaFind").onclick = ()=>openFind((s, it)=>{
+  if(!areaEd) return;
+  setMode("draw", new ol.geom.Polygon(s.area.coordinates)); placeHint(it.label);
+  map.getView().fit(s.extent, {padding:[80,30,sheetPad(),30], duration:300});
+});
 $("btnAreaCancel").onclick = ()=>{ endArea().cancel?.(); };
 $("btnAreaOk").onclick = ()=>{
   const s = curShape();
@@ -1514,16 +1541,15 @@ $("typeSearch").oninput = renderTypes;
 $("btnTypeClose").onclick = ()=>{ $("pType").hidden = true; };
 function closeOverview(){
   if(!over) return;
-  clearTimeout(over.t); clearTimeout(over.refresh); over = null; overSrc.clear(); areaSrc.clear();
+  clearTimeout(over.t); clearTimeout(over.refresh); over = null; overSrc.clear(); areaSrc.clear(); filterSrc.clear();
 }
 async function openOverview(code){
   closeOverview();
   const o = over = {code, mode: store.get("overMode","status")};
   const name = CODES[code] || code;
-  $("overCode").textContent = code; $("overName").textContent = `${name} i hele kommunen`;
+  $("overCode").textContent = code;
   $("overBar").innerHTML = ""; $("overLegend").innerHTML = ""; $("overTasks").innerHTML = "";
-  $("btnOverNew").textContent = `+ Ny opgave med ${name.toLowerCase()}`;
-  pane("pOver");
+  overHead(); pane("pOver");
   const cached = await elCacheGet("type:"+code);
   let feats;
   if(cached){ feats = fmt.readFeatures(cached.geojson); overAge(cached.saved); }
@@ -1537,11 +1563,30 @@ async function openOverview(code){
   await overPaint();
   if(over!==o) return;
   if(!feats.length) toast(`Kommunen har ingen ${name.toLowerCase()} registreret`, 4000);
+  else if(overFilter) overFit();
   else if(!store.get("seenType:"+code, false)){ map.getView().fit(overSrc.getExtent(), {padding:[70,16,sheetPad(),16], duration:300}); store.set("seenType:"+code, true); }
   // Same rules as tasks: at most once a day, spread out, never in the morning rush
   if(cached && Date.now() - cached.saved > DAY && !rushHour())
     o.refresh = setTimeout(()=>{ if(over===o && navigator.onLine && !rushHour()) refreshType(o, false); }, 15000 + Math.random()*180000);
 }
+// "Only Brande": the overview counts and shows only what lies in one town or along one street. Kept when switching type.
+let overFilter = null; // {name, shape:{extent, area}, prep}
+function overHead(){
+  if(!over) return;
+  const name = CODES[over.code] || over.code, f = overFilter;
+  $("overName").textContent = f ? `${name} i ${f.name}` : `${name} i hele kommunen`;
+  $("btnOverNew").textContent = `+ Ny opgave med ${name.toLowerCase()}${f ? " i " + f.name : ""}`;
+  $("btnOverFind").hidden = !!f; $("overFilt").hidden = !f;
+  if(f) $("overFiltName").textContent = f.name;
+  filterSrc.clear();
+  if(f) filterSrc.addFeature(new ol.Feature(shapeGeom(f.shape)));
+}
+const overFit = () => overFilter && map.getView().fit(overFilter.shape.extent, {padding:[70,30,sheetPad(),30], duration:350});
+$("btnOverFind").onclick = ()=>openFind((s, it)=>{
+  overFilter = {name:it.label, shape:s, prep:prepShape(s)};
+  overHead(); overPaint(); overFit();
+});
+$("btnOverAll").onclick = ()=>{ overFilter = null; overHead(); overPaint(); };
 async function downloadType(code){ const fs = await fetchKommune(code); await elCachePut("type:"+code, fs); return fs; }
 function overAge(saved){ $("overAge").textContent = `Kortdata hentet ${ago(new Date(saved).toISOString())} · gemt på telefonen`; }
 async function refreshType(o, manual){
@@ -1572,7 +1617,7 @@ async function progressFor(ids){
 async function overPaint(){
   const o = over; if(!o) return;
   // Oldest first, so each task keeps its colour while the list of tasks stays the same
-  const tl = tasks.filter(t=>(t.codes||[]).includes(o.code)).sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
+  const tl = tasks.filter(t=>(t.codes||[]).includes(o.code) && (!overFilter || ol.extent.intersects(t.extent, overFilter.shape.extent))).sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
   const col = new Map(tl.map((t,i)=>[t.id, TASK_COLORS[i % TASK_COLORS.length]]));
   if(o.focus && !col.has(o.focus)) o.focus = null;
   const [prog, ages] = await Promise.all([progressFor(tl.map(t=>t.id)), o.mode==="age" ? tendedForCode(o.code) : null]);
@@ -1581,8 +1626,11 @@ async function overPaint(){
   tl.forEach(t=>{ const f = new ol.Feature(shapeGeom(t)); f.setProperties({label:t.name, tid:t.id, color:col.get(t.id)}); areaSrc.addFeature(f); });
   const shapes = tl.map(t=>({t, s:prepShape(t), pk: t.elements ? new Set(t.elements) : null})), RANK = {todo:0, doing:1, blocked:2, done:3};
   const per = new Map(tl.map(t=>[t.id, {done:0, blocked:0, total:0}])), c = {none:0, todo:0, doing:0, blocked:0, done:0};
+  const flt = overFilter?.prep;
   overSrc.getFeatures().forEach(f=>{
     const g = f.getGeometry(); let best = null; const in_ = [];
+    const out = !!flt && !inShape(g, flt); f.set("_out", out, true);
+    if(out){ f.set("_s", null, true); return; }
     for(const {t,s,pk} of shapes){
       if(!inShape(g, s) || (pk && !pk.has(f.getId()))) continue;
       const st = prog.get(t.id+"|"+f.getId()) || "todo", p = per.get(t.id);
@@ -1595,7 +1643,7 @@ async function overPaint(){
   });
   overLayer.changed();
   document.querySelectorAll("#overMode [data-o]").forEach(b=>b.classList.toggle("on", b.dataset.o===(o.mode||"status")));
-  const n = overSrc.getFeatures().length, name = (CODES[o.code]||o.code).toLowerCase();
+  const n = overSrc.getFeatures().filter(f=>!f.get("_out")).length, name = (CODES[o.code]||o.code).toLowerCase();
   if(ages){
     $("overBar").innerHTML = n ? AGES.map(a=>`<i style="width:${(c[a.k]||0)/n*100}%;background:${a.c}"></i>`).join("") : "";
     $("overLegend").innerHTML = AGES.map(a=>`<span><i style="background:${a.c}"></i><b class="num">${c[a.k]||0}</b> ${a.l}</span>`).join("");
@@ -1630,7 +1678,7 @@ document.querySelectorAll("#overMode [data-o]").forEach(b=>b.onclick=()=>{
   overPaint();
 });
 $("btnOverBack").onclick = ()=>{ closeOverview(); pane("pTasks"); loadTasks(); };
-$("btnOverNew").onclick = ()=>{ if(over) beginNewTask(over.code); };
+$("btnOverNew").onclick = ()=>{ if(over) beginNewTask(over.code, overFilter ? {...overFilter.shape, place:overFilter.name} : null); };
 
 // ================= LOG: WHEN EACH ELEMENT WAS LAST TENDED, WITH NOTES AND PHOTOS =================
 // element_log keeps a line each time an element is sent as done (or gets a note or photo): the day, the task, never a name.
@@ -1953,6 +2001,8 @@ const PHOTON = "https://photon.komoot.io/api/";
 const KIND = {city:"By",town:"By",village:"Landsby",hamlet:"Landsby",suburb:"Bydel",neighbourhood:"Kvarter",
   residential:"Vej",primary:"Vej",secondary:"Vej",tertiary:"Vej",unclassified:"Vej",service:"Vej",living_street:"Vej",pedestrian:"Gågade",footway:"Sti",cycleway:"Cykelsti",
   station:"Station",halt:"Station",railway:"Station",bus_station:"Busstation",bus_stop:"Busstoppested",house:"Adresse",school:"Skole",park:"Park",playground:"Legeplads",cemetery:"Kirkegård",place_of_worship:"Kirke",parking:"Parkering",supermarket:"Butik"};
+// The kommune's towns, as one-tap shortcuts
+const TOWNS = ["Ikast","Brande","Bording","Engesvang","Ejstrupholm","Nørre Snede","Hampen","Klovborg","Isenvad","Gludsted","Blåhøj"];
 const pinFeat = new ol.Feature();
 pinFeat.setStyle(new ol.style.Style({image:new ol.style.Circle({radius:10,fill:new ol.style.Fill({color:"#ffffff"}),stroke:new ol.style.Stroke({color:"#1f3a2e",width:4})})}));
 gpsLayer.getSource().addFeature(pinFeat);
@@ -1964,14 +2014,36 @@ function placeLabel(p){
 }
 const NOMINATIM = "https://nominatim.openstreetmap.org/search";
 const near = () => { const c = ol.proj.toLonLat(map.getView().getCenter(), proj); return {lat:c[1].toFixed(4), lon:c[0].toFixed(4)}; };
+// A JSON fetch that gives up after `ms`, so a lapse in the connection never leaves "Søger …" spinning.
+// Also stops when `outer` aborts (a newer search replaced this one); the caller tells the two apart with outer.aborted.
+async function getJSON(url, opts, ms, outer){
+  const c = new AbortController(), stop = ()=>c.abort();
+  if(outer?.aborted) stop();
+  outer?.addEventListener("abort", stop);
+  const t = setTimeout(stop, ms);
+  try{
+    const res = await fetch(url, {...opts, signal:c.signal});
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  }finally{ clearTimeout(t); outer?.removeEventListener("abort", stop); }
+}
+// Answers are remembered on the phone, so a search you've done before shows up at once
+const SEARCH_MEMO = 80;
+let searchMemo = store.get("searchMemo", {});
+function memoGet(k){ const m = searchMemo[k]; return m && Date.now() - m.t < 30*DAY ? m.fs : null; }
+function memoPut(k, fs){
+  searchMemo[k] = {t:Date.now(), fs};
+  const ks = Object.keys(searchMemo); if(ks.length > SEARCH_MEMO) ks.sort((a,b)=>searchMemo[a].t - searchMemo[b].t).slice(0, ks.length - SEARCH_MEMO).forEach(x=>delete searchMemo[x]);
+  store.set("searchMemo", searchMemo);
+}
 async function photon(q, extra, signal){
   const u = PHOTON + "?" + new URLSearchParams({q, ...near(), limit:"8", location_bias_scale:"0.8", zoom:"13", bbox:"8.0,54.5,15.3,57.8", ...extra});
-  return ((await (await fetch(u,{signal})).json()).features) || [];
+  return (await getJSON(u, {}, 8000, signal)).features || [];
 }
 // Nominatim (only on Enter, per its usage policy) is better at stations and house numbers
 async function nominatim(q, signal){
   const u = NOMINATIM + "?" + new URLSearchParams({q, format:"jsonv2", limit:"6", countrycodes:"dk", viewbox:"8.8,56.35,9.7,55.75", addressdetails:"1"});
-  const rs = await (await fetch(u,{signal})).json();
+  const rs = await getJSON(u, {}, 10000, signal);
   return rs.map(r=>{ const a = r.address||{};
     const bb = r.boundingbox ? [+r.boundingbox[2], +r.boundingbox[1], +r.boundingbox[3], +r.boundingbox[0]] : null;
     return {geometry:{coordinates:[+r.lon, +r.lat]}, properties:{name:r.name || [a.road,a.house_number].filter(Boolean).join(" "),
@@ -1979,25 +2051,43 @@ async function nominatim(q, signal){
       osm_key:r.category, osm_value:r.type, extent: (r.type==="town"||r.type==="city"||r.type==="village") ? bb : null}}; });
 }
 const fkey = f => f.geometry.coordinates.map(x=>x.toFixed(3)).join(",") + (f.properties.name||"");
-async function searchPlaces(q, deep){
+const townChips = () => `<div class="section">Byer i kommunen</div><div class="people">${TOWNS.map(n=>`<button data-town="${esc(n)}">${esc(n)}</button>`).join("")}</div>`;
+function searchStart(){
+  $("placeList").innerHTML = townChips();
+  $("placeList").querySelectorAll("[data-town]").forEach(b=>b.onclick=()=>{ $("placeQ").value = b.dataset.town; searchPlaces(b.dataset.town, false, true); });
+}
+// pickTown: a town shortcut was tapped, so go straight to the town of that name if the search finds it
+async function searchPlaces(q, deep, pickTown){
   if(searchCtl) searchCtl.abort();
-  if(q.length < 2){ $("placeList").innerHTML = ""; return; }
-  searchCtl = new AbortController(); const sig = searchCtl.signal;
-  $("placeList").innerHTML = `<p class="muted"><span class="spin"></span> Søger …</p>`;
-  try{
-    const jobs = [photon(q, {}, sig)];
-    const st = q.match(/^(.*?)\s*(station|st\.?|banegård)$/i);
-    if(st && st[1]) jobs.unshift(photon(st[1], {osm_tag:"railway:station"}, sig));
-    if(deep) jobs.unshift(nominatim(q, sig).catch(()=>[]));
-    const seen = new Set(), fs = [];
-    for(const list of await Promise.all(jobs)) for(const f of list){ const k = fkey(f); if(!seen.has(k)){ seen.add(k); fs.push(f); } }
-    $("placeList").innerHTML = (fs.length ? fs.slice(0,12).map((f,i)=>{ const l = placeLabel(f.properties);
-      return `<button class="item" data-i="${i}"><div class="grow"><div class="t">${esc(l.name)}</div><div class="s">${esc(l.sub)}</div></div><span class="code">${esc(l.kind)}</span></button>`; }).join("")
-      : `<p class="muted">Ingen steder fundet for "${esc(q)}".</p>`)
-      + (deep ? "" : `<button class="btn ghost" id="btnDeep">Find ikke det rigtige? Søg grundigere</button>`);
-    $("placeList").querySelectorAll("[data-i]").forEach(b=>b.onclick=()=>goPlace(fs[+b.dataset.i]));
-    if(!deep) $("btnDeep").onclick = ()=>searchPlaces(q, true);
-  }catch(e){ if(e.name!=="AbortError") $("placeList").innerHTML = `<p class="muted">Søgningen virker ikke lige nu. Tjek forbindelsen.</p>`; }
+  clearTimeout(searchT);
+  if(q.length < 2){ searchStart(); return; }
+  const key = (deep ? "+" : "") + q.toLowerCase();
+  let fs = memoGet(key);
+  if(!fs){
+    searchCtl = new AbortController(); const sig = searchCtl.signal;
+    $("placeList").innerHTML = `<p class="muted"><span class="spin"></span> Søger …</p>`;
+    try{
+      const jobs = [photon(q, {}, sig)];
+      const st = q.match(/^(.*?)\s*(station|st\.?|banegård)$/i);
+      if(st && st[1]) jobs.unshift(photon(st[1], {osm_tag:"railway:station"}, sig));
+      if(deep) jobs.unshift(nominatim(q, sig).catch(()=>[]));
+      const seen = new Set(); fs = [];
+      for(const list of await Promise.all(jobs)) for(const f of list){ const k = fkey(f); if(!seen.has(k)){ seen.add(k); fs.push(f); } }
+      fs = fs.slice(0,12); memoPut(key, fs);
+    }catch(e){
+      if(sig.aborted) return; // a newer search took over
+      $("placeList").innerHTML = `<p class="muted">Søgningen svarer ikke lige nu. Måske er nettet væk et øjeblik.</p><button class="btn" id="btnSearchRetry">Prøv igen</button>`;
+      $("btnSearchRetry").onclick = ()=>searchPlaces(q, deep, pickTown);
+      return;
+    }
+  }
+  if(pickTown){ const t = fs.find(f=>f.properties.osm_key==="place" && norm(f.properties.name)===norm(q)); if(t){ goPlace(t); return; } }
+  $("placeList").innerHTML = (fs.length ? fs.map((f,i)=>{ const l = placeLabel(f.properties);
+    return `<button class="item" data-i="${i}"><div class="grow"><div class="t">${esc(l.name)}</div><div class="s">${esc(l.sub)}</div></div><span class="code">${esc(l.kind)}</span></button>`; }).join("")
+    : `<p class="muted">Ingen steder fundet for "${esc(q)}".</p>`)
+    + (deep ? "" : `<button class="btn ghost" id="btnDeep">Find ikke det rigtige? Søg grundigere</button>`);
+  $("placeList").querySelectorAll("[data-i]").forEach(b=>b.onclick=()=>goPlace(fs[+b.dataset.i]));
+  if(!deep) $("btnDeep").onclick = ()=>searchPlaces(q, true);
 }
 function goPlace(f){
   const pt = ol.proj.fromLonLat(f.geometry.coordinates, proj);
@@ -2006,13 +2096,239 @@ function goPlace(f){
   const ex = f.properties.extent; // [minLon, maxLat, maxLon, minLat] for towns and long streets
   if(ex){ const a = ol.proj.fromLonLat([ex[0],ex[3]], proj), b = ol.proj.fromLonLat([ex[2],ex[1]], proj);
     map.getView().fit([a[0],a[1],b[0],b[1]], {padding:[70,20,sheetPad(),20], maxZoom:12, duration:400}); }
-  else map.getView().animate({center:pt, zoom:Math.max(map.getView().getZoom(), 11), duration:400});
+  else map.getView().animate({center:pt, zoom:Math.max(map.getView().getZoom(), f.properties.osm_key==="place" ? 9 : 11), duration:400});
   toast(placeLabel(f.properties).name);
 }
-$("btnSearch").onclick = ()=>{ $("pSearch").hidden = false; $("placeQ").focus(); $("placeQ").select(); };
-$("btnSearchClose").onclick = ()=>{ $("pSearch").hidden = true; };
+$("btnSearch").onclick = ()=>{ $("pSearch").hidden = false; $("placeQ").focus(); $("placeQ").select(); if($("placeQ").value.trim().length < 2) searchStart(); };
+$("btnSearchClose").onclick = ()=>{ if(searchCtl) searchCtl.abort(); $("pSearch").hidden = true; };
 $("placeQ").oninput = e=>{ clearTimeout(searchT); const q = e.target.value.trim(); searchT = setTimeout(()=>searchPlaces(q), 300); };
 $("placeQ").onkeydown = e=>{ if(e.key==="Enter"){ clearTimeout(searchT); searchPlaces(e.target.value.trim(), true); } };
+
+// ================= A TOWN OR A STREET AS AN AREA =================
+// A boss picks "Brande" or "Storegade" instead of drawing by hand. The outline is worked out on the phone:
+// a town is everywhere within 55 m of a building (OpenStreetMap, which has every building in Denmark),
+// a street is 25 m to each side of the kommune's own road lines. The result is an ordinary freehand area, so it can be adjusted.
+// Outlines are remembered on the phone for 30 days, so the servers are asked once per place.
+const OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
+const KOMMUNE_BBOX = "8.85,55.84,9.60,56.27"; // Ikast-Brande, lon/lat
+const ROAD_TYPES = new Set(["motorway","trunk","primary","secondary","tertiary","unclassified","residential","living_street","service","pedestrian","road","track","footway","cycleway","path"]);
+const TOWN_TYPES = {city:5000, town:3500, village:1500, hamlet:800, suburb:1200, quarter:1200, neighbourhood:1000}; // search radius, m
+async function overpass(q, outer){
+  let err;
+  for(const u of OVERPASS){
+    try{ return (await getJSON(u, {method:"POST", body:new URLSearchParams({data:q})}, 45000, outer)).elements || []; }
+    catch(e){ err = e; if(outer?.aborted) throw e; }
+  }
+  throw err;
+}
+// ---- Outline: everything within r metres of some lines/points, as one polygon without holes ----
+// Works on a grid, so it needs no geometry library: stamp a disc around every point, keep the piece at the seed,
+// fill its holes, then walk its edge. Returns a ring [[x,y],…] (closed), or null.
+function outlineOf(paths, {r, cell, seed}){
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for(const p of paths) for(const [x,y] of p){ if(x<x0) x0=x; if(y<y0) y0=y; if(x>x1) x1=x; if(y>y1) y1=y; }
+  if(!isFinite(x0)) return null;
+  cell = Math.max(cell, Math.sqrt((x1-x0+2*r)*(y1-y0+2*r) / 2e6)); // keep the grid at a few million cells at most
+  const m = r + 3*cell; x0 -= m; y0 -= m;
+  const W = Math.ceil((x1 - x0 + m)/cell) + 1, H = Math.ceil((y1 - y0 + m)/cell) + 1;
+  const g = new Uint8Array(W*H), rc = Math.ceil(r/cell), disc = [];
+  for(let dj=-rc; dj<=rc; dj++) for(let di=-rc; di<=rc; di++) if((di*di + dj*dj)*cell*cell <= r*r) disc.push(dj*W + di);
+  const stamp = (x, y) => { const k = Math.floor((y-y0)/cell)*W + Math.floor((x-x0)/cell); for(const d of disc) g[k+d] = 1; };
+  for(const p of paths){
+    stamp(p[0][0], p[0][1]);
+    for(let i=1; i<p.length; i++){
+      const [ax,ay] = p[i-1], [bx,by] = p[i], n = Math.ceil(Math.hypot(bx-ax, by-ay)/cell);
+      for(let s=1; s<=n; s++) stamp(ax + (bx-ax)*s/n, ay + (by-ay)*s/n);
+    }
+  }
+  // The piece at the seed (or the nearest piece to it), 4-connected
+  let start = -1;
+  if(seed){
+    const si = Math.floor((seed[0]-x0)/cell), sj = Math.floor((seed[1]-y0)/cell);
+    let bd = Infinity;
+    for(let j=0; j<H; j++) for(let i=0; i<W; i++) if(g[j*W+i]){ const d = (i-si)**2 + (j-sj)**2; if(d < bd){ bd = d; start = j*W+i; } }
+  } else start = g.indexOf(1);
+  if(start < 0) return null;
+  const flood = (from, ok, mark) => { const st = [from]; g[from] = mark;
+    while(st.length){ const k = st.pop(); for(const n of [k-1, k+1, k-W, k+W]) if(n>=0 && n<g.length && ok(g[n], n, k)){ g[n] = mark; st.push(n); } } };
+  // only step left/right within the same row
+  const sameRow = (n, k) => Math.abs(n-k)!==1 || Math.floor(n/W)===Math.floor(k/W);
+  flood(start, (v,n,k)=>v===1 && sameRow(n,k), 2);
+  // Outside = what the grid's border reaches; everything else (the piece and its holes) is inside.
+  // Where two inside cells only touch at a corner, fill one of the gaps so the edge is one clean ring.
+  for(let pass=0; pass<20; pass++){
+    for(let k=0; k<g.length; k++) if(g[k]!==2) g[k] = 0;
+    flood(0, (v,n,k)=>v===0 && sameRow(n,k), 3);
+    let fixed = 0;
+    for(let j=0; j<H-1; j++) for(let i=0; i<W-1; i++){
+      const a = j*W+i, b = a+1, c = a+W, d = c+1, inA = g[a]!==3, inB = g[b]!==3, inC = g[c]!==3, inD = g[d]!==3;
+      if(inA && inD && !inB && !inC){ g[b] = 2; fixed++; }
+      else if(inB && inC && !inA && !inD){ g[a] = 2; fixed++; }
+    }
+    if(!fixed) break;
+  }
+  // Walk the edge: each inside cell side facing outside is an edge, inside on the left (counter-clockwise)
+  const next = new Map(), key = (i,j) => j*(W+1) + i;
+  for(let j=0; j<H; j++) for(let i=0; i<W; i++){
+    if(g[j*W+i]===3) continue;
+    const out = (ii,jj) => ii<0 || jj<0 || ii>=W || jj>=H || g[jj*W+ii]===3;
+    if(out(i,j-1)) next.set(key(i,j), [i+1,j]);
+    if(out(i+1,j)) next.set(key(i+1,j), [i+1,j+1]);
+    if(out(i,j+1)) next.set(key(i+1,j+1), [i,j+1]);
+    if(out(i-1,j)) next.set(key(i,j+1), [i,j]);
+  }
+  const [k0] = next.keys(); if(k0===undefined) return null;
+  const ring = []; let k = k0;
+  for(let guard=0; guard<=next.size; guard++){
+    const i = k % (W+1), j = Math.floor(k/(W+1)), [ni,nj] = next.get(k);
+    const prev = ring[ring.length-1], pp = ring[ring.length-2];
+    const pt = [x0 + i*cell, y0 + j*cell];
+    if(pp && (pp[0]===prev[0] && prev[0]===pt[0] || pp[1]===prev[1] && prev[1]===pt[1])) ring[ring.length-1] = pt; else ring.push(pt);
+    k = key(ni,nj); if(k===k0) break;
+  }
+  ring.push(ring[0].slice());
+  return ring;
+}
+// Fewer points, so the outline is easy to drag: Douglas-Peucker, raising the tolerance until it is under max points
+function thinRing(ring, tol, max){
+  const dp = (pts, t) => {
+    const keep = new Uint8Array(pts.length); keep[0] = keep[pts.length-1] = 1;
+    const st = [[0, pts.length-1]];
+    while(st.length){
+      const [a,b] = st.pop(); let bi = -1, bd = t;
+      const [ax,ay] = pts[a], [bx,by] = pts[b], L = Math.hypot(bx-ax, by-ay) || 1;
+      for(let i=a+1; i<b; i++){ const d = Math.abs((bx-ax)*(ay-pts[i][1]) - (ax-pts[i][0])*(by-ay))/L; if(d > bd){ bd = d; bi = i; } }
+      if(bi>0){ keep[bi] = 1; st.push([a,bi],[bi,b]); }
+    }
+    return pts.filter((_,i)=>keep[i]);
+  };
+  // Split the closed ring at its two farthest points so both halves are open lines
+  const open = ring.slice(0,-1); let far = 0, fd = -1;
+  open.forEach((p,i)=>{ const d = (p[0]-open[0][0])**2 + (p[1]-open[0][1])**2; if(d > fd){ fd = d; far = i; } });
+  let out;
+  for(let t=tol; ; t*=1.5){
+    out = [...dp(open.slice(0, far+1), t).slice(0,-1), ...dp([...open.slice(far), open[0]], t)];
+    if(out.length <= max || t > 1e4) break;
+  }
+  out.push(out[0].slice());
+  return out;
+}
+// The road pieces nearest the search hit, plus every piece within `link` m of those (a street can have small gaps),
+// as paths; a short connecting line bridges each gap so the outline stays in one piece
+function linkedPaths(geoms, seed, link){
+  const ps = geoms.map(paths);
+  const gap = (i, j) => { let best = [Infinity];
+    for(const p of ps[i]) for(const c of p){ const q = geoms[j].getClosestPoint(c), d = Math.hypot(q[0]-c[0], q[1]-c[1]); if(d < best[0]) best = [d, c, q]; }
+    return best; };
+  let first = 0, fd = Infinity;
+  geoms.forEach((g,i)=>{ const q = g.getClosestPoint(seed), d = Math.hypot(q[0]-seed[0], q[1]-seed[1]); if(d < fd){ fd = d; first = i; } });
+  const got = new Set([first]), todo = [first], out = [...ps[first]];
+  while(todo.length){
+    const i = todo.pop();
+    geoms.forEach((_, j)=>{ if(got.has(j)) return; const [d, c, q] = gap(i, j);
+      if(d <= link){ got.add(j); todo.push(j); out.push(...ps[j]); if(d > 1) out.push([c, q]); } });
+  }
+  return out;
+}
+async function streetGeoms(name, ll, sig){
+  const c = ol.proj.fromLonLat(ll, proj), R = 3000, bb = [c[0]-R, c[1]-R, c[0]+R, c[1]+R].map(Math.round).join(",");
+  const q = name.replace(/'/g, "''"), same = v => String(v||"").split(",").some(n=>norm(n)===norm(name));
+  let roads = [];
+  for(const op of ["ILIKE","LIKE"]){
+    try{ roads = await wfsAll(ROAD_LAYER, {CQL_FILTER:`vejnavn ${op} '%${q}%' AND BBOX(wkb_geometry,${bb})`}); break; }catch(e){ console.warn(e); }
+  }
+  let gs = roads.filter(f=>f.getGeometry() && same(f.get("vejnavn"))).map(f=>f.getGeometry());
+  if(!gs.length){ // a road the kommune doesn't have under that name: use OpenStreetMap's
+    const els = await overpass(`[out:json][timeout:25];way["highway"]["name"="${name.replace(/["\\]/g, "\\$&")}"](around:${R},${ll[1]},${ll[0]});out geom;`, sig);
+    gs = els.filter(e=>e.geometry?.length).map(e=>new ol.geom.LineString(e.geometry.map(p=>ol.proj.fromLonLat([p.lon, p.lat], proj))));
+  }
+  return gs;
+}
+async function townPoints(ll, type, sig){
+  const R = TOWN_TYPES[type] || 1200;
+  const els = await overpass(`[out:json][timeout:25];way["building"](around:${R},${ll[1]},${ll[0]});out center;`, sig);
+  return els.filter(e=>e.center).map(e=>[ol.proj.fromLonLat([e.center.lon, e.center.lat], proj)]);
+}
+// it: {kind:"town"|"street", name, type, ll:[lon,lat]} -> {extent, area}
+async function namedShape(it, sig){
+  const k = `place:${it.kind}:${norm(it.name)}:${it.ll.map(x=>x.toFixed(3)).join(",")}`;
+  const hit = store.get(k, null); if(hit && Date.now() - hit.saved < 30*DAY) return hit.shape;
+  const seed = ol.proj.fromLonLat(it.ll, proj);
+  let ring;
+  if(it.kind==="town"){
+    const pts = await townPoints(it.ll, it.type, sig);
+    if(pts.length < 3) throw new Error("Fandt ingen huse");
+    ring = outlineOf(pts, {r:55, cell:15, seed}); ring = ring && thinRing(ring, 15, 80);
+  } else {
+    const gs = await streetGeoms(it.name, it.ll, sig);
+    if(!gs.length) throw new Error("Fandt ikke vejen");
+    ring = outlineOf(linkedPaths(gs, seed, 150), {r:25, cell:5, seed}); ring = ring && thinRing(ring, 5, 150);
+  }
+  if(!ring || ring.length < 4) throw new Error("Ingen form");
+  const rr = ring.map(c=>[Math.round(c[0]), Math.round(c[1])]), xs = rr.map(c=>c[0]), ys = rr.map(c=>c[1]);
+  const shape = {extent:[Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)], area:{type:"Polygon", coordinates:[rr]}};
+  store.set(k, {shape, saved:Date.now()});
+  return shape;
+}
+// The picker: towns and streets in the kommune (Photon), then the outline. onPick(shape, item)
+let findCb = null, findCtl = null, findT = null;
+function openFind(onPick){
+  findCb = onPick; $("findQ").value = ""; findStart(); $("pFind").hidden = false; $("findQ").focus();
+}
+function closeFind(){ if(findCtl) findCtl.abort(); clearTimeout(findT); $("pFind").hidden = true; findCb = null; }
+function findStart(){
+  $("findList").innerHTML = townChips();
+  $("findList").querySelectorAll("[data-town]").forEach(b=>b.onclick=()=>{ $("findQ").value = b.dataset.town; findSearch(b.dataset.town, true); });
+}
+const findItem = f => { const p = f.properties, town = p.osm_key==="place";
+  return {kind: town ? "town" : "street", type:p.osm_value, name:p.name, ll:f.geometry.coordinates,
+    label: town ? p.name : `${p.name}, ${p.city || p.district || p.county || ""}`.replace(/, $/, ""),
+    sub: town ? (KIND[p.osm_value] || "By") : (p.city || p.district || "")}; };
+async function findSearch(q, pickTown){
+  if(findCtl) findCtl.abort();
+  clearTimeout(findT);
+  if(q.length < 2){ findStart(); return; }
+  const key = "find:" + q.toLowerCase();
+  let items = memoGet(key);
+  if(!items){
+    findCtl = new AbortController(); const sig = findCtl.signal;
+    $("findList").innerHTML = `<p class="muted"><span class="spin"></span> Søger …</p>`;
+    try{
+      const [towns, roads] = await Promise.all([photon(q, {osm_tag:"place", bbox:KOMMUNE_BBOX}, sig), photon(q, {osm_tag:"highway", bbox:KOMMUNE_BBOX}, sig)]);
+      const seen = new Set(); items = [];
+      [...towns.filter(f=>f.properties.osm_value in TOWN_TYPES), ...roads.filter(f=>ROAD_TYPES.has(f.properties.osm_value))].filter(f=>f.properties.name).map(findItem).forEach(it=>{
+        const k = it.kind + norm(it.label); if(!seen.has(k)){ seen.add(k); items.push(it); } });
+      memoPut(key, items);
+    }catch(e){
+      if(sig.aborted) return;
+      $("findList").innerHTML = `<p class="muted">Søgningen svarer ikke lige nu. Måske er nettet væk et øjeblik.</p><button class="btn" id="btnFindRetry">Prøv igen</button>`;
+      $("btnFindRetry").onclick = ()=>findSearch(q, pickTown);
+      return;
+    }
+  }
+  if(pickTown){ const t = items.find(it=>it.kind==="town" && norm(it.name)===norm(q)); if(t){ findPick(t); return; } }
+  $("findList").innerHTML = items.length ? items.map((it,i)=>`<button class="item" data-i="${i}"><div class="grow"><div class="t">${esc(it.name)}</div><div class="s">${esc(it.sub)}</div></div><span class="code">${it.kind==="town" ? "By" : "Vej"}</span></button>`).join("")
+    : `<p class="muted">Ingen byer eller veje i kommunen hedder "${esc(q)}".</p>`;
+  $("findList").querySelectorAll("[data-i]").forEach(b=>b.onclick=()=>findPick(items[+b.dataset.i]));
+}
+async function findPick(it){
+  if(findCtl) findCtl.abort();
+  findCtl = new AbortController(); const sig = findCtl.signal;
+  $("findList").innerHTML = `<p class="muted"><span class="spin"></span> Finder ${it.kind==="town" ? "byens grænse" : "vejen"} for ${esc(it.label)} … Det kan tage op til et halvt minut.</p>`;
+  try{
+    const s = await namedShape(it, sig);
+    if(sig.aborted) return;
+    const cb = findCb; closeFind(); cb?.(s, it);
+  }catch(e){
+    if(sig.aborted) return;
+    console.error(e);
+    $("findList").innerHTML = `<p class="muted">Kunne ikke finde ${it.kind==="town" ? "grænsen for" : ""} ${esc(it.label)}. Tjek forbindelsen og prøv igen, eller luk og tegn selv.</p><button class="btn" id="btnFindRetry">Prøv igen</button>`;
+    $("btnFindRetry").onclick = ()=>findPick(it);
+  }
+}
+$("btnFindClose").onclick = closeFind;
+$("findQ").oninput = e=>{ clearTimeout(findT); const q = e.target.value.trim(); findT = setTimeout(()=>findSearch(q), 300); };
+$("findQ").onkeydown = e=>{ if(e.key==="Enter"){ clearTimeout(findT); findSearch(e.target.value.trim()); } };
 
 pane("pTasks");
 applyUser(); renderOutbox();
