@@ -24,7 +24,7 @@ Shared task map for the idverde crew in Ikast-Brande. The kommune's maintenance 
 
 **On a computer:** on screens 1024 px and wider (a laptop or office PC), the panel sits in a sidebar on the left and the map fills the rest, which makes planning tasks and checking Overblik easier for bosses. Freehand areas are drawn by holding the mouse button down. Phones look exactly as before.
 
-**Photos:** **📷 Billede** on an element takes or picks a photo. It's shrunk on the phone (which also strips GPS and other hidden data) and waits in the outbox like any other change until **Send**.
+**Photos:** **📷 Billede** on an element takes or picks a photo. It's shrunk on the phone (which also strips GPS and other hidden data) and waits in the outbox like any other change until **Send**. To see the photos: in a task, **📷 Billeder** (next to **Liste**) shows every photo in that task, newest first, with the day, the place and a note; tap a photo to see it big, or **Vis på kortet** to jump to the element. **Historik** on one element shows that element's photos, also from earlier tasks.
 
 **Overblik → Sidst passet:** colours every element of the type across the kommune by days since it was last done: green 0–7, light green 8–14, yellow 15–30, orange 31–60, red over 60, grey if it's not in the log yet. Tapping an element shows the day.
 
