@@ -188,6 +188,11 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   .item.on:hover{border-color:var(--ink2)}
   /* Full-screen panels open in the sidebar, so the map stays in view */
   .panel{right:auto;width:var(--side);border-right:1px solid var(--line);box-shadow:4px 0 18px #0002}
+  /* Ny opgave gets two columns, so the type list has the full height: types on the left, name, people and Opret on the right */
+  #pNew:not([hidden]){width:min(880px,calc(100vw - 300px));display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto minmax(0,1fr)}
+  #pNew header{grid-column:1;grid-row:1}
+  #pNew .list{grid-column:1;grid-row:2;min-height:0}
+  #pNew footer{grid-column:2;grid-row:1/3;align-content:start;justify-content:flex-start;border-top:0;border-left:1px solid var(--line);max-height:none;overflow-y:auto;padding-top:calc(env(safe-area-inset-top,0px) + 14px)}
   #pLogin{right:0;width:auto}
   #pLogin .body{max-width:440px;width:100%;margin:0 auto}
   .ask>div{max-width:420px}
