@@ -286,6 +286,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button class="btn ghost" id="btnPlaceOther">⌕ Andet sted</button>
     </div>
     <div><div class="eyebrow">Alt hvad kommunen har registreret i</div><h2 id="placeName"></h2></div>
+    <div class="seg" id="placeMode" role="group" aria-label="Farver">
+      <button data-o="type">Farve pr. type</button>
+      <button data-o="status">Status</button>
+    </div>
     <div class="bar" id="placeBar"></div>
     <div class="legend" id="placeLegend"></div>
     <div class="row"><span class="muted grow" id="placeAge"></span><button class="btn ghost" id="btnPlaceRefresh" style="min-height:36px;padding:4px 8px">Opdater</button></div>
@@ -599,7 +603,19 @@ function shapeStyle(s, sel, far){
 }
 const elLayer = new ol.layer.Vector({source:elSrc, style:elStyle, renderBuffer:200});
 const overSrc = new ol.source.Vector(); // overview: one type in the whole kommune
-const overLayer = new ol.layer.Vector({source:overSrc, style:(f,res)=>f.get("_out") ? null : shapeStyle((over?.mode==="age" ? f.get("_a") : f.get("_s")) || "none", false, res > 3.2), renderBuffer:200});
+// Place view, "Typer": each type its own colour (COLORS.ty0, ty1 …); a highlighted type keeps its colour, the rest go grey
+const TYPE_COLORS = ["#2f6fe0","#e05a1f","#2e9e5b","#c2338a","#e8a317","#0e8f9e","#7c5cff","#8b5a2b","#d64545","#9bbf1e","#1fb8d6","#56636f"];
+TYPE_COLORS.forEach((c,i)=>COLORS["ty"+i] = c);
+function overStyle(f, res){
+  if(f.get("_out")) return null;
+  const far = res > 3.2;
+  if(place){
+    const k = place.mode==="status" ? f.get("_s") || "none" : place.focus && f.get("elementkode")!==place.focus ? "off" : place.tcol?.[f.get("elementkode")] || "none";
+    return shapeStyle(k, f===place.sel, far);
+  }
+  return shapeStyle((over?.mode==="age" ? f.get("_a") : f.get("_s")) || "none", false, far);
+}
+const overLayer = new ol.layer.Vector({source:overSrc, style:overStyle, renderBuffer:200});
 const areaSrc = new ol.source.Vector();
 const areaDash = new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffdd",width:2,lineDash:[10,8]})});
 // Overview: each task gets its own outline colour so overlapping areas can be told apart (none of them red/yellow/green/purple)
@@ -1744,6 +1760,7 @@ let place = null; // {name, shape, prep, key, t, refresh}
 function closePlace(){
   if(!place) return;
   clearTimeout(place.t); clearTimeout(place.refresh); place = null; overSrc.clear(); areaSrc.clear(); filterSrc.clear();
+  areaLayer.setVisible(true); labelLayer.setVisible(true);
 }
 const placeId = s => { let h = 0; for(const ch of areaKey(s)) h = (h*31 + ch.charCodeAt(0)) | 0; return "place:" + (h >>> 0).toString(36); };
 async function downloadPlace(p){
@@ -1754,7 +1771,7 @@ function placeAge(saved){ $("placeAge").textContent = `Kortdata hentet ${ago(new
 async function openPlace(name, shape, fromArea){
   closeOverview();
   if(ol.extent.getArea(shape.extent) > MAX_AREA){ toast(`${name || "Området"} er for stort til at hente det hele på én gang. Vælg en vej eller en mindre by.`, 5000); return; }
-  const p = place = {name, shape, fromArea:!!fromArea, prep:prepShape(shape), key:placeId(shape)}; // name null: an area drawn by hand
+  const p = place = {name, shape, fromArea:!!fromArea, mode:store.get("placeMode","type"), prep:prepShape(shape), key:placeId(shape)}; // name null: an area drawn by hand
   $("btnPlaceBack").textContent = fromArea ? "‹ Tilbage til området" : "‹ Opgaver";
   $("placeName").textContent = name || "Det valgte område"; $("btnPlaceNew").textContent = name ? `+ Ny opgave i ${name}` : "+ Ny opgave her";
   $("placeBar").innerHTML = ""; $("placeLegend").innerHTML = ""; $("placeList").innerHTML = "";
@@ -1793,42 +1810,65 @@ async function placePaint(){
   const shapes = cand.map(t=>({t, s:prepShape(t), cs:new Set(t.codes), pk: t.elements ? new Set(t.elements) : null})), RANK = {todo:0, doing:1, blocked:2, done:3};
   const per = new Map(cand.map(t=>[t.id, {done:0, blocked:0, total:0}])), c = {none:0, todo:0, doing:0, blocked:0, done:0}, types = {};
   feats.forEach(f=>{
-    const g = f.getGeometry(), code = f.get("elementkode"); let best = null;
+    const g = f.getGeometry(), code = f.get("elementkode"); let best = null; const in_ = [];
     for(const {t,s,cs,pk} of shapes){
       if(!cs.has(code) || (pk && !pk.has(f.getId())) || !inShape(g, s)) continue;
       const st = prog.get(t.id+"|"+f.getId()) || "todo", q = per.get(t.id);
       q.total++; if(st==="done") q.done++; if(st==="blocked") q.blocked++;
+      in_.push([t.id, st]);
       if(best===null || RANK[st] > RANK[best]) best = st;
     }
-    f.set("_s", best || "none", true); c[best || "none"]++;
+    f.set("_s", best || "none", true); f.set("_t", in_, true); c[best || "none"]++;
     const ty = types[code] ||= {n:0, inTask:0, done:0}; ty.n++; if(best) ty.inTask++; if(best==="done") ty.done++;
   });
+  const tys = Object.entries(types).sort((a,b)=>b[1].n - a[1].n);
+  p.tcol = Object.fromEntries(tys.map(([k],i)=>[k, "ty" + (i % TYPE_COLORS.length)]));
+  if(p.focus && !types[p.focus]) p.focus = null;
+  if(p.sel && !feats.includes(p.sel)) p.sel = null;
+  const byType = p.mode!=="status";
+  document.querySelectorAll("#placeMode [data-o]").forEach(b=>b.classList.toggle("on", b.dataset.o===(byType ? "type" : "status")));
+  areaLayer.setVisible(!byType); labelLayer.setVisible(!byType); // task outlines belong with the status colours, not the type colours
   overLayer.changed();
   const tl = cand.filter(t=>per.get(t.id).total);
   areaSrc.clear();
   const col = new Map(tl.map((t,i)=>[t.id, TASK_COLORS[i % TASK_COLORS.length]]));
   tl.forEach(t=>{ const f = new ol.Feature(shapeGeom(t)); f.setProperties({label:t.name, tid:t.id, color:col.get(t.id)}); areaSrc.addFeature(f); });
   const n = feats.length;
-  $("placeBar").innerHTML = n ? ["done","doing","blocked","todo","none"].map(s=>`<i style="width:${c[s]/n*100}%;background:${COLORS[s]}"></i>`).join("") : "";
+  $("placeBar").innerHTML = !n ? "" : byType ? tys.map(([k,ty])=>`<i style="width:${ty.n/n*100}%;background:${COLORS[p.tcol[k]]}"></i>`).join("")
+    : ["done","doing","blocked","todo","none"].map(s=>`<i style="width:${c[s]/n*100}%;background:${COLORS[s]}"></i>`).join("");
   const LEG = {none:"ikke i en opgave", todo:"mangler", doing:"i gang", blocked:"blokeret", done:"færdige"};
-  $("placeLegend").innerHTML = n ? ["none","todo","doing","blocked","done"].filter(s=>c[s]).map(s=>`<span><i style="background:${COLORS[s]}"></i><b class="num">${c[s]}</b> ${LEG[s]}</span>`).join("") : "";
-  const tys = Object.entries(types).sort((a,b)=>b[1].n - a[1].n);
+  $("placeLegend").hidden = byType;
+  $("placeLegend").innerHTML = n && !byType ? ["none","todo","doing","blocked","done"].filter(s=>c[s]).map(s=>`<span><i style="background:${COLORS[s]}"></i><b class="num">${c[s]}</b> ${LEG[s]}</span>`).join("") : "";
   $("placeList").innerHTML = (n ? "" : `<p class="muted" style="margin:0">Kommunen har ingen elementer registreret i ${esc(p.name || "området")}.</p>`)
     + (tys.length ? `<div class="section">${tys.length} ${tys.length===1 ? "type" : "typer"} · ${n} elementer</div>` : "")
-    + tys.map(([k,ty])=>`<button class="item" data-c="${esc(k)}"><div class="grow"><div class="t">${esc(CODES[k] || k)}</div>
+    + (tys.length ? `<p class="muted" style="margin:0;font-size:14px">Tryk på en type for at se den på kortet. Tryk på et element på kortet for at se hvad det er.</p>` : "")
+    + tys.map(([k,ty])=>`<div class="row"><button class="item grow${p.focus===k ? " on" : ""}" data-c="${esc(k)}"><i class="swatch" style="background:${COLORS[p.tcol[k]]}"></i><div class="grow"><div class="t">${esc(CODES[k] || k)} <span class="code">${esc(k)}</span></div>
         <div class="s">${!ty.inTask ? "Ikke i en opgave" : ty.inTask===ty.n ? (ty.done===ty.n ? "Alle færdige" : `Alle i opgaver · ${ty.done} færdige`) : `${ty.inTask} i opgaver · ${ty.n - ty.inTask} ikke`}</div></div>
-        <span class="code">${esc(k)}</span><span class="pill ${ty.done===ty.n ? "done" : ty.inTask===ty.n ? "todo" : "none"} num">${ty.n}</span></button>`).join("")
+        <span class="pill num" style="background:${byType ? COLORS[p.tcol[k]] : COLORS[ty.done===ty.n ? "done" : ty.inTask===ty.n ? "todo" : "none"]}">${ty.n}</span></button>
+        <button class="btn ghost" data-over="${esc(k)}">Åbn</button></div>`).join("")
     + (n ? `<div class="section">Opgaver her</div>` + (tl.length ? tl.map(t=>{ const q = per.get(t.id);
         return `<div class="row"><div class="item grow"><i class="swatch" style="background:${col.get(t.id)}"></i><div class="grow"><div class="t">${esc(t.name)}</div><div class="s">${ol.extent.containsExtent(p.shape.extent, t.extent) ? "" : "Kun delvis her · "}${esc(whoFor(t))}${q.blocked ? ` · 🚧 ${q.blocked} blokeret` : ""}</div></div>
           <span class="pill ${q.done===q.total ? "done" : "todo"} num">${q.done}/${q.total}</span></div>
           <button class="btn ghost" data-open="${esc(t.id)}">Åbn</button></div>`; }).join("")
         : `<p class="muted" style="margin:0">Ingen aktive opgaver her endnu.</p>`) : "");
-  // A type opens the one-type overview, kept to this place
+  // Tapping a type shows only it in colour (the rest grey) and zooms to it; tapping it again shows all
   $("placeList").querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{
-    overFilter = {name:p.name || "det valgte område", drawn:!p.name, fromArea:p.fromArea, shape:p.shape, prep:p.prep}; openOverview(b.dataset.c);
+    const k = b.dataset.c, on = p.focus!==k; p.focus = on ? k : null;
+    if(on && p.mode==="status"){ p.mode = "type"; store.set("placeMode", "type"); placePaint(); }
+    else { $("placeList").querySelectorAll("[data-c]").forEach(x=>x.classList.toggle("on", x.dataset.c===p.focus)); overLayer.changed(); }
+    if(on){ const ext = ol.extent.createEmpty(); overSrc.getFeatures().forEach(f=>{ if(f.get("elementkode")===k) ol.extent.extend(ext, f.getGeometry().getExtent()); });
+      map.getView().fit(ext, {padding:[70,30,sheetPad(),30], maxZoom:11, duration:350}); }
+  });
+  // "Åbn" opens the one-type overview, kept to this place
+  $("placeList").querySelectorAll("[data-over]").forEach(b=>b.onclick=()=>{
+    overFilter = {name:p.name || "det valgte område", drawn:!p.name, fromArea:p.fromArea, shape:p.shape, prep:p.prep}; openOverview(b.dataset.over);
   });
   $("placeList").querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openTask(tasks.find(t=>t.id===b.dataset.open)));
 }
+document.querySelectorAll("#placeMode [data-o]").forEach(b=>b.onclick=()=>{
+  if(!place || place.mode===b.dataset.o) return;
+  place.mode = b.dataset.o; store.set("placeMode", place.mode); placePaint();
+});
 $("btnPlaceFind").onclick = ()=>openFind((s, it)=>{ $("pType").hidden = true; openPlace(it.label, s); });
 $("btnPlaceOther").onclick = ()=>openFind((s, it)=>openPlace(it.label, s));
 $("btnPlaceBack").onclick = ()=>{
@@ -2050,6 +2090,16 @@ map.on("singleclick", e=>{
     const f = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:0})[0]
            || map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:12})[0];
     if(f){ const id = f.getId(); pick.ids.has(id) ? pick.ids.delete(id) : pick.ids.add(id); pickCount(); }
+    return;
+  }
+  if(place && !task){ // place view: mark the tapped element and say what it is
+    const f = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===overLayer, hitTolerance:12})[0] || null;
+    place.sel = f; overLayer.changed();
+    if(f){
+      const by = {}; (f.get("_t")||[]).forEach(([id,st])=>{ const t = tasks.find(x=>x.id===id); if(t) (by[st] ||= []).push(t.name); });
+      const parts = ["done","doing","blocked","todo"].filter(s=>by[s]).map(s=>`${LABEL[s]} i ${by[s].join(", ")}`);
+      toast(`${titleOf(f)}${subOf(f) ? " · " + subOf(f) : ""} · ${parts.length ? parts.join(" · ") : "ikke i en opgave"}`, 5000);
+    }
     return;
   }
   if(over && !task){
