@@ -245,7 +245,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button data-m="box">▭ Firkant</button>
       <button data-m="draw">✎ Tegn frit</button>
     </div>
-    <button class="btn" id="btnAreaFind">⌕ Vælg en by eller en vej</button>
+    <div class="row">
+      <button class="btn fill" id="btnAreaFind">⌕ Vælg en by eller en vej</button>
+      <button class="btn" id="btnAreaPeek" hidden>Se alt her</button>
+    </div>
     <div class="muted" id="areaHint"></div>
     <div class="row">
       <span class="muted grow num" id="areaSize"></span>
@@ -445,7 +448,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <input type="search" id="findQ" placeholder="Fx Brande, Ejstrupholm eller Storegade" autocomplete="off" enterkeyhint="search">
   </header>
   <div class="list" id="findList"></div>
-  <footer><div class="muted" style="font-size:13px">En by går så langt, som der ligger huse (fra OpenStreetMap). En vej får 25 m til hver side. Du kan rette formen bagefter.</div></footer>
+  <footer>
+    <button class="btn primary" id="btnFindKeep" hidden>‹ Brug området på kortet</button>
+    <div class="muted" style="font-size:13px">En by går så langt, som der ligger huse (fra OpenStreetMap). En vej får 25 m til hver side. Du kan rette formen bagefter.</div>
+  </footer>
 </div>
 
 <!-- Login, full screen -->
@@ -1362,7 +1368,7 @@ function beginNewTask(code, shape, here){
   newHere = here || null;
   picked = new Set(code ? [code] : []); $("codeSearch").value=""; $("taskTitle").value=""; delete $("taskTitle").dataset.touched; $("newPick").checked = false;
   assignees = new Set();
-  startArea({shape:shape||null, done:s=>{ newShape = s; showNewPanel(); }});
+  startArea({shape:shape||null, peek:true, done:s=>{ newShape = s; showNewPanel(); }});
 }
 function showNewPanel(){
   $("newAreaInfo").textContent = `Område: ${fmtArea(shapeGeom(newShape).getArea())}${newShape.place ? ", " + newShape.place : newShape.area ? ", tegnet frit" : ""}`;
@@ -1501,6 +1507,7 @@ function startArea(opts){
   areaEd = {...opts, prev:curPane()};
   $("areaTitle").textContent = opts.title || "Tegn opgavens område";
   $("btnAreaOk").textContent = opts.okLabel || "Videre ▸";
+  $("btnAreaPeek").hidden = !opts.peek;
   if(opts.hideOutline) areaLayer.setVisible(false);
   pane("pArea");
   map.addInteraction(boxI);
@@ -1527,6 +1534,13 @@ $("btnAreaFind").onclick = ()=>openFind((s, it)=>{
   map.getView().fit(s.extent, {padding:[80,30,sheetPad(),30], duration:300});
 });
 $("btnAreaCancel").onclick = ()=>{ endArea().cancel?.(); };
+// "What is in this area?" without making a task first; the place view can start the task from the same area
+$("btnAreaPeek").onclick = ()=>{
+  const s = curShape();
+  if(!s){ toast("Tegn området først"); return; }
+  if(ol.extent.getArea(s.extent) > MAX_AREA){ toast("Området er for stort. Gør det mindre.", 4000); return; }
+  endArea(); openPlace(s.place || null, {extent:s.extent, area:s.area});
+};
 $("btnAreaOk").onclick = ()=>{
   const s = curShape();
   if(!s){ toast("Tegn området først"); return; }
@@ -1705,7 +1719,7 @@ document.querySelectorAll("#overMode [data-o]").forEach(b=>b.onclick=()=>{
   overPaint();
 });
 $("btnOverBack").onclick = ()=>{ closeOverview(); pane("pTasks"); loadTasks(); };
-$("btnOverNew").onclick = ()=>{ if(over) beginNewTask(over.code, overFilter ? {...overFilter.shape, place:overFilter.name} : null); };
+$("btnOverNew").onclick = ()=>{ if(over) beginNewTask(over.code, overFilter ? {...overFilter.shape, place:overFilter.drawn ? null : overFilter.name} : null); };
 
 // ================= ONE PLACE: EVERY TYPE IN A TOWN OR ALONG A STREET =================
 // "What is there on Odinsgade?": all elements in the place (any type), counted per type, and the tasks that cover them.
@@ -1723,9 +1737,9 @@ async function downloadPlace(p){
 function placeAge(saved){ $("placeAge").textContent = `Kortdata hentet ${ago(new Date(saved).toISOString())} · gemt på telefonen`; }
 async function openPlace(name, shape){
   closeOverview();
-  if(ol.extent.getArea(shape.extent) > MAX_AREA){ toast(`${name} er for stort til at hente det hele på én gang. Vælg en vej eller en mindre by.`, 5000); return; }
-  const p = place = {name, shape, prep:prepShape(shape), key:placeId(shape)};
-  $("placeName").textContent = name; $("btnPlaceNew").textContent = `+ Ny opgave i ${name}`;
+  if(ol.extent.getArea(shape.extent) > MAX_AREA){ toast(`${name || "Området"} er for stort til at hente det hele på én gang. Vælg en vej eller en mindre by.`, 5000); return; }
+  const p = place = {name, shape, prep:prepShape(shape), key:placeId(shape)}; // name null: an area drawn by hand
+  $("placeName").textContent = name || "Det valgte område"; $("btnPlaceNew").textContent = name ? `+ Ny opgave i ${name}` : "+ Ny opgave her";
   $("placeBar").innerHTML = ""; $("placeLegend").innerHTML = ""; $("placeList").innerHTML = "";
   pane("pPlace");
   filterSrc.addFeature(new ol.Feature(shapeGeom(shape)));
@@ -1782,7 +1796,7 @@ async function placePaint(){
   const LEG = {none:"ikke i en opgave", todo:"mangler", doing:"i gang", blocked:"blokeret", done:"færdige"};
   $("placeLegend").innerHTML = n ? ["none","todo","doing","blocked","done"].filter(s=>c[s]).map(s=>`<span><i style="background:${COLORS[s]}"></i><b class="num">${c[s]}</b> ${LEG[s]}</span>`).join("") : "";
   const tys = Object.entries(types).sort((a,b)=>b[1].n - a[1].n);
-  $("placeList").innerHTML = (n ? "" : `<p class="muted" style="margin:0">Kommunen har ingen elementer registreret i ${esc(p.name)}.</p>`)
+  $("placeList").innerHTML = (n ? "" : `<p class="muted" style="margin:0">Kommunen har ingen elementer registreret i ${esc(p.name || "området")}.</p>`)
     + (tys.length ? `<div class="section">${tys.length} ${tys.length===1 ? "type" : "typer"} · ${n} elementer</div>` : "")
     + tys.map(([k,ty])=>`<button class="item" data-c="${esc(k)}"><div class="grow"><div class="t">${esc(CODES[k] || k)}</div>
         <div class="s">${!ty.inTask ? "Ikke i en opgave" : ty.inTask===ty.n ? (ty.done===ty.n ? "Alle færdige" : `Alle i opgaver · ${ty.done} færdige`) : `${ty.inTask} i opgaver · ${ty.n - ty.inTask} ikke`}</div></div>
@@ -1794,13 +1808,13 @@ async function placePaint(){
         : `<p class="muted" style="margin:0">Ingen aktive opgaver her endnu.</p>`) : "");
   // A type opens the one-type overview, kept to this place
   $("placeList").querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{
-    overFilter = {name:p.name, shape:p.shape, prep:p.prep}; openOverview(b.dataset.c);
+    overFilter = {name:p.name || "det valgte område", drawn:!p.name, shape:p.shape, prep:p.prep}; openOverview(b.dataset.c);
   });
   $("placeList").querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openTask(tasks.find(t=>t.id===b.dataset.open)));
 }
 $("btnPlaceFind").onclick = ()=>openFind((s, it)=>{ $("pType").hidden = true; openPlace(it.label, s); });
 $("btnPlaceOther").onclick = ()=>openFind((s, it)=>openPlace(it.label, s));
-$("btnOverPlace").onclick = ()=>{ if(overFilter) openPlace(overFilter.name, overFilter.shape); };
+$("btnOverPlace").onclick = ()=>{ if(overFilter) openPlace(overFilter.drawn ? null : overFilter.name, overFilter.shape); };
 $("btnPlaceBack").onclick = ()=>{ closePlace(); pane("pTasks"); loadTasks(); };
 $("btnPlaceRefresh").onclick = ()=>{ if(place) refreshPlace(place, true); };
 $("btnPlaceNew").onclick = ()=>{
@@ -2402,7 +2416,9 @@ async function namedShape(it, sig){
 // The picker: towns and streets in the kommune (Photon), then the outline. onPick(shape, item)
 let findCb = null, findCtl = null, findT = null;
 function openFind(onPick){
-  findCb = onPick; $("findQ").value = ""; findStart(); $("pFind").hidden = false; $("findQ").focus();
+  findCb = onPick;
+  // While drawing, the area already on the map stays usable: a clear way back to it without searching
+  $("btnFindKeep").hidden = !(areaEd && areaGeom()); $("findQ").value = ""; findStart(); $("pFind").hidden = false; $("findQ").focus();
 }
 function closeFind(){ if(findCtl) findCtl.abort(); clearTimeout(findT); $("pFind").hidden = true; findCb = null; }
 function findStart(){
@@ -2455,7 +2471,7 @@ async function findPick(it){
     $("btnFindRetry").onclick = ()=>findPick(it);
   }
 }
-$("btnFindClose").onclick = closeFind;
+$("btnFindClose").onclick = $("btnFindKeep").onclick = closeFind;
 $("findQ").oninput = e=>{ clearTimeout(findT); const q = e.target.value.trim(); findT = setTimeout(()=>findSearch(q), 300); };
 $("findQ").onkeydown = e=>{ if(e.key==="Enter"){ clearTimeout(findT); findSearch(e.target.value.trim()); } };
 
