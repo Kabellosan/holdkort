@@ -17,6 +17,8 @@ Shared task map for the idverde crew in Ikast-Brande. The kommune's maintenance 
 
 **Sidst passet (last tended):** every time an element is sent as **Færdig**, the app keeps a line in a log with the day, the task and who sent it (names are only shown to bosses). The log stays when the task is closed. So when a new task is opened, each element says e.g. *Sidst passet for 5 dage siden*, with a ⚠ when an element still marked Mangler was done in the last 14 days, and the list shows it too. Every other status change (Mangler, I gang, Blokeret with its reason) is logged the same way, so **Historik** on an element shows the whole trail with notes and photos. Tapping **Færdig** by mistake and setting it back the same day removes the line again.
 
+**On a computer:** on screens 1024 px and wider (a laptop or office PC), the panel sits in a sidebar on the left and the map fills the rest, which makes planning tasks and checking Overblik easier for bosses. Freehand areas are drawn by holding the mouse button down. Phones look exactly as before.
+
 **Photos:** **📷 Billede** on an element takes or picks a photo. It's shrunk on the phone (which also strips GPS and other hidden data) and waits in the outbox like any other change until **Send**.
 
 **Overblik → Sidst passet:** colours every element of the type across the kommune by days since it was last done: green 0–7, light green 8–14, yellow 15–30, orange 31–60, red over 60, grey if it's not in the log yet. Tapping an element shows the day.
