@@ -7,7 +7,7 @@ A phone web app for Captain's idverde crew (Ikast-Brande Kommune contract). Boss
 
 - Live: https://kabellosan.github.io/holdkort/ (GitHub Pages, branch `main`, repo root)
 - Repo: `Kabellosan/holdkort`. Everything is in `index.html` (one file, OpenLayers 10 + proj4 + supabase-js from jsDelivr), `sw.js`, `manifest.json`.
-- Layout: phone first. At `min-width:1024px` the bottom sheet and the full-screen panels become a left sidebar (`--side`) and the map fills the rest; `wide()`/`sheetH()` keep map fits and the default task rectangle right. The phone layout must stay unchanged.
+- Layout: phone first. At `min-width:1024px` the bottom sheet and the full-screen panels become a left sidebar (`--side`) and the map fills the rest; `wide()`/`sheetH()` keep map fits and the default task rectangle right. Ny opgave (`#pNew`) is wider there, in two columns: types on the left, name/people/Opret on the right. The phone layout must stay unchanged.
 - UI language: **Danish**. README and these notes: English.
 
 ## Data sources (all verified working from the browser, CORS ok)
