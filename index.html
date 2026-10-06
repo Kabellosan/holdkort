@@ -35,6 +35,15 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
 .dot.on{background:var(--done)} .dot.off{background:var(--todo)}
 .ol-zoom{top:calc(env(safe-area-inset-top,0px) + 64px);left:12px}
 .ol-zoom button{width:40px!important;height:40px!important;font-size:22px!important}
+/* Aerial photo / plain map switch, under the zoom buttons */
+.basemap{position:absolute;top:calc(env(safe-area-inset-top,0px) + 164px);left:12px;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.basemap .seg2{display:flex;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px;box-shadow:0 2px 10px #0003}
+.basemap button{border:0;background:transparent;border-radius:999px;min-height:40px;padding:6px 14px;font-size:15px;color:var(--ink2)}
+.basemap button[aria-pressed="true"]{background:var(--moss);color:#fff;font-weight:600}
+.basemap .credit{font-size:11px;background:#ffffffcc;color:#333;border-radius:6px;padding:1px 6px}
+.basemap .credit a{color:inherit}
+/* Paler street map, so status and task colours stand out on it */
+.osm-base canvas{filter:saturate(.35) brightness(1.04)}
 
 /* Bottom sheet */
 .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--card);border-radius:20px 20px 0 0;
@@ -158,6 +167,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   :root{--side:clamp(400px,32vw,500px)}
   #map{left:var(--side)}
   .top{left:calc(var(--side) + 12px)}
+  .basemap{left:calc(var(--side) + 12px)}
   .toast{left:calc(var(--side) + (100% - var(--side)) / 2)}
   .sheet,.sheet:has(#pOver:not([hidden])){top:0;right:auto;width:var(--side);max-height:none;border-radius:0;border-right:1px solid var(--line);
     box-shadow:4px 0 18px #0002;padding:calc(env(safe-area-inset-top,0px) + 18px) 22px 18px;z-index:5}
@@ -181,6 +191,13 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <button class="chip" id="who" title="Din profil"><span class="dot" id="syncdot"></span><span id="whoName">Navn?</span><span class="badge" id="whoBadge" hidden>Chef</span></button>
   <button class="chip unsent" id="btnUnsent" hidden aria-label="Vis ændringer, der ikke er sendt"><span class="dot" style="background:var(--doing)"></span><span><span id="unsentCount">0</span> ikke sendt</span></button>
   <button class="chip" id="btnSearch" style="margin-left:auto" aria-label="Søg sted">⌕ <span>Søg</span></button>
+</div>
+<div class="basemap">
+  <div class="seg2" role="group" aria-label="Baggrundskort">
+    <button data-b="photo" aria-pressed="true">🛰 Luftfoto</button>
+    <button data-b="map" aria-pressed="false">🗺 Kort</button>
+  </div>
+  <span class="credit" id="osmCredit" hidden>© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></span>
 </div>
 <div class="toast" id="toast" role="status"></div>
 
@@ -456,6 +473,8 @@ const tileGrid = new ol.tilegrid.TileGrid({extent:EXTENT, resolutions:RES, tileS
 const ortoSrc = new ol.source.TileWMS({url:WMS_URL, tileGrid, projection:proj, transition:0,
   params:{SERVICE:"WMS",VERSION:"1.1.1",LAYERS:LAYER_ORTO,FORMAT:"image/jpeg",SERVICENAME:WMS_SERVICE,STYLES:""}});
 const ortoLayer = new ol.layer.Tile({source:ortoSrc, preload:2});
+// Plain street map (OpenStreetMap), reprojected to EPSG:25832 by OpenLayers. No preload: OSM's tile policy asks for light use.
+const osmLayer = new ol.layer.Tile({source:new ol.source.OSM({attributions:[], maxZoom:19}), className:"osm-base", visible:false});
 
 const COLORS = {todo:"#d64545", doing:"#e8a317", done:"#2e9e5b", blocked:"#2b2b33", none:"#7c5cff"}; // none: not in any task (overview)
 const LABEL  = {todo:"Mangler", doing:"I gang", done:"Færdig", blocked:"Blokeret", none:"Ikke i en opgave"};
@@ -543,12 +562,21 @@ const gpsFeat = new ol.Feature();
 gpsFeat.setStyle(new ol.style.Style({image:new ol.style.Circle({radius:9,fill:new ol.style.Fill({color:"#2b6cd4"}),stroke:new ol.style.Stroke({color:"#fff",width:3})})}));
 const gpsLayer = new ol.layer.Vector({source:new ol.source.Vector({features:[gpsFeat]})});
 
-const map = new ol.Map({target:"map", layers:[ortoLayer, areaLayer, overLayer, elLayer, labelLayer, editLayer, gpsLayer],
+const map = new ol.Map({target:"map", layers:[ortoLayer, osmLayer, areaLayer, overLayer, elLayer, labelLayer, editLayer, gpsLayer],
   view:new ol.View({projection:proj, center:START_CENTER, zoom:START_ZOOM, resolutions:RES, constrainResolution:true}),
   controls: ol.control.defaults.defaults({attribution:false, rotate:false})});
 const store = {get(k,d){try{const v=localStorage.getItem(k);return v ? (JSON.parse(v) ?? d) : d}catch(e){return d}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 { const v = store.get("view",null); if(v){ map.getView().setCenter(v.c); map.getView().setZoom(v.z); } }
 map.on("moveend",()=>store.set("view",{c:map.getView().getCenter(),z:map.getView().getZoom()}));
+// Aerial photo or plain map, remembered on this phone
+function setBase(b){
+  ortoLayer.setVisible(b !== "map"); osmLayer.setVisible(b === "map");
+  document.querySelectorAll(".basemap button").forEach(x=>x.setAttribute("aria-pressed", String(x.dataset.b === b)));
+  document.getElementById("osmCredit").hidden = b !== "map";
+  store.set("base", b);
+}
+document.querySelectorAll(".basemap button").forEach(x=>x.onclick = ()=>setBase(x.dataset.b));
+setBase(store.get("base","photo"));
 // On computer screens the sheet is a sidebar beside the map, so it doesn't cover the bottom of the map
 const wide = () => matchMedia("(min-width:1024px)").matches;
 const sheetH = () => wide() ? 0 : $("sheet").offsetHeight;
