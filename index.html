@@ -120,6 +120,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .chosen{display:flex;gap:6px;flex-wrap:wrap}
 .chosen span{background:var(--moss);color:#fff;border-radius:999px;padding:5px 11px;font-size:14px}
 /* Packages: saved groups of types */
+#pNew footer{max-height:60%;overflow-y:auto}
 .packs{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .packs button{border-radius:999px;border:2px solid var(--line);background:var(--card);padding:8px 14px;min-height:44px;font-size:15px}
 .packs button.on{border-color:var(--moss2);background:var(--moss);color:#fff}
@@ -349,7 +350,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <footer>
     <div class="chosen" id="chosen"></div>
     <input type="text" id="taskTitle" placeholder="Navn, fx 'Pur i Brande, uge 41'">
-    <label class="switch"><input type="checkbox" id="newPick"><span><b>Kun udvalgte steder</b><br><span class="muted">Du trykker stederne af på kortet bagefter, fx der hvor den store maskine ikke kan komme til.</span></span></label>
+    <label class="switch"><input type="checkbox" id="newPick"><span><b>Kun udvalgte steder</b><br><span class="muted">Du vælger dem på kortet bagefter</span></span></label>
     <div class="section">Hvem skal lave den?</div>
     <div class="people" id="assignList"></div>
     <div class="row"><span class="muted grow" id="newAreaInfo"></span><button class="btn ghost" id="btnNewArea">Ret område</button></div>
@@ -610,6 +611,17 @@ function fmtDist(m){ return m<1000 ? `${Math.round(m/10)*10} m` : `${(m/1000).to
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2));
 // "Pur (HA3)": the plain name with the kommune's code, so crew and the GIS data use the same words
 const typeName = c => CODES[c] ? `${CODES[c]} (${c})` : c;
+let packs = store.get("packs", []); // saved groups of types, see PACKAGES
+// Types named by the packages they fill (biggest first), then any other types: "Fast belægning + Pur"
+function packNames(codes){
+  const left = new Set(codes), names = [];
+  [...packs].sort((a,b)=>b.codes.length-a.codes.length).forEach(p=>{
+    if(p.codes.length > 1 && p.codes.every(c=>left.has(c))){ names.push(p.name); p.codes.forEach(c=>left.delete(c)); } });
+  return [...names, ...[...left].map(c=>CODES[c]||c)];
+}
+// Task lists: a long list of types is shortened to its packages, or a count
+const packCodes = codes => codes.length <= 3 ? codeNames(codes) : packNames(codes).join(" + ");
+const shortCodes = codes => codes.length <= 3 || packNames(codes).length <= 3 ? packCodes(codes) : `${codes.length} typer`;
 const codeNames = codes => codes.map(typeName).join(" + ");
 const plainNames = codes => codes.map(c=>CODES[c]||c).join(" + ");
 
@@ -722,6 +734,7 @@ async function loadTasks(){
   } else tasks = store.get("tasks",[]);
   renderTasks();
   if(isBoss()) loadCrew();
+  loadPacks().then(renderTasks);
 }
 // Freehand areas live in tasks.area; until that column exists the task is saved with its rectangle (extent) only
 const noAreaCol = e => e && (e.code==="PGRST204" || /'area' column/.test(e.message||""));
@@ -939,7 +952,7 @@ function taskRow(t, noClose){
   const done = store.get("count:"+t.id, null);
   return `<div class="row">
     <button class="item grow" data-open="${esc(t.id)}"><div class="grow"><div class="t">${esc(t.name)}</div>
-    <div class="s">${esc(codeNames(t.codes) + scopeOf(t))} · ${esc(whoFor(t))}</div></div>
+    <div class="s">${esc(shortCodes(t.codes) + scopeOf(t))} · ${esc(whoFor(t))}</div></div>
     ${done ? `<span class="pill ${done[0]===done[1]?"done":"todo"} num">${done[0]}/${done[1]}</span>` : ""}</button>
     ${isBoss() && !noClose ? `<button class="btn ghost" data-arch="${esc(t.id)}">Afslut</button>` : ""}</div>`;
 }
@@ -1079,7 +1092,7 @@ async function openTask(t){
   geo.setTracking(true);
   areaSrc.addFeature(new ol.Feature(shapeGeom(t)));
   $("btnEditArea").hidden = $("btnPick").hidden = !isBoss();
-  $("workName").textContent = t.name; $("workCodes").textContent = codeNames(t.codes) + scopeOf(t);
+  $("workName").textContent = t.name; $("workCodes").textContent = packCodes(t.codes) + scopeOf(t);
   $("workCount").innerHTML = `<span class="spin"></span>`; $("bar").innerHTML = ""; $("dataAge").textContent = "";
   pane("pWork");
   // Only jump to the task area the first time; after that the map stays where you left it
@@ -1137,7 +1150,7 @@ function pickCount(){
 function endPick(){
   const t = pick.t; pick = null;
   elSrc.clear(); elSrc.addFeatures(onlyPicked(t, taskAll));
-  $("workCodes").textContent = codeNames(t.codes) + scopeOf(t);
+  $("workCodes").textContent = packCodes(t.codes) + scopeOf(t);
   pane("pWork"); refresh();
 }
 async function savePick(ids){
@@ -1187,19 +1200,22 @@ function codeChecks(el, q, set, changed){
 function renderCodes(){ codeChecks($("codeList"), $("codeSearch").value, picked, renderChosen); }
 const sameCodes = (a, b) => a.length===b.size && a.every(c=>b.has(c));
 function renderChosen(){
-  $("chosen").innerHTML = ([...picked].map(c=>`<span>${esc(typeName(c))}</span>`).join("") || `<span class="muted" style="background:none;color:var(--ink2);padding:0">Ingen typer valgt</span>`)
+  // whole packages show as one chip, so a big package doesn't push the type list off the screen
+  const chips = packNames([...picked]).map(n=>packs.some(p=>p.name===n) ? `📦 ${n}` : n);
+  $("chosen").innerHTML = (chips.map(n=>`<span>${esc(n)}</span>`).join("") || `<span class="muted" style="background:none;color:var(--ink2);padding:0">Ingen typer valgt</span>`)
     + (picked.size > 1 && !packs.some(p=>sameCodes(p.codes, picked)) ? `<button class="btn ghost" id="btnSavePack" style="min-height:36px;padding:4px 10px">📦 Gem som pakke</button>` : "");
   if($("btnSavePack")) $("btnSavePack").onclick = ()=>packEdit({name:"", codes:[...picked]}, true);
-  if(!$("taskTitle").dataset.touched) $("taskTitle").value = plainNames([...picked]);
+  if(!$("taskTitle").dataset.touched) $("taskTitle").value = autoTitle();
   renderPacks();
 }
 
 // ---- Packages: named groups of types a boss gives together, e.g. "Fast belægning" ----
-let packs = store.get("packs", []), packEd = null; // packEd: {p, codes, fromTask} while making or changing one
+let packEd = null; // packEd: {p, codes, fromTask} while making or changing one
 async function loadPacks(){
   if(sb){ const {data, error} = await sb.from("packages").select("*").order("name"); if(!error){ packs = data; store.set("packs", packs); } }
-  renderChosen();
+  if(!$("pNew").hidden) renderChosen();
 }
+const autoTitle = () => packNames([...picked]).join(" + ");
 const packOn = p => p.codes.length > 0 && p.codes.every(c=>picked.has(c));
 function renderPacks(){
   $("packList").innerHTML = packs.map(p=>`<button data-k="${esc(p.id)}" class="${packOn(p)?"on":""}">📦 ${esc(p.name)}</button>`).join("")
@@ -1288,7 +1304,7 @@ $("taskTitle").oninput = ()=>$("taskTitle").dataset.touched = 1;
 $("btnNewCancel").onclick = ()=>{ $("pNew").hidden = true; };
 $("btnCreate").onclick = async ()=>{
   if(!picked.size){ toast("Vælg mindst én type"); return; }
-  const t = {id:uuid(), name:$("taskTitle").value.trim() || plainNames([...picked]), codes:[...picked],
+  const t = {id:uuid(), name:$("taskTitle").value.trim() || autoTitle(), codes:[...picked],
     extent:newShape.extent, area:newShape.area, assignees:[...assignees], created_by:me, created_at:new Date().toISOString(), archived:false};
   if(await saveTask(t)){ $("pNew").hidden = true; await openTask(t); if($("newPick").checked) startPick(t, true); }
 };
