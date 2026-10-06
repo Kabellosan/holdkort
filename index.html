@@ -361,10 +361,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <li><i>📍</i><span><b>Din position forlader aldrig telefonen.</b> GPS bruges kun til at finde det nærmeste element. Den gemmes og sendes ikke.</span></li>
       <li><i>📤</i><span><b>Intet sendes, før du trykker Send</b> (medmindre du selv slår automatisk til).</span></li>
       <li><i>🧾</i><span><b>Det, der sendes:</b> hvilket element, status (mangler / i gang / færdig / blokeret og hvorfor), en evt. note, dit navn og <i>dagen</i> det blev sendt. Ikke klokkeslæt for hver markering, og ingen rute.</span></li>
-      <li><i>👀</i><span><b>Holdet</b> kan se, hvem der har markeret hvad, så I ikke tager det samme. <b>Cheferne</b> ser kun, hvor meget af opgaven der er færdigt.</span></li>
+      <li><i>👀</i><span><b>Holdet</b> kan se, hvem der har markeret hvad, så I ikke tager det samme. <b>Cheferne</b> ser, hvor meget af opgaven der er færdigt, og i elementets historik, hvem der ændrede hvad og hvilken dag.</span></li>
       <li><i>📋</i><span><b>Du ser kun dine egne opgaver</b> og dem, der er til alle. Cheferne kan se, hvem der er sat på hvilke opgaver.</span></li>
       <li><i>📷</i><span><b>Billeder</b> gøres mindre på telefonen, og placering og andre skjulte oplysninger fjernes, før de sendes. De sendes også først, når du trykker Send.</span></li>
-      <li><i>🗑️</i><span><b>Når en opgave afsluttes,</b> slettes alle markeringer. Tilbage er kun "færdig, 47 af 47" og en log over hvert element: hvilken <i>dag</i> det blev passet, og evt. note og billede. Loggen har <b>intet navn</b> på, så ingen kan se, hvem der passede hvad.</span></li>
+      <li><i>🗑️</i><span><b>Når en opgave afsluttes,</b> slettes alle markeringer. Tilbage er kun "færdig, 47 af 47" og en log over hvert element: hver statusændring med <i>dag</i>, navn og evt. note og billede. Loggen kan kun ses af cheferne.</span></li>
     </ul>
     <p class="muted" id="profHonest"></p>
     <button class="btn" id="btnLogout">Log ud</button>
@@ -1331,7 +1331,7 @@ async function writeLog(rows, paths){
     const done = r.status==="done" && !r._was, noted = !!r.note && r.note!==r._note0;
     const photos = (r._photos||[]).map(p=>paths[p]).filter(Boolean);
     if(!changed && !noted && !photos.length) return;
-    const line = {element_id:r.element_id, code:r._code, task_id:r.task_id, day, done, status: changed ? r.status : null,
+    const line = {element_id:r.element_id, code:r._code, task_id:r.task_id, day, done, worker: r.worker||null, status: changed ? r.status : null,
       reason: changed && r.status==="blocked" ? r.reason||null : null, note: (done || noted) && r.note ? r.note : null, photo:null};
     if(!photos.length) add.push(line);
     else photos.forEach((p,i)=>add.push(i===0 ? {...line, photo:p} : {...line, done:false, status:null, reason:null, note:null, photo:p}));
@@ -1343,8 +1343,8 @@ async function writeLog(rows, paths){
   if(add.length){
     let {error} = await sb.from("element_log").insert(add);
     // Until the database has the status columns, keep logging done, notes and photos as before
-    if(error && (error.code==="PGRST204" || /'(status|reason)' column/.test(error.message||""))){
-      const old = add.map(({status, reason, ...l})=>l).filter(l=>l.done || l.note || l.photo);
+    if(error && (error.code==="PGRST204" || /'(status|reason|worker)' column/.test(error.message||""))){
+      const old = add.map(({status, reason, worker, ...l})=>l).filter(l=>l.done || l.note || l.photo);
       ({error} = old.length ? await sb.from("element_log").insert(old) : {error:null});
     }
     if(error) console.error("element_log", error);
@@ -1428,7 +1428,7 @@ async function showHistory(f){
   L.innerHTML = (local.length ? `<div class="hist"><div class="when"><b>Ikke sendt endnu</b></div>${local.map(u=>`<img src="${u}" alt="Billede, ikke sendt">`).join("")}</div>` : "")
     + (data.length ? data.map(r=>`<div class="hist">
         <div class="when"><b>${esc(longDate(r.day))}</b><span class="muted">${sinceText(r.day)}</span>${histPill(r)}</div>
-        ${taskName(r.task_id) ? `<div class="muted">${esc(taskName(r.task_id))}</div>` : ""}
+        ${(isBoss() && r.worker) || taskName(r.task_id) ? `<div class="muted">${[isBoss() && r.worker ? esc(r.worker) : "", taskName(r.task_id) ? esc(taskName(r.task_id)) : ""].filter(Boolean).join(" · ")}</div>` : ""}
         ${r.note ? `<div>${esc(r.note)}</div>` : ""}
         ${r.photo ? `<img src="${esc(photoUrl(r.photo))}" loading="lazy" alt="Billede fra ${esc(longDate(r.day))}">` : ""}</div>`).join("")
       : (local.length ? "" : `<p class="muted">Intet registreret endnu. Når elementets status sendes, eller det får en note eller et billede, kommer det her.</p>`));
