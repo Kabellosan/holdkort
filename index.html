@@ -81,6 +81,9 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .person{display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:var(--r);border:1px solid var(--line)}
 .person h3{margin:0;font-size:17px;display:flex;justify-content:space-between;gap:8px}
 .person h3 span{font-weight:400;color:var(--ink2);font-size:14px}
+.person .who{display:flex;align-items:center;gap:8px}
+.person .who h3{flex:1}
+.btn.danger{background:#b3261e;border-color:#b3261e;color:#fff;font-weight:600}
 .tended{font-size:14px;color:var(--ink2)}
 .sheet:has(#pOver:not([hidden])){max-height:68vh} /* the overview has a mode switch, legend and task list */
 #overMode button{min-height:38px}
@@ -371,6 +374,13 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   </div>
 </div>
 
+<!-- Add someone to the team, or take them off it (bosses), full screen -->
+<div class="panel" id="pPerson" hidden>
+  <header><div class="row"><h2 class="grow" id="personTitle"></h2><button class="btn ghost" id="btnPersonCancel">Annullér</button></div></header>
+  <div class="body" id="personBody"></div>
+  <footer id="personFoot"></footer>
+</div>
+
 <script>
 // ================= CONFIG =================
 // Fill these in to share tasks and progress across phones (see README). Empty = this phone only.
@@ -564,6 +574,7 @@ $("btnLogin").onclick = async ()=>{
   const h = await sha(code);
   const role = h===BOSS_CODE_SHA ? "boss" : h===CREW_CODE_SHA ? "crew" : null;
   if(!role){ $("loginErr").textContent = "Koden passer ikke. Spørg din chef."; return; }
+  if(role==="crew" && await isRemoved(name)){ $("loginErr").textContent = "Du er ikke på holdet. Spørg din chef."; return; }
   user = {name, role}; me = name; store.set("user", user);
   if(sb) sb.from("people").upsert({name, role}).then(()=>{});
   bossView = "tasks";
@@ -846,11 +857,23 @@ const norm = n => cleanName(n).toLowerCase();
 const forMe = t => !t.assignees?.length || t.assignees.some(a=>norm(a)===norm(me));
 const whoFor = t => !t.assignees?.length ? "Alle" : t.assignees.join(", ");
 // Bosses can switch between the task list and "Holdet": who is on which task
-let bossView = store.get("bossView","tasks"), crew = [];
+let bossView = store.get("bossView","tasks"), crew = [], peopleRows = [];
+// Everyone in people; someone a boss took off the team has a "removed" day (the row stays so history keeps the name)
+async function loadPeopleRows(){
+  if(!sb) return null;
+  let {data, error} = await sb.from("people").select("name,role,removed").order("name");
+  if(error) ({data} = await sb.from("people").select("name,role").order("name"));
+  return data || null;
+}
+const rowsFor = (rows, n) => rows.filter(p=>norm(p.name)===norm(n));
+async function isRemoved(n){
+  const rows = await loadPeopleRows();
+  const mine = rows ? rowsFor(rows, n) : [];
+  return mine.length > 0 && mine.every(p=>p.removed);
+}
 async function loadCrew(){
-  if(!sb) return;
-  const {data} = await sb.from("people").select("name,role").eq("role","crew").order("name");
-  if(data){ crew = data.map(p=>cleanName(p.name)); if(bossView==="team") renderTasks(); }
+  const data = await loadPeopleRows();
+  if(data){ peopleRows = data; crew = data.filter(p=>p.role==="crew" && !p.removed).map(p=>cleanName(p.name)); if(bossView==="team") renderTasks(); }
 }
 document.querySelectorAll("#bossView [data-v]").forEach(b=>b.onclick=()=>{ bossView = b.dataset.v; store.set("bossView",bossView); renderTasks(); });
 function taskRow(t, noClose){
@@ -867,12 +890,13 @@ function teamHtml(){
   [...crew, ...tasks.flatMap(t=>t.assignees||[])].forEach(n=>{ n = cleanName(n); if(n && !names.has(norm(n))) names.set(norm(n), n); });
   const list = [...names.values()].sort((a,b)=>a.localeCompare(b,"da"));
   const all = tasks.filter(t=>!t.assignees?.length);
-  const card = (title, ts, empty) => `<div class="person"><h3>${esc(title)}<span>${ts.length ? ts.length+(ts.length===1?" opgave":" opgaver") : ""}</span></h3>`
+  const card = (title, ts, empty, person) => `<div class="person"><div class="who"><h3>${esc(title)}<span>${ts.length ? ts.length+(ts.length===1?" opgave":" opgaver") : ""}</span></h3>`
+    + (person && sb ? `<button class="btn ghost" data-rm="${esc(title)}" aria-label="Fjern ${esc(title)} fra holdet">Fjern</button>` : "") + `</div>`
     + (ts.length ? ts.map(t=>taskRow(t, true)).join("") : `<p class="muted" style="margin:0">${empty}</p>`) + `</div>`;
-  return `<h2>Holdet</h2>`
+  return `<div class="row"><h2 class="grow">Holdet</h2>${sb ? `<button class="btn" id="btnAddPerson">+ Tilføj person</button>` : ""}</div>`
     + (all.length ? card("Til alle", all, "") : "")
-    + (list.length ? list.map(n=>card(n, tasks.filter(t=>t.assignees?.some(a=>norm(a)===norm(n))), "Ingen opgaver lige nu.")).join("")
-      : `<p class="muted" style="margin:0">Ingen fra holdet har logget ind endnu.</p>`);
+    + (list.length ? list.map(n=>card(n, tasks.filter(t=>t.assignees?.some(a=>norm(a)===norm(n))), "Ingen opgaver lige nu.", true)).join("")
+      : `<p class="muted" style="margin:0">Ingen på holdet endnu. Tryk <b>Tilføj person</b>, eller vent til de logger ind.</p>`);
 }
 function renderTasks(){
   const L = $("taskList");
@@ -891,11 +915,71 @@ function renderTasks(){
       : `<p class="muted" style="margin:0">Ingen opgaver til dig lige nu. Når en chef giver dig en, dukker den op her.</p>`);
   }
   L.querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openTask(tasks.find(t=>t.id===b.dataset.open)));
+  L.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>askRemove(b.dataset.rm));
+  if($("btnAddPerson")) $("btnAddPerson").onclick = askAdd;
   L.querySelectorAll("[data-arch]").forEach(b=>b.onclick=()=>{
     if(b.dataset.armed){ archiveTask(tasks.find(t=>t.id===b.dataset.arch)); return; }
     b.dataset.armed=1; b.textContent="Sikker?"; setTimeout(()=>{delete b.dataset.armed; b.textContent="Afslut";},3000);
   });
 }
+// ---- Bosses add people to the team and take them off it ----
+const personPanel = (title, body, foot) => {
+  $("personTitle").textContent = title; $("personBody").innerHTML = body; $("personFoot").innerHTML = foot; $("pPerson").hidden = false;
+};
+$("btnPersonCancel").onclick = ()=>{ $("pPerson").hidden = true; };
+function askAdd(){
+  personPanel("Tilføj til holdet",
+    `<p class="muted">Skriv personens navn, som de selv skriver det, når de logger ind. De logger ind med holdets kode.</p>
+     <input type="text" id="personName" placeholder="Navn" autocomplete="off">
+     <div class="err" id="personErr"></div>`,
+    `<button class="btn primary" id="btnPersonOk">Tilføj</button>`);
+  const inp = $("personName"); inp.focus();
+  inp.onkeydown = e=>{ if(e.key==="Enter") $("btnPersonOk").click(); };
+  $("btnPersonOk").onclick = async ()=>{
+    const n = cleanName(inp.value);
+    if(!n){ $("personErr").textContent = "Skriv et navn"; return; }
+    if(crew.some(c=>norm(c)===norm(n))){ $("personErr").textContent = `${n} er allerede på holdet.`; return; }
+    $("btnPersonOk").disabled = true;
+    // Someone who was taken off before gets their old row back, so their history stays under one name
+    const old = rowsFor(peopleRows, n);
+    const {error} = old.length
+      ? await sb.from("people").update({removed:null}).in("name", old.map(p=>p.name))
+      : await sb.from("people").insert({name:n, role:"crew"});
+    if(error){ $("btnPersonOk").disabled = false; $("personErr").textContent = "Det lykkedes ikke. Tjek forbindelsen og prøv igen."; return; }
+    $("pPerson").hidden = true; toast(`${n} er tilføjet holdet`); loadCrew();
+  };
+}
+function askRemove(n){
+  const theirs = tasks.filter(t=>t.assignees?.some(a=>norm(a)===norm(n)));
+  const alone = theirs.filter(t=>t.assignees.every(a=>norm(a)===norm(n)));
+  const li = ts => `<ul style="margin:0;padding-left:20px">${ts.map(t=>`<li>${esc(t.name)}</li>`).join("")}</ul>`;
+  personPanel(`Fjern ${n}?`,
+    (theirs.length ? `<p><b>${esc(n)} tages af ${theirs.length===1?"opgaven":`${theirs.length} opgaver`}:</b></p>${li(theirs)}` : `<p>${esc(n)} er ikke på nogen opgaver lige nu.</p>`)
+    + (alone.length ? `<p><b>Pas på:</b> ${alone.length===1?"Denne opgave":"Disse opgaver"} har så ingen på og bliver <b>til alle</b> på holdet:</p>${li(alone)}` : "")
+    + `<p>${esc(n)} kan ikke logge ind mere.</p>
+       <p class="muted">Det, ${esc(n)} har lavet, står stadig i elementernes historik. Du kan tilføje ${esc(n)} igen senere.</p>
+       <div class="err" id="personErr"></div>`,
+    `<button class="btn danger" id="btnPersonOk">Fjern ${esc(n)}</button><button class="btn" id="btnPersonNo">Nej, behold</button>`);
+  $("btnPersonNo").onclick = ()=>{ $("pPerson").hidden = true; };
+  $("btnPersonOk").onclick = async ()=>{
+    $("btnPersonOk").disabled = true;
+    const fail = ()=>{ $("btnPersonOk").disabled = false; $("personErr").textContent = "Det lykkedes ikke helt. Tjek forbindelsen og prøv igen."; };
+    for(const t of theirs){
+      const left = t.assignees.filter(a=>norm(a)!==norm(n));
+      const {error} = await sb.from("tasks").update({assignees:left}).eq("id", t.id);
+      if(error) return fail();
+      t.assignees = left;
+    }
+    store.set("tasks", tasks);
+    const old = rowsFor(peopleRows, n), day = today();
+    const {error} = old.length
+      ? await sb.from("people").update({removed:day}).in("name", old.map(p=>p.name))
+      : await sb.from("people").insert({name:n, role:"crew", removed:day});
+    if(error) return fail();
+    $("pPerson").hidden = true; toast(`${n} er fjernet fra holdet`); loadCrew(); renderTasks();
+  };
+}
+
 // ---- Element data is stored on the phone (Cache API) and refreshed at most once a day, never in the morning rush ----
 const EL_CACHE = "elements-v1", DAY = 864e5;
 const elKey = id => new Request("https://holdkort.cache/elements/" + encodeURIComponent(id));
@@ -971,7 +1055,7 @@ function refresh(){
 // ================= NEW TASK (full screen) =================
 let picked = new Set(), newShape = null, assignees = new Set(), people = [];
 async function loadPeople(){
-  if(sb){ const {data} = await sb.from("people").select("name,role").order("name"); if(data) people = data.filter(p=>p.role==="crew").map(p=>cleanName(p.name)); }
+  if(sb){ const data = await loadPeopleRows(); if(data) people = data.filter(p=>p.role==="crew" && !p.removed).map(p=>cleanName(p.name)); }
   else people = [...new Set(tasks.flatMap(t=>t.assignees||[]))];
 }
 function renderAssign(){
@@ -1694,6 +1778,13 @@ $("placeQ").onkeydown = e=>{ if(e.key==="Enter"){ clearTimeout(searchT); searchP
 pane("pTasks");
 applyUser(); renderOutbox();
 if(user && sb) sb.from("people").upsert({name:me, role:user.role}).then(()=>{});
+// Someone a boss took off the team is logged out, once nothing they marked is waiting to be sent
+if(user && sb && !isBoss()) isRemoved(me).then(gone=>{
+  if(!gone) return;
+  if(pendingCount()){ toast("Du er taget af holdet. Send dine ændringer.", 6000); return; }
+  user=null; me=""; store.set("user",null); applyUser(); renderTasks();
+  $("loginErr").textContent = "Du er ikke på holdet længere. Spørg din chef.";
+});
 loadTasks();
 // Try to send leftovers when the connection comes back, but only if the worker chose auto-send
 window.addEventListener("online", ()=>{ if(autoSend) sendPending(); });
