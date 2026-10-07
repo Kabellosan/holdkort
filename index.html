@@ -35,12 +35,16 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
 .dot.on{background:var(--done)} .dot.off{background:var(--todo)}
 .ol-zoom{top:calc(env(safe-area-inset-top,0px) + 64px);left:12px}
 .ol-zoom button{width:40px!important;height:40px!important;font-size:22px!important}
-/* Aerial photo / plain map switch, under the zoom buttons */
-.basemap{position:absolute;top:calc(env(safe-area-inset-top,0px) + 164px);left:12px;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
-.basemap .seg2{display:flex;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px;box-shadow:0 2px 10px #0003}
-.basemap button{border:0;background:transparent;border-radius:999px;min-height:40px;padding:6px 14px;font-size:15px;color:var(--ink2)}
-.basemap button[aria-pressed="true"]{background:var(--moss);color:#fff;font-weight:600}
-.basemap .credit{font-size:11px;background:#ffffffcc;color:#333;border-radius:6px;padding:1px 6px}
+/* Aerial photo / plain map switch, under the zoom buttons. Phones: one small button that flips; computers: both choices side by side. */
+.basemap{position:absolute;top:calc(env(safe-area-inset-top,0px) + 160px);left:12px;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.basemap .seg2{display:none;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px;box-shadow:0 2px 10px #0003}
+.seg2 button{border:0;background:transparent;border-radius:999px;min-height:40px;padding:6px 14px;font-size:15px;color:var(--ink2)}
+.seg2 button[aria-pressed="true"]{background:var(--moss);color:#fff;font-weight:600}
+.flip{width:44px;height:50px;border:1px solid var(--line);border-radius:10px;background:var(--card);box-shadow:0 2px 10px #0003;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0;color:var(--ink)}
+.flip .ic{font-size:19px;line-height:1}
+.flip .tx{font-size:11px;font-weight:600}
+.basemap .credit{font-size:10px;background:#ffffffcc;color:#333;border-radius:6px;padding:1px 5px}
 .basemap .credit a{color:inherit}
 /* Paler street map, so status and task colours stand out on it */
 .osm-base canvas{filter:saturate(.35) brightness(1.04)}
@@ -179,6 +183,8 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   #map{left:var(--side)}
   .top{left:calc(var(--side) + 12px)}
   .basemap{left:calc(var(--side) + 12px)}
+  .basemap .seg2{display:flex}
+  .basemap .flip{display:none}
   .toast{left:calc(var(--side) + (100% - var(--side)) / 2)}
   .sheet,.sheet:has(#pOver:not([hidden])),.sheet:has(#pPlace:not([hidden])){top:0;right:auto;width:var(--side);max-height:none;border-radius:0;border-right:1px solid var(--line);
     box-shadow:4px 0 18px #0002;padding:calc(env(safe-area-inset-top,0px) + 18px) 22px 18px;z-index:5}
@@ -209,6 +215,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <button class="chip" id="btnSearch" style="margin-left:auto" aria-label="Søg sted">⌕ <span>Søg</span></button>
 </div>
 <div class="basemap">
+  <button class="flip" id="btnFlip"><span class="ic"></span><span class="tx"></span></button>
   <div class="seg2" role="group" aria-label="Baggrundskort">
     <button data-b="photo" aria-pressed="true">🛰 Luftfoto</button>
     <button data-b="map" aria-pressed="false">🗺 Kort</button>
@@ -689,11 +696,14 @@ map.on("moveend",()=>store.set("view",{c:map.getView().getCenter(),z:map.getView
 // Aerial photo or plain map, remembered on this phone
 function setBase(b){
   ortoLayer.setVisible(b !== "map"); osmLayer.setVisible(b === "map");
-  document.querySelectorAll(".basemap button").forEach(x=>x.setAttribute("aria-pressed", String(x.dataset.b === b)));
+  document.querySelectorAll(".seg2 button").forEach(x=>x.setAttribute("aria-pressed", String(x.dataset.b === b)));
+  // The phone button shows what you get by tapping it
+  const f = document.getElementById("btnFlip"); f.querySelector(".ic").textContent = b === "map" ? "🛰" : "🗺"; f.querySelector(".tx").textContent = b === "map" ? "Foto" : "Kort";
+  f.setAttribute("aria-label", b === "map" ? "Vis luftfoto" : "Vis kort"); f.onclick = ()=>setBase(b === "map" ? "photo" : "map");
   document.getElementById("osmCredit").hidden = b !== "map";
   store.set("base", b);
 }
-document.querySelectorAll(".basemap button").forEach(x=>x.onclick = ()=>setBase(x.dataset.b));
+document.querySelectorAll(".seg2 button").forEach(x=>x.onclick = ()=>setBase(x.dataset.b));
 setBase(store.get("base","photo"));
 // On computer screens the sheet is a sidebar beside the map, so it doesn't cover the bottom of the map
 const wide = () => matchMedia("(min-width:1024px)").matches;
