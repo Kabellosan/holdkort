@@ -481,7 +481,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <header>
     <div class="row"><input type="search" id="placeQ" class="grow" placeholder="By, vej, adresse, station …" autocomplete="off" enterkeyhint="search"><button class="btn ghost" id="btnSearchClose">Luk</button></div>
   </header>
-  <div class="list" id="placeList"></div>
+  <div class="list" id="searchList"></div>
   <footer><div class="muted" style="font-size:12px">Søgning: Photon og Nominatim · data © OpenStreetMap-bidragydere</div></footer>
 </div>
 
@@ -2446,8 +2446,8 @@ async function nominatim(q, signal){
 const fkey = f => f.geometry.coordinates.map(x=>x.toFixed(3)).join(",") + (f.properties.name||"");
 const townChips = () => `<div class="section">Byer i kommunen</div><div class="people">${TOWNS.map(n=>`<button data-town="${esc(n)}">${esc(n)}</button>`).join("")}</div>`;
 function searchStart(){
-  $("placeList").innerHTML = townChips();
-  $("placeList").querySelectorAll("[data-town]").forEach(b=>b.onclick=()=>{ $("placeQ").value = b.dataset.town; searchPlaces(b.dataset.town, false, true); });
+  $("searchList").innerHTML = townChips();
+  $("searchList").querySelectorAll("[data-town]").forEach(b=>b.onclick=()=>{ $("placeQ").value = b.dataset.town; searchPlaces(b.dataset.town, false, true); });
 }
 // pickTown: a town shortcut was tapped, so go straight to the town of that name if the search finds it
 async function searchPlaces(q, deep, pickTown){
@@ -2458,7 +2458,7 @@ async function searchPlaces(q, deep, pickTown){
   let fs = memoGet(key);
   if(!fs){
     searchCtl = new AbortController(); const sig = searchCtl.signal;
-    $("placeList").innerHTML = `<p class="muted"><span class="spin"></span> Søger …</p>`;
+    $("searchList").innerHTML = `<p class="muted"><span class="spin"></span> Søger …</p>`;
     try{
       const jobs = [photon(q, {}, sig)];
       const st = q.match(/^(.*?)\s*(station|st\.?|banegård)$/i);
@@ -2469,17 +2469,17 @@ async function searchPlaces(q, deep, pickTown){
       fs = fs.slice(0,12); memoPut(key, fs);
     }catch(e){
       if(sig.aborted) return; // a newer search took over
-      $("placeList").innerHTML = `<p class="muted">Søgningen svarer ikke lige nu. Måske er nettet væk et øjeblik.</p><button class="btn" id="btnSearchRetry">Prøv igen</button>`;
+      $("searchList").innerHTML = `<p class="muted">Søgningen svarer ikke lige nu. Måske er nettet væk et øjeblik.</p><button class="btn" id="btnSearchRetry">Prøv igen</button>`;
       $("btnSearchRetry").onclick = ()=>searchPlaces(q, deep, pickTown);
       return;
     }
   }
   if(pickTown){ const t = fs.find(f=>f.properties.osm_key==="place" && norm(f.properties.name)===norm(q)); if(t){ goPlace(t); return; } }
-  $("placeList").innerHTML = (fs.length ? fs.map((f,i)=>{ const l = placeLabel(f.properties);
+  $("searchList").innerHTML = (fs.length ? fs.map((f,i)=>{ const l = placeLabel(f.properties);
     return `<button class="item" data-i="${i}"><div class="grow"><div class="t">${esc(l.name)}</div><div class="s">${esc(l.sub)}</div></div><span class="code">${esc(l.kind)}</span></button>`; }).join("")
     : `<p class="muted">Ingen steder fundet for "${esc(q)}".</p>`)
     + (deep ? "" : `<button class="btn ghost" id="btnDeep">Find ikke det rigtige? Søg grundigere</button>`);
-  $("placeList").querySelectorAll("[data-i]").forEach(b=>b.onclick=()=>goPlace(fs[+b.dataset.i]));
+  $("searchList").querySelectorAll("[data-i]").forEach(b=>b.onclick=()=>goPlace(fs[+b.dataset.i]));
   if(!deep) $("btnDeep").onclick = ()=>searchPlaces(q, true);
 }
 function goPlace(f){
