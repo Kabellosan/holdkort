@@ -492,7 +492,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <li><i>👀</i><span><b>Holdet</b> kan se, hvem der har markeret hvad, så I ikke tager det samme. <b>Koordinatorerne</b> ser, hvor meget af opgaven der er færdigt, og i elementets historik, hvem der ændrede hvad og hvilken dag.</span></li>
       <li><i>📋</i><span id="seeOwn"><b>Du ser kun dine egne opgaver</b> og dem, der er til alle. Koordinatorerne kan se, hvem der er sat på hvilke opgaver.</span></li>
       <li><i>📷</i><span><b>Billeder</b> gøres mindre på telefonen, og placering og andre skjulte oplysninger fjernes, før de sendes. De sendes også først, når du trykker Send.</span></li>
-      <li><i>🗑️</i><span><b>Når en opgave afsluttes,</b> slettes alle markeringer. Tilbage er kun "færdig, 47 af 47" og en log over hvert element: hver statusændring med <i>dag</i>, navn og evt. note og billede. Loggen kan kun ses af koordinatorerne.</span></li>
+      <li><i>🗑️</i><span><b>Når en opgave afsluttes,</b> slettes alle markeringer (de gemmes skjult i 14 dage, så en fejl kan rettes). Tilbage er kun "færdig, 47 af 47" og en log over hvert element: hver statusændring med <i>dag</i>, navn og evt. note og billede. Loggen kan kun ses af koordinatorerne.</span></li>
     </ul>
     <p class="muted" id="profHonest"></p>
     <button class="btn" id="btnLogout">Log ud</button>
@@ -511,10 +511,9 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 // Fill these in to share tasks and progress across phones (see README). Empty = this phone only.
 const SUPABASE_URL = "https://rvfwmmctqndfqvbuuoyi.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_Xzi9Xw8J46eTOXVMEyLmFA_BNWRICGi"; // publishable key: safe to be public
-// Login codes, stored as SHA-256 so they aren't readable in the public repo. Ask Claude to change them.
-const CREW_CODE_SHA = "e8b22d83b417e85ba4f24101a49a49cc3246a5e5e4ce6574623063e4e32801e0"; // crew
-const BOSS_CODE_SHA = "f59ac0828b9a32293b348e398a0efd342b1e4377a687f3a9055ee2871dff35e4"; // bosses (Koordinator)
-const HELPER_CODE_SHA = "58b02efe188ab97d39ed7da583a2a3cc534b164d9ff0b9988ec900270ba505fe"; // helpers (Hjælper): only tasks with their own name
+// Login codes are checked by Supabase, not by this page: one shared account per role, its password is the code
+// (lowercase, at least 6 characters; see supabase/login.sql). Change a code in the Supabase dashboard.
+const ROLE_EMAIL = {crew:"udfoerende@holdkort.example", boss:"koordinator@holdkort.example", helper:"hjaelper@holdkort.example"};
 
 const WMS_URL = "https://kort.ikast-brande.dk/wms";
 const WMS_SERVICE = "entreprenoer_udbud";
@@ -756,7 +755,17 @@ const isHelper = () => user?.role === "helper";
 const ROLE_NAME = {boss:"Koordinator", crew:"Udførende", helper:"Hjælper"};
 // people.role only knows crew/boss; a helper is on the team like the crew
 const dbRole = r => r==="boss" ? "boss" : "crew";
-async function sha(txt){ const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(txt)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join(""); }
+const roleOf = session => Object.keys(ROLE_EMAIL).find(r=>ROLE_EMAIL[r]===session?.user?.email) || null;
+// Tries the code as each role's password; the first that fits is the role
+async function signIn(code){
+  for(const role of ["crew","boss","helper"]){
+    const {error} = await sb.auth.signInWithPassword({email:ROLE_EMAIL[role], password:code});
+    if(!error) return {role};
+    if(error.status===429) return {err:"For mange forsøg. Vent et par minutter og prøv igen."};
+    if(!error.status || error.status>=500) return {err:"Ingen forbindelse. Prøv igen, når du har net."};
+  }
+  return {err:"Koden passer ikke. Spørg din koordinator."};
+}
 function applyUser(){
   $("whoName").textContent = me || "Navn?";
   $("whoBadge").hidden = !user; $("whoBadge").textContent = ROLE_NAME[user?.role] || "";
@@ -768,10 +777,13 @@ function applyUser(){
 $("btnLogin").onclick = async ()=>{
   const name = cleanName($("loginName").value), code = $("loginCode").value.trim().toLowerCase();
   if(!name){ $("loginErr").textContent = "Skriv dit navn"; return; }
-  const h = await sha(code);
-  const role = h===BOSS_CODE_SHA ? "boss" : h===CREW_CODE_SHA ? "crew" : h===HELPER_CODE_SHA ? "helper" : null;
-  if(!role){ $("loginErr").textContent = "Koden passer ikke. Spørg din koordinator."; return; }
-  if(role!=="boss" && await isRemoved(name)){ $("loginErr").textContent = "Du er ikke på holdet. Spørg din koordinator."; return; }
+  if(!sb){ $("loginErr").textContent = "Appen er ikke koblet til holdet."; return; }
+  $("btnLogin").disabled = true; $("loginErr").textContent = "";
+  const r = await signIn(code);
+  $("btnLogin").disabled = false;
+  if(r.err){ $("loginErr").textContent = r.err; return; }
+  const role = r.role;
+  if(role!=="boss" && await isRemoved(name)){ sb.auth.signOut({scope:"local"}); $("loginErr").textContent = "Du er ikke på holdet. Spørg din koordinator."; return; }
   user = {name, role}; me = name; store.set("user", user);
   if(sb) sb.from("people").upsert({name, role:dbRole(role)}).then(()=>{});
   bossView = "tasks";
@@ -784,13 +796,15 @@ $("who").onclick = ()=>{
     : isHelper() ? "Hjælper: ser kun de opgaver, der har dit navn på." : "Udførende: ser dine egne opgaver og dem, der er til alle.";
   $("autoSend").checked = autoSend;
   $("profHonest").textContent = sb
-    ? "Login med kode og navn er tillidsbaseret: reglerne ovenfor håndhæves af appen, ikke låst i databasen. Ved officiel brug bør login skiftes til e-mail."
+    ? "Koden tjekkes af databasen: uden kode kan ingen se eller ændre noget, og kun koordinatorer kan oprette, ændre og afslutte opgaver. Navnet er tillidsbaseret: appen kan ikke se, om du skriver dit eget. Ved officiel brug bør login skiftes til e-mail."
     : "Appen er ikke koblet til en fælles database endnu, så alt bliver på denne telefon.";
   $("pProfile").hidden = false;
 };
 $("btnProfClose").onclick = ()=>{ $("pProfile").hidden = true; };
 $("btnLogout").onclick = ()=>{
   if(pendingCount()){ toast("Send dine ændringer først", 3500); return; }
+  // local: the role's account is shared, so logging out must not log out the other phones
+  if(sb) sb.auth.signOut({scope:"local"});
   user=null; me=""; store.set("user",null); $("pProfile").hidden = true; applyUser();
 };
 
@@ -2617,13 +2631,26 @@ $("findQ").onkeydown = e=>{ if(e.key==="Enter"){ clearTimeout(findT); findSearch
 
 pane("pTasks");
 applyUser(); renderOutbox();
-if(user && sb) sb.from("people").upsert({name:me, role:dbRole(user.role)}).then(()=>{});
-// Someone a boss took off the team is logged out, once nothing they marked is waiting to be sent
-if(user && sb && !isBoss()) isRemoved(me).then(gone=>{
-  if(!gone) return;
-  if(pendingCount()){ toast("Du er taget af holdet. Send dine ændringer.", 6000); return; }
-  user=null; me=""; store.set("user",null); applyUser(); renderTasks();
-  $("loginErr").textContent = "Du er ikke på holdet længere. Spørg din koordinator.";
+// A phone without a database login (logged in before codes were checked there) logs in again, name kept.
+// An error means no connection: then the phone stays logged in and carries on.
+if(user && sb) sb.auth.getSession().then(({data, error})=>{
+  if(error) return;
+  const role = roleOf(data.session);
+  if(!role){
+    $("loginName").value = me; user=null; me=""; store.set("user",null); applyUser(); renderTasks();
+    $("loginErr").textContent = "Log ind igen med holdets kode.";
+    return;
+  }
+  if(role!==user.role){ user.role = role; store.set("user", user); applyUser(); renderTasks(); }
+  sb.from("people").upsert({name:me, role:dbRole(user.role)}).then(()=>{});
+  // Someone a boss took off the team is logged out, once nothing they marked is waiting to be sent
+  if(!isBoss()) isRemoved(me).then(gone=>{
+    if(!gone) return;
+    if(pendingCount()){ toast("Du er taget af holdet. Send dine ændringer.", 6000); return; }
+    sb.auth.signOut({scope:"local"});
+    user=null; me=""; store.set("user",null); applyUser(); renderTasks();
+    $("loginErr").textContent = "Du er ikke på holdet længere. Spørg din koordinator.";
+  });
 });
 loadTasks();
 // Try to send leftovers when the connection comes back, but only if the worker chose auto-send

@@ -99,15 +99,15 @@ alter publication supabase_realtime add table tasks, progress;
 
 ## Logins and roles
 - Everyone logs in once with **name + code**. There are three codes, shown in the app as roles: **Koordinator** (the boss code: create, assign and close tasks), **Udførende** (the crew code: your own tasks plus tasks for everyone) and **Hjælper** (only tasks with your own name on them, not the ones for everyone; meant for interns or someone trying it out). A Hjælper is stored as crew in `people`, so they show up in Holdet and can be given tasks like anyone else.
-- Codes are stored as SHA-256 hashes at the top of `index.html` (`CREW_CODE_SHA`, `BOSS_CODE_SHA`, `HELPER_CODE_SHA`). Placeholder codes are `hold`, `chef` and `hjælper`. Change them before real use.
-- This login is trust-based: anyone with the anon key could read the database directly. Fine for a crew that trusts each other; switch to Supabase email login before it becomes an official tool.
+- The codes are checked by Supabase, not by the app: each role is one shared Supabase account (`koordinator@`, `udfoerende@`, `hjaelper@holdkort.example`) whose password is the code (lowercase, at least 6 characters). Run [`supabase/login.sql`](supabase/login.sql), create the three accounts under Authentication → Users → Add user (tick Auto Confirm), turn off "Allow new users to sign up", and once the app is live run [`supabase/login_lock.sql`](supabase/login_lock.sql). After that the public key alone can't read or change anything, and only the Koordinator account can create, edit or close tasks, remove people or edit packages. To change a code, change that account's password in the dashboard.
+- The name is still trust-based: someone with the crew code can type any name. Switch to per-person Supabase email login before it becomes an official tool.
 
 ## Privacy by design
 - **GPS never leaves the phone.** It's only used to find the nearest element.
 - **Nothing is sent until the worker presses Send.** "Send automatisk" is opt-in per person.
 - **Only the send day is shown,** never clock times per mark. No routes, no positions, no per-person statistics.
 - **Bosses see progress, not people:** the app hides who marked what from the boss view.
-- **Closing a task deletes all its marks.** Only "done X of Y" is kept in `tasks.summary`.
+- **Closing a task deletes all its marks.** Only "done X of Y" is kept in `tasks.summary`. The deleted marks sit in `progress_trash` for 14 days (nobody can read it from the app), so a task closed by mistake can be reopened; the SQL is at the bottom of `supabase/login.sql`.
 
 In Denmark, new forms of workplace control generally have to be announced to employees in advance, and anything tied to names falls under GDPR. Worth showing this to your tillidsrepræsentant before rolling it out.
 
