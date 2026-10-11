@@ -96,7 +96,6 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .person h3 span{font-weight:400;color:var(--ink2);font-size:14px}
 .person .who{display:flex;align-items:center;gap:8px}
 .person .who h3{flex:1}
-.btn.trust.on{background:#fff4d6;border-color:#e0b84a;color:#6b4e00}
 .btn.danger{background:#b3261e;border-color:#b3261e;color:#fff;font-weight:600}
 .tended{font-size:14px;color:var(--ink2)}
 .sheet:has(#pOver:not([hidden])),.sheet:has(#pPlace:not([hidden])){max-height:68vh} /* the overviews have a legend and lists */
@@ -411,7 +410,6 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <label class="switch"><input type="checkbox" id="newPick"><span><b>Kun udvalgte steder</b><br><span class="muted">Du vælger dem på kortet bagefter</span></span></label>
     <div class="section">Hvem skal lave den?</div>
     <div class="people" id="assignList"></div>
-    <div class="muted" id="assignSelf" hidden>Opgaven er til dig. Kun en chef kan give opgaver til andre.</div>
     <div class="row"><span class="muted grow" id="newAreaInfo"></span><button class="btn ghost" id="btnNewArea">Ret område</button></div>
     <button class="btn primary" id="btnCreate">Opret opgave</button>
   </footer>
@@ -748,21 +746,15 @@ const plainNames = codes => codes.map(c=>CODES[c]||c).join(" + ");
 
 // Phone keyboards often add a trailing space after a name; tidy names wherever they come in
 const cleanName = n => String(n||"").trim().replace(/\s+/g," ");
-let user = store.get("user", null);   // {name, role: "crew"|"trusted"|"boss"}
+let user = store.get("user", null);   // {name, role: "crew"|"boss"}
 if(user) user.name = cleanName(user.name);
 let me = user?.name || "";
 const isBoss = () => user?.role === "boss";
-// "Betroet": a crew member a boss trusts to make tasks for themselves (never for others). Set by a boss in Holdet
-const isTrusted = () => user?.role === "trusted";
-const canCreate = () => isBoss() || isTrusted();
-// Trusted members may change or close the tasks they made themselves
-const canManage = t => isBoss() || (isTrusted() && !!t && norm(t.created_by||"")===norm(me));
-const ROLE_LABEL = {boss:"Chef", trusted:"Betroet"};
 async function sha(txt){ const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(txt)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join(""); }
 function applyUser(){
   $("whoName").textContent = me || "Navn?";
-  $("whoBadge").hidden = !canCreate(); $("whoBadge").textContent = ROLE_LABEL[user?.role] || "";
-  $("bossRow").hidden = !canCreate(); $("btnOverview").hidden = !isBoss();
+  $("whoBadge").hidden = !isBoss();
+  $("bossRow").hidden = !isBoss();
   $("pLogin").hidden = !!user;
 }
 $("btnLogin").onclick = async ()=>{
@@ -773,16 +765,14 @@ $("btnLogin").onclick = async ()=>{
   if(!role){ $("loginErr").textContent = "Koden passer ikke. Spørg din chef."; return; }
   if(role==="crew" && await isRemoved(name)){ $("loginErr").textContent = "Du er ikke på holdet. Spørg din chef."; return; }
   user = {name, role}; me = name; store.set("user", user);
-  if(role==="boss"){ if(sb) sb.from("people").upsert({name, role}).then(()=>{}); }
-  else await syncRole();
+  if(sb) sb.from("people").upsert({name, role}).then(()=>{});
   bossView = "tasks";
   applyUser(); loadTasks();
 };
 $("loginCode").onkeydown = e=>{ if(e.key==="Enter") $("btnLogin").click(); };
 $("who").onclick = ()=>{
   $("profName").textContent = me;
-  $("profRole").textContent = isBoss() ? "Chef: kan oprette og fordele opgaver."
-    : isTrusted() ? "Betroet: kan oprette opgaver til dig selv, men ikke til andre." : "Holdet";
+  $("profRole").textContent = isBoss() ? "Chef: kan oprette og fordele opgaver." : "Holdet";
   $("autoSend").checked = autoSend;
   $("profHonest").textContent = sb
     ? "Login med kode og navn er tillidsbaseret: reglerne ovenfor håndhæves af appen, ikke låst i databasen. Ved officiel brug bør login skiftes til e-mail."
@@ -862,7 +852,6 @@ async function loadTasks(){
     if(error){ toast("Kunne ikke hente opgaver. Tjek forbindelsen."); tasks = store.get("tasks",[]); }
     else { tasks = data; store.set("tasks",tasks); }
   } else tasks = store.get("tasks",[]);
-  if(user && !isBoss()) await syncRole();
   renderTasks();
   if(isBoss()) loadCrew();
   loadPacks().then(renderTasks);
@@ -874,7 +863,7 @@ async function saveTask(t){
   if(sb){
     let {error} = await sb.from("tasks").insert(t);
     if(noAreaCol(error)){ if(t.area) toast(AREA_FALLBACK, 5000); delete t.area; ({error} = await sb.from("tasks").insert(t)); }
-    if(error){ toast(/til sig selv|må ikke oprette/.test(error.message||"") ? "Opgaven blev ikke gemt: du kan kun lave opgaver til dig selv. Spørg en chef." : "Opgaven blev ikke gemt: " + error.message, 5000); return false; }
+    if(error){ toast("Opgaven blev ikke gemt: " + error.message); return false; }
   }
   tasks.unshift(t); store.set("tasks",tasks); return true;
 }
@@ -1075,20 +1064,9 @@ async function isRemoved(n){
   const mine = rows ? rowsFor(rows, n) : [];
   return mine.length > 0 && mine.every(p=>p.removed);
 }
-const onTeam = p => (p.role==="crew" || p.role==="trusted") && !p.removed;
 async function loadCrew(){
   const data = await loadPeopleRows();
-  if(data){ peopleRows = data; crew = data.filter(onTeam).map(p=>cleanName(p.name)); if(bossView==="team") renderTasks(); }
-}
-// Someone who logs in with the crew code is "trusted" if a boss has made them so; read it from people each time
-// the task list loads, so a change in Holdet reaches their phone without logging out
-async function syncRole(){
-  if(!sb || !user || isBoss()) return;
-  const rows = await loadPeopleRows(); if(!rows) return;
-  const mine = rowsFor(rows, me).filter(p=>!p.removed);
-  const role = mine.some(p=>p.role==="trusted") ? "trusted" : "crew";
-  if(!mine.length) sb.from("people").insert({name:me, role:"crew"}).then(()=>{});
-  if(role!==user.role){ user.role = role; store.set("user", user); applyUser(); renderTasks(); }
+  if(data){ peopleRows = data; crew = data.filter(p=>p.role==="crew" && !p.removed).map(p=>cleanName(p.name)); if(bossView==="team") renderTasks(); }
 }
 document.querySelectorAll("#bossView [data-v]").forEach(b=>b.onclick=()=>{ bossView = b.dataset.v; store.set("bossView",bossView); renderTasks(); });
 function taskRow(t, noClose){
@@ -1097,7 +1075,7 @@ function taskRow(t, noClose){
     <button class="item grow" data-open="${esc(t.id)}"><div class="grow"><div class="t">${esc(t.name)}</div>
     <div class="s">${esc(shortCodes(t.codes) + scopeOf(t))} · ${esc(whoFor(t))}</div></div>
     ${done ? `<span class="pill ${done[0]===done[1]?"done":"todo"} num">${done[0]}/${done[1]}</span>` : ""}</button>
-    ${canManage(t) && !noClose ? `<button class="btn ghost" data-arch="${esc(t.id)}">Afslut</button>` : ""}</div>`;
+    ${isBoss() && !noClose ? `<button class="btn ghost" data-arch="${esc(t.id)}">Afslut</button>` : ""}</div>`;
 }
 // One card per person with the tasks they are on; tasks for everyone get their own card
 function teamHtml(){
@@ -1106,11 +1084,7 @@ function teamHtml(){
   const list = [...names.values()].sort((a,b)=>a.localeCompare(b,"da"));
   const all = tasks.filter(t=>!t.assignees?.length);
   const card = (title, ts, empty, person) => `<div class="person"><div class="who"><h3>${esc(title)}<span>${ts.length ? ts.length+(ts.length===1?" opgave":" opgaver") : ""}</span></h3>`
-    + (person && sb && !isBossName(title) ? (isTrustedName(title)
-        ? `<button class="btn trust on" data-trust="${esc(title)}" aria-label="${esc(title)} er betroet. Tryk for at ændre">⭐ Betroet</button>`
-        : `<button class="btn ghost" data-trust="${esc(title)}" aria-label="Gør ${esc(title)} betroet">☆ Gør betroet</button>`) : "")
     + (person && sb ? `<button class="btn ghost" data-rm="${esc(title)}" aria-label="Fjern ${esc(title)} fra holdet">Fjern</button>` : "") + `</div>`
-    + (person && isTrustedName(title) ? `<p class="muted" style="margin:0">Kan selv oprette opgaver til sig selv.</p>` : "")
     + (ts.length ? ts.map(t=>taskRow(t, true)).join("") : `<p class="muted" style="margin:0">${empty}</p>`) + `</div>`;
   return `<div class="row"><h2 class="grow">Holdet</h2>${sb ? `<button class="btn" id="btnAddPerson">+ Tilføj person</button>` : ""}</div>`
     + (all.length ? card("Til alle", all, "") : "")
@@ -1125,17 +1099,16 @@ function renderTasks(){
   if(isBoss() && bossView==="team") L.innerHTML = teamHtml();
   else if(!tasks.length) L.innerHTML = isBoss()
       ? `<h2>Opgaver</h2><p class="muted" style="margin:0">Ingen opgaver endnu. Tryk <b>Ny opgave</b> og tegn området på kortet.</p>`
-      : `<h2>Dine opgaver</h2><p class="muted" style="margin:0">Ingen opgaver lige nu. ${isTrusted() ? "Tryk <b>Ny opgave</b> for at lave en til dig selv, eller vent på en fra en chef." : "Når en chef giver dig en, dukker den op her."}</p>`;
+      : `<h2>Dine opgaver</h2><p class="muted" style="margin:0">Ingen opgaver lige nu. Når en chef giver dig en, dukker den op her.</p>`;
   else if(isBoss()) L.innerHTML = `<h2>Opgaver</h2>` + tasks.map(t=>taskRow(t)).join("");
   else {
     // The crew only sees tasks given to them by name, or to everyone
     const mine = tasks.filter(forMe);
     L.innerHTML = `<h2>Dine opgaver</h2>` + (mine.length ? mine.map(t=>taskRow(t)).join("")
-      : `<p class="muted" style="margin:0">Ingen opgaver til dig lige nu. ${isTrusted() ? "Tryk <b>Ny opgave</b> for at lave en til dig selv, eller vent på en fra en chef." : "Når en chef giver dig en, dukker den op her."}</p>`);
+      : `<p class="muted" style="margin:0">Ingen opgaver til dig lige nu. Når en chef giver dig en, dukker den op her.</p>`);
   }
   L.querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openTask(tasks.find(t=>t.id===b.dataset.open)));
   L.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>askRemove(b.dataset.rm));
-  L.querySelectorAll("[data-trust]").forEach(b=>b.onclick=()=>askTrust(b.dataset.trust));
   if($("btnAddPerson")) $("btnAddPerson").onclick = askAdd;
   L.querySelectorAll("[data-arch]").forEach(b=>b.onclick=()=>{
     if(b.dataset.armed){ archiveTask(tasks.find(t=>t.id===b.dataset.arch)); return; }
@@ -1167,30 +1140,6 @@ function askAdd(){
       : await sb.from("people").insert({name:n, role:"crew"});
     if(error){ $("btnPersonOk").disabled = false; $("personErr").textContent = "Det lykkedes ikke. Tjek forbindelsen og prøv igen."; return; }
     $("pPerson").hidden = true; toast(`${n} er tilføjet holdet`); loadCrew();
-  };
-}
-const isTrustedName = n => rowsFor(peopleRows, n).some(p=>p.role==="trusted" && !p.removed);
-const isBossName = n => rowsFor(peopleRows, n).some(p=>p.role==="boss");
-// A boss makes someone "Betroet" (can make tasks for themselves) or takes it back
-function askTrust(n){
-  const on = isTrustedName(n);
-  personPanel(on ? `Skal ${n} stadig være betroet?` : `Gør ${n} betroet?`,
-    (on ? `<p>${esc(n)} kan lige nu selv oprette opgaver til sig selv.</p>
-           <p>Hvis du fjerner det, kan ${esc(n)} kun lave de opgaver, en chef giver. Opgaver, ${esc(n)} allerede har lavet, bliver liggende.</p>`
-        : `<p>${esc(n)} kan så selv oprette opgaver, men <b>kun til sig selv</b>. ${esc(n)} kan ikke give opgaver til andre og kan ikke se Overblik.</p>`)
-    + `<p class="muted">Det virker næste gang ${esc(n)} åbner appen eller listen med opgaver.</p><div class="err" id="personErr"></div>`,
-    on ? `<button class="btn danger" id="btnPersonOk">Ikke betroet mere</button><button class="btn" id="btnPersonNo">Nej, behold</button>`
-       : `<button class="btn primary" id="btnPersonOk">⭐ Gør betroet</button><button class="btn" id="btnPersonNo">Annullér</button>`);
-  $("btnPersonNo").onclick = ()=>{ $("pPerson").hidden = true; };
-  $("btnPersonOk").onclick = async ()=>{
-    $("btnPersonOk").disabled = true;
-    const role = on ? "crew" : "trusted", old = rowsFor(peopleRows, n).filter(p=>p.role!=="boss");
-    const {error} = old.length
-      ? await sb.from("people").update({role}).in("name", old.map(p=>p.name))
-      : await sb.from("people").insert({name:n, role});
-    if(error){ $("btnPersonOk").disabled = false; $("personErr").textContent = /people_role_check/.test(error.message||"")
-      ? "Databasen kender ikke 'Betroet' endnu. Kør supabase/trusted.sql først." : "Det lykkedes ikke. Tjek forbindelsen og prøv igen."; return; }
-    $("pPerson").hidden = true; toast(on ? `${n} er ikke betroet mere` : `${n} er nu betroet`); loadCrew();
   };
 }
 function askRemove(n){
@@ -1263,7 +1212,7 @@ async function openTask(t){
   taskAll = []; pick = null;
   geo.setTracking(true);
   areaSrc.addFeature(new ol.Feature(shapeGeom(t)));
-  $("btnEditArea").hidden = $("btnPick").hidden = !canManage(t);
+  $("btnEditArea").hidden = $("btnPick").hidden = !isBoss();
   $("btnTaskPhotos").hidden = !sb || !logOk; taskMedia = new Map(); $("taskPhotoN").textContent = "Billeder";
   $("workName").textContent = t.name; $("workCodes").textContent = packCodes(t.codes) + scopeOf(t);
   $("workCount").innerHTML = `<span class="spin"></span>`; $("bar").innerHTML = ""; $("dataAge").textContent = "";
@@ -1347,7 +1296,7 @@ $("btnPickOk").onclick = ()=>{
 // ================= NEW TASK (full screen) =================
 let picked = new Set(), newShape = null, assignees = new Set(), people = [];
 async function loadPeople(){
-  if(sb){ const data = await loadPeopleRows(); if(data) people = data.filter(onTeam).map(p=>cleanName(p.name)); }
+  if(sb){ const data = await loadPeopleRows(); if(data) people = data.filter(p=>p.role==="crew" && !p.removed).map(p=>cleanName(p.name)); }
   else people = [...new Set(tasks.flatMap(t=>t.assignees||[]))];
 }
 function renderAssign(){
@@ -1378,7 +1327,7 @@ function renderChosen(){
   // whole packages show as one chip, so a big package doesn't push the type list off the screen
   const chips = packNames([...picked]).map(n=>packs.some(p=>p.name===n) ? `📦 ${n}` : n);
   $("chosen").innerHTML = (chips.map(n=>`<span>${esc(n)}</span>`).join("") || `<span class="muted" style="background:none;color:var(--ink2);padding:0">Ingen typer valgt</span>`)
-    + (isBoss() && picked.size > 1 && !packs.some(p=>sameCodes(p.codes, picked)) ? `<button class="btn ghost" id="btnSavePack" style="min-height:36px;padding:4px 10px">📦 Gem som pakke</button>` : "");
+    + (picked.size > 1 && !packs.some(p=>sameCodes(p.codes, picked)) ? `<button class="btn ghost" id="btnSavePack" style="min-height:36px;padding:4px 10px">📦 Gem som pakke</button>` : "");
   if($("btnSavePack")) $("btnSavePack").onclick = ()=>packEdit({name:"", codes:[...picked]}, true);
   if(!$("taskTitle").dataset.touched) $("taskTitle").value = autoTitle();
   renderPacks();
@@ -1394,13 +1343,13 @@ const autoTitle = () => packNames([...picked]).join(" + ") + (picked.size && new
 const packOn = p => p.codes.length > 0 && p.codes.every(c=>picked.has(c));
 function renderPacks(){
   $("packList").innerHTML = packs.map(p=>`<button data-k="${esc(p.id)}" class="${packOn(p)?"on":""}">📦 ${esc(p.name)}</button>`).join("")
-    + (isBoss() ? `<button class="edit" id="btnPacks">${packs.length ? "✎ Ret pakker" : "+ Ny pakke"}</button>` : "");
+    + `<button class="edit" id="btnPacks">${packs.length ? "✎ Ret pakker" : "+ Ny pakke"}</button>`;
   $("packList").querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{
     const p = packs.find(x=>x.id===b.dataset.k), on = packOn(p);
     p.codes.forEach(c=>on ? picked.delete(c) : picked.add(c));
     renderCodes(); renderChosen();
   });
-  if($("btnPacks")) $("btnPacks").onclick = ()=>packs.length ? packList() : packEdit({name:"", codes:[]}, true);
+  $("btnPacks").onclick = ()=>packs.length ? packList() : packEdit({name:"", codes:[]}, true);
 }
 function packList(){
   packEd = null;
@@ -1466,14 +1415,12 @@ function beginNewTask(code, shape, here){
   newHere = here || null;
   picked = new Set(code ? [code] : []); $("codeSearch").value=""; $("taskTitle").value=""; delete $("taskTitle").dataset.touched; $("newPick").checked = false;
   assignees = new Set();
-  startArea({shape:shape||null, peek:isBoss(), done:s=>{ newShape = s; showNewPanel(); }});
+  startArea({shape:shape||null, peek:true, done:s=>{ newShape = s; showNewPanel(); }});
 }
 function showNewPanel(){
   $("newAreaInfo").textContent = `Område: ${fmtArea(shapeGeom(newShape).getArea())}${newShape.place ? ", " + newShape.place : newShape.area ? ", tegnet frit" : ""}`;
-  renderCodes(); renderChosen(); $("pNew").hidden = false;
-  $("assignList").hidden = !isBoss(); $("assignSelf").hidden = isBoss();
-  if(isBoss()){ renderAssign(); loadPeople().then(renderAssign); }
-  loadPacks();
+  renderCodes(); renderChosen(); renderAssign(); $("pNew").hidden = false;
+  loadPeople().then(renderAssign); loadPacks();
 }
 $("btnNewTask").onclick = ()=>beginNewTask(null);
 $("btnNewArea").onclick = ()=>{ $("pNew").hidden = true;
@@ -1484,7 +1431,7 @@ $("btnNewCancel").onclick = ()=>{ $("pNew").hidden = true; };
 $("btnCreate").onclick = async ()=>{
   if(!picked.size){ toast("Vælg mindst én type"); return; }
   const t = {id:uuid(), name:$("taskTitle").value.trim() || autoTitle(), codes:[...picked],
-    extent:newShape.extent, area:newShape.area, assignees:isBoss() ? [...assignees] : [me], created_by:me, created_at:new Date().toISOString(), archived:false};
+    extent:newShape.extent, area:newShape.area, assignees:[...assignees], created_by:me, created_at:new Date().toISOString(), archived:false};
   if(await saveTask(t)){ $("pNew").hidden = true; await openTask(t); if($("newPick").checked) startPick(t, true); }
 };
 
@@ -2660,7 +2607,7 @@ $("findQ").onkeydown = e=>{ if(e.key==="Enter"){ clearTimeout(findT); findSearch
 
 pane("pTasks");
 applyUser(); renderOutbox();
-if(user && sb && isBoss()) sb.from("people").upsert({name:me, role:user.role}).then(()=>{});
+if(user && sb) sb.from("people").upsert({name:me, role:user.role}).then(()=>{});
 // Someone a boss took off the team is logged out, once nothing they marked is waiting to be sent
 if(user && sb && !isBoss()) isRemoved(me).then(gone=>{
   if(!gone) return;
