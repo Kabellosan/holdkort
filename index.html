@@ -177,6 +177,24 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .spin{display:inline-block;width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-3px}
 @keyframes sp{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.toast{transition:none}.spin{animation:none}}
+/* First-login guide: a few short steps per role, reopened with "?" */
+.guide{position:absolute;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;padding:18px;z-index:35}
+.guide>div{background:var(--card);border-radius:20px;padding:18px 20px 20px;max-width:380px;width:100%;display:flex;flex-direction:column;gap:12px;box-shadow:0 10px 40px #0005}
+.guide .gtop{display:flex;align-items:center;gap:8px}
+.guide .gstep{flex:1;color:var(--ink2);font-size:14px}
+.guide .gic{font-size:44px;line-height:1;text-align:center}
+.guide h2{font-size:22px;text-align:center;margin:0}
+.guide .gtext{font-size:17px;line-height:1.45;display:flex;flex-direction:column;gap:8px}
+.guide .gtext p{margin:0}
+.guide .gcol{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}
+.guide .gcol i{width:22px;height:22px;border-radius:50%;display:block}
+.guide .gdots{display:flex;gap:6px;justify-content:center}
+.guide .gdots span{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.guide .gdots span.on{background:var(--moss2)}
+.guide .gnav{display:flex;gap:10px}
+.guide .gnav .btn{min-height:56px;font-size:17px}
+#who{min-width:0} #whoName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip.help{width:40px;padding:0;justify-content:center;font-weight:700;font-size:18px}
 /* Computer screens: the sheet becomes a fixed sidebar on the left and the map fills the rest. Phones are untouched. */
 @media (min-width:1024px){
   :root{--side:clamp(400px,32vw,500px)}
@@ -213,6 +231,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <button class="chip" id="who" title="Din profil"><span class="dot" id="syncdot"></span><span id="whoName">Navn?</span><span class="badge" id="whoBadge" hidden></span></button>
   <button class="chip unsent" id="btnUnsent" hidden aria-label="Vis ændringer, der ikke er sendt"><span class="dot" style="background:var(--doing)"></span><span><span id="unsentCount">0</span> ikke sendt</span></button>
   <button class="chip" id="btnSearch" style="margin-left:auto" aria-label="Søg sted">⌕ <span>Søg</span></button>
+  <button class="chip help" id="btnHelp" aria-label="Vis vejledning" title="Vejledning" hidden>?</button>
 </div>
 <div class="basemap">
   <button class="flip" id="btnFlip"><span class="ic"></span><span class="tx"></span></button>
@@ -395,6 +414,18 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   </div>
 </div>
 
+<!-- Short guide: shown once after the first login (per role), and again from "?" -->
+<div class="guide" id="guide" hidden role="dialog" aria-modal="true" aria-labelledby="guideTitle">
+  <div>
+    <div class="gtop"><span class="gstep" id="guideStep"></span><button class="btn ghost" id="guideSkip">Spring over ✕</button></div>
+    <div class="gic" id="guideIc" aria-hidden="true"></div>
+    <h2 id="guideTitle"></h2>
+    <div class="gtext" id="guideText"></div>
+    <div class="gdots" id="guideDots"></div>
+    <div class="gnav"><button class="btn" id="guideBack">‹ Tilbage</button><button class="btn primary fill" id="guideNext">Næste ▸</button></div>
+  </div>
+</div>
+
 <!-- New task, full screen -->
 <div class="panel" id="pNew" hidden>
   <header>
@@ -495,6 +526,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <li><i>🗑️</i><span><b>Når en opgave afsluttes,</b> slettes alle markeringer. Tilbage er kun "færdig, 47 af 47" og en log over hvert element: hver statusændring med <i>dag</i>, navn og evt. note og billede. Loggen kan kun ses af koordinatorerne.</span></li>
     </ul>
     <p class="muted" id="profHonest"></p>
+    <button class="btn" id="btnProfGuide">? Vis vejledningen igen</button>
     <button class="btn" id="btnLogout">Log ud</button>
   </div>
 </div>
@@ -764,6 +796,7 @@ function applyUser(){
     : "<b>Du ser kun dine egne opgaver</b> og dem, der er til alle. Koordinatorerne kan se, hvem der er sat på hvilke opgaver.";
   $("bossRow").hidden = !isBoss();
   $("pLogin").hidden = !!user;
+  maybeGuide();
 }
 $("btnLogin").onclick = async ()=>{
   const name = cleanName($("loginName").value), code = $("loginCode").value.trim().toLowerCase();
@@ -793,6 +826,61 @@ $("btnLogout").onclick = ()=>{
   if(pendingCount()){ toast("Send dine ændringer først", 3500); return; }
   user=null; me=""; store.set("user",null); $("pProfile").hidden = true; applyUser();
 };
+
+// ================= GUIDE =================
+// A few short steps, different per role. Shown once per role on this phone (localStorage guide:<role>), and again from "?" or the profile.
+const dotC = c => `<i style="background:${c}"></i>`;
+const COLOR_STEP = {ic:"🎨", t:"Farverne på kortet", h:`<div class="gcol">
+  ${dotC("var(--todo)")}<span><b>Rød</b> = mangler</span>
+  ${dotC("var(--doing)")}<span><b>Gul</b> = i gang</span>
+  ${dotC("var(--done)")}<span><b>Grøn</b> = færdig</span>
+  ${dotC("var(--blocked)")}<span><b>Sort</b> = blokeret, fx en bil holder der</span></div>`};
+const MARK_STEP = {ic:"👆", t:"Marker et sted", h:`<p>Tryk på et sted på kortet. Tryk så <b>Færdig</b>, <b>I gang</b>, <b>Mangler</b> eller <b>🚧 Blokeret</b>.</p>
+  <p>Tryk på flere steder for at markere dem på én gang. <b>Næste ▸</b> viser det nærmeste sted, der mangler.</p>`};
+const SEND_STEP = {ic:"📤", t:"Husk at sende", h:`<p>Det, du markerer, bliver på telefonen, til du trykker <b>Send</b>. Så kan du vente, til du har forbindelse.</p>
+  <p>Din position bliver altid på telefonen.</p>`};
+const HELP_STEP = {ic:"❓", t:"Hjælp, når du skal bruge den", h:`<p>Tryk på <b>?</b> øverst på skærmen for at se det her igen.</p>
+  <p>Tryk på dit navn øverst for at se, hvad der deles, og for at logge ud.</p>`};
+const GUIDES = {
+  crew: [
+    {ic:"👋", t:"Velkommen til Holdkort", h:`<p>Her ser du dine opgaver på kortet og markerer, hvad der er lavet. Så ved alle, hvor I er nået til, uden at ringe rundt.</p>`},
+    {ic:"📋", t:"Vælg en opgave", h:`<p>Tryk på en opgave i listen. Kortet viser så de steder, der hører til.</p><p>Du ser dine egne opgaver og dem, der er til alle.</p>`},
+    COLOR_STEP, MARK_STEP, SEND_STEP, HELP_STEP],
+  helper: [
+    {ic:"👋", t:"Velkommen til Holdkort", h:`<p>Her ser du de opgaver, du er sat på, og markerer, hvad der er lavet.</p>`},
+    {ic:"📋", t:"Vælg en opgave", h:`<p>Tryk på en opgave i listen. Kortet viser så de steder, der hører til.</p><p>Du ser kun de opgaver, der har dit navn på.</p>`},
+    COLOR_STEP, MARK_STEP, SEND_STEP, HELP_STEP],
+  boss: [
+    {ic:"👋", t:"Velkommen, koordinator", h:`<p>Du laver opgaverne og fordeler dem. Holdet markerer på kortet, hvad de har lavet, så du kan følge med.</p>`},
+    {ic:"➕", t:"Lav en opgave", h:`<p>Tryk <b>+ Ny opgave</b>. Tegn området på kortet, eller vælg en by eller en vej.</p><p>Vælg så typerne, fx pur eller fortov, og hvem der skal lave den.</p>`},
+    {ic:"▦", t:"Overblik", h:`<p><b>▦ Overblik</b> viser én type i hele kommunen, farvet efter hvor langt holdet er.</p><p><b>Lilla</b> er steder, der ikke er med i nogen opgave endnu.</p>`},
+    {ic:"👥", t:"Holdet", h:`<p>Under <b>Holdet</b> ser du hver person og deres opgaver. Her kan du også tilføje eller fjerne folk.</p>`},
+    COLOR_STEP,
+    {ic:"📜", t:"Historik", h:`<p>Tryk på et sted og så <b>Historik</b> for at se, hvornår det sidst blev passet, og hvem der gjorde det.</p>`},
+    HELP_STEP]
+};
+let guideAt = 0;
+const guideSteps = () => GUIDES[user?.role] || GUIDES.crew;
+function showGuide(){ guideAt = 0; $("guide").hidden = false; renderGuide(); $("guideNext").focus(); }
+function renderGuide(){
+  const st = guideSteps(), s = st[guideAt], last = guideAt===st.length-1;
+  $("guideStep").textContent = `${guideAt+1} af ${st.length}`;
+  $("guideIc").textContent = s.ic; $("guideTitle").textContent = s.t; $("guideText").innerHTML = s.h;
+  $("guideDots").innerHTML = st.map((_,i)=>`<span class="${i===guideAt?"on":""}"></span>`).join("");
+  $("guideBack").hidden = guideAt===0;
+  $("guideNext").textContent = last ? "Kom i gang ✓" : "Næste ▸";
+  $("guideSkip").hidden = last;
+}
+function closeGuide(){ $("guide").hidden = true; if(user) store.set("guide:"+user.role, true); }
+$("guideNext").onclick = ()=>{ if(guideAt===guideSteps().length-1) closeGuide(); else { guideAt++; renderGuide(); } };
+$("guideBack").onclick = ()=>{ if(guideAt>0){ guideAt--; renderGuide(); } };
+$("guideSkip").onclick = closeGuide;
+$("guide").onclick = e=>{ if(e.target===$("guide")) closeGuide(); };
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !$("guide").hidden) closeGuide(); });
+$("btnHelp").onclick = showGuide;
+$("btnProfGuide").onclick = ()=>{ $("pProfile").hidden = true; showGuide(); };
+// First time this role is used on this phone: show it once
+function maybeGuide(){ $("btnHelp").hidden = !user; if(user && !store.get("guide:"+user.role, false)) showGuide(); }
 
 // ================= SHARED STATE =================
 const sb = (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase) ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;

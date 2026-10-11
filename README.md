@@ -100,6 +100,7 @@ alter publication supabase_realtime add table tasks, progress;
 ## Logins and roles
 - Everyone logs in once with **name + code**. There are three codes, shown in the app as roles: **Koordinator** (the boss code: create, assign and close tasks), **Udførende** (the crew code: your own tasks plus tasks for everyone) and **Hjælper** (only tasks with your own name on them, not the ones for everyone; meant for interns or someone trying it out). A Hjælper is stored as crew in `people`, so they show up in Holdet and can be given tasks like anyone else.
 - Codes are stored as SHA-256 hashes at the top of `index.html` (`CREW_CODE_SHA`, `BOSS_CODE_SHA`, `HELPER_CODE_SHA`). Placeholder codes are `hold`, `chef` and `hjælper`. Change them before real use.
+- The first time someone logs in with a role on a phone, a short guide (6–7 steps, different for each role) walks them through the app. They can skip it at any time, and reopen it with **?** at the top of the screen or from their profile.
 - This login is trust-based: anyone with the anon key could read the database directly. Fine for a crew that trusts each other; switch to Supabase email login before it becomes an official tool.
 
 ## Privacy by design
