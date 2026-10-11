@@ -98,8 +98,8 @@ alter publication supabase_realtime add table tasks, progress;
 **Tending log and photos:** run [`supabase/element_log.sql`](supabase/element_log.sql) as well. Until it's run, the app works as before and simply shows no "sidst passet".
 
 ## Logins and roles
-- Everyone logs in once with **name + code**. The crew code gives the crew view; the boss code also lets you create, assign and close tasks.
-- Codes are stored as SHA-256 hashes at the top of `index.html` (`CREW_CODE_SHA`, `BOSS_CODE_SHA`). Placeholder codes are `hold` and `chef`. Change them before real use.
+- Everyone logs in once with **name + code**. There are three codes, shown in the app as roles: **Koordinator** (the boss code: create, assign and close tasks), **Udførende** (the crew code: your own tasks plus tasks for everyone) and **Hjælper** (only tasks with your own name on them, not the ones for everyone; meant for interns or someone trying it out). A Hjælper is stored as crew in `people`, so they show up in Holdet and can be given tasks like anyone else.
+- Codes are stored as SHA-256 hashes at the top of `index.html` (`CREW_CODE_SHA`, `BOSS_CODE_SHA`, `HELPER_CODE_SHA`). Placeholder codes are `hold`, `chef` and `hjælper`. Change them before real use.
 - This login is trust-based: anyone with the anon key could read the database directly. Fine for a crew that trusts each other; switch to Supabase email login before it becomes an official tool.
 
 ## Privacy by design
