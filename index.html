@@ -65,6 +65,9 @@ h2{font-size:19px;line-height:1.2;margin:0;text-wrap:balance}
 .btn.primary{background:var(--moss);border-color:var(--moss);color:#fff;font-weight:600}
 .btn.ghost{border-color:transparent;background:transparent;min-height:44px;padding:8px 10px;color:var(--ink2)}
 .btn.fill{flex:1}
+.btn.big{min-width:56px;font-size:24px;font-weight:700;padding:8px 12px}
+.parthint{font-size:17px;font-weight:600;background:#2e9e5b1f;border-left:4px solid var(--done);border-radius:8px;padding:10px 12px}
+#elPart{font-weight:600}
 .status{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 .status button{border-radius:var(--r);border:2px solid var(--line);background:var(--card);min-height:56px;font-size:15px;font-weight:600;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
 .status button i{width:14px;height:14px;border-radius:50%}
@@ -362,6 +365,19 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     </div>
   </div>
 
+  <!-- Part of one long element done: tap where you started and where you stopped -->
+  <div class="pane" id="pPart" hidden>
+    <div><div class="eyebrow">Marker et stykke</div><h2 id="partTitle"></h2></div>
+    <div class="parthint" id="partHint"></div>
+    <div class="row" id="partWRow"><span class="grow">Bredde <b class="num" id="partW"></b></span><button class="btn big" id="btnPartLess" aria-label="Smallere">−</button><button class="btn big" id="btnPartMore" aria-label="Bredere">+</button></div>
+    <div class="row"><span class="grow" id="partSum"></span><button class="btn" id="btnPartUndo">↶ Fortryd</button></div>
+    <div class="row">
+      <button class="btn" id="btnPartCancel">Annullér</button>
+      <button class="btn primary fill" id="btnPartOk">Gem stykket</button>
+    </div>
+    <button class="btn ghost" id="btnPartClear" hidden>Fjern de tidligere stykker</button>
+  </div>
+
   <!-- One element -->
   <div class="pane" id="pEl" hidden>
     <div class="row">
@@ -374,6 +390,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button data-s="done"><i style="background:var(--done)"></i><span>Færdig</span></button>
       <button data-s="blocked"><i style="background:var(--blocked);outline:2px solid #fff;outline-offset:-1px"></i><span>🚧 Blokeret</span></button>
     </div>
+    <div class="row" id="partRow" hidden><span class="grow" id="elPart"></span><button class="btn" id="btnPart">📏 Marker et stykke</button></div>
     <div class="row"><span class="muted grow" id="elMeta"></span><button class="btn" id="btnRoute">🧭 Vis vej</button><button class="btn primary" id="btnNext2">Næste ▸</button></div>
     <div class="blockinfo" id="elBlock" hidden></div>
     <div class="row"><input type="text" id="note" placeholder="Note til holdet"><button class="btn" id="btnNote">Gem</button></div>
@@ -636,7 +653,8 @@ function elStyle(f, res){
   if(pick) return shapeStyle(pick.ids.has(f.getId()) ? "pick" : "off", false, res > 3.2);
   const st = statusOf(f.getId()), k = byTypeNow() ? tcol[f.get("elementkode")] || "none" : st;
   const s = shapeStyle(k, selSet.has(f), res > 3.2, k===st ? null : st);
-  return hasMedia(f.getId()) ? [...s, CAMERA] : s;
+  const p = partStyle(f); // a long element partly done gets its done stretch drawn green on top
+  return hasMedia(f.getId()) || p ? [...s, ...(p||[]), ...(hasMedia(f.getId()) ? [CAMERA] : [])] : s;
 }
 // 📷 beside elements that have a photo in the open task, so the boss can see where to look
 const centerPoint = f => { const g = f.getGeometry(), t = g.getType();
@@ -774,7 +792,7 @@ const sheetPad = () => sheetH() + 20;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function toast(t, ms=2600){const el=$("toast"); el.textContent=t; el.classList.add("show"); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove("show"),ms);}
-const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick","pPlace"];
+const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick","pPlace","pPart"];
 const curPane = () => PANES.find(p=>!$(p).hidden);
 function pane(id){ PANES.forEach(p=>$(p).hidden = p!==id); }
 // Only the day is ever shown, never the clock time
@@ -881,7 +899,8 @@ const COLOR_STEP = {ic:"🎨", t:"Farverne på kortet", h:`<div class="gcol">
   ${dotC("var(--done)")}<span><b>Grøn</b> = færdig</span>
   ${dotC("var(--blocked)")}<span><b>Sort</b> = blokeret, fx en bil holder der</span></div>`};
 const MARK_STEP = {ic:"👆", t:"Marker et sted", h:`<p>Tryk på et sted på kortet. Tryk så <b>Færdig</b>, <b>I gang</b>, <b>Mangler</b> eller <b>🚧 Blokeret</b>.</p>
-  <p>Tryk på flere steder for at markere dem på én gang. <b>Næste ▸</b> viser det nærmeste sted, der mangler.</p>`};
+  <p>Tryk på flere steder for at markere dem på én gang. <b>Næste ▸</b> viser det nærmeste sted, der mangler.</p>
+  <p>Kun nået et stykke af en lang hæk eller sti? Tryk <b>📏 Marker et stykke</b>, og tryk så, hvor du startede, og hvor du stoppede.</p>`};
 const SEND_STEP = {ic:"📤", t:"Husk at sende", h:`<p>Det, du markerer, bliver på telefonen, til du trykker <b>Send</b>. Så kan du vente, til du har forbindelse.</p>
   <p>Din position bliver altid på telefonen.</p>`};
 const HELP_STEP = {ic:"❓", t:"Hjælp, når du skal bruge den", h:`<p>Tryk på <b>?</b> øverst på skærmen for at se det her igen.</p>
@@ -957,7 +976,10 @@ async function sendPending(){
   if(sb){
     const paths = await uploadPhotos(all); // first, so a failed upload keeps everything in the outbox
     if(!paths){ toast("Ikke sendt. Prøv igen, når du har forbindelse.", 4000); return; }
-    const {error} = await sb.from("progress").upsert(rows);
+    // A batch upsert sets every column any row names, so rows without parts (queued before the app knew the column) go on their own
+    const withParts = rows.filter(r=>"parts" in r), without = rows.filter(r=>!("parts" in r));
+    let error = null;
+    for(const b of [withParts, without]) if(b.length && !error) ({error} = await sb.from("progress").upsert(b));
     if(error){ toast("Ikke sendt. Prøv igen, når du har forbindelse.", 4000); return; }
     await writeLog(all, paths);
     if(task) loadTaskMedia(task);
@@ -1031,7 +1053,7 @@ async function loadProgress(taskId){
   }
   store.get("prog:"+taskId,[]).forEach(r=>progress.set(r.element_id,r));
 }
-function setStatus(ids, status, note, reason, photo){
+function setStatus(ids, status, note, reason, photo, parts){
   ids.forEach(id=>{ const prev = eff(id) || {}, key = task.id+"|"+id;
     const base = progress.get(id) || {status:"todo", note:""};
     const photos = [...(pending.get(key)?._photos || []), ...(photo ? [photo] : [])];
@@ -1040,8 +1062,12 @@ function setStatus(ids, status, note, reason, photo){
       _was: base.status==="done", _st0: base.status||"todo", _reason0: base.reason||null, _note0: base.note||"", _code: elSrc.getFeatureById(id)?.get("elementkode") || null, _photos: photos};
     // The reason only belongs to "blocked"; any other status clears it
     r.reason = r.status==="blocked" ? (reason ?? prev.reason ?? "Andet") : null;
+    // Stretches done on a long element (only once the database can keep them)
+    if(partsOk){ r.parts = parts !== undefined ? (parts?.length ? parts : null) : (prev.parts ?? null); r._parts0 = (base.parts||[]).map(partKey); }
+    if(parts){ const g = elSrc.getFeatureById(id)?.getGeometry(); if(g){ r._of = Math.round(partTotal(g)); r._line = isLine(g); } }
+    else if(prev._of != null){ r._of = prev._of; r._line = prev._line; }
     // Setting an element back to what the team already has is not a change, so it leaves the outbox
-    if(r.status===base.status && r.note===(base.note||"") && r.reason===(base.reason||null) && !photos.length) pending.delete(key); else pending.set(key, r); });
+    if(r.status===base.status && r.note===(base.note||"") && r.reason===(base.reason||null) && partsKey(r.parts)===partsKey(base.parts) && !photos.length) pending.delete(key); else pending.set(key, r); });
   store.set("pending", [...pending.values()]);
   renderOutbox(); refresh();
   if(autoSend) sendPending();
@@ -1359,6 +1385,7 @@ async function openTask(t){
   areaSrc.addFeature(new ol.Feature(shapeGeom(t)));
   $("btnEditArea").hidden = $("btnPick").hidden = !canManage(t);
   $("btnTaskPhotos").hidden = !sb || !logOk; taskMedia = new Map(); $("taskPhotoN").textContent = "Billeder";
+  if(!partsOk) checkParts().then(()=>{ if(task===t) refresh(); });
   $("workName").textContent = t.name; $("workCodes").textContent = packCodes(t.codes) + scopeOf(t);
   $("workCount").innerHTML = `<span class="spin"></span>`; $("bar").innerHTML = ""; $("dataAge").textContent = "";
   workLegend([]);
@@ -2103,11 +2130,14 @@ async function writeLog(rows, paths){
     const changed = r.status!==st0 || (r.status==="blocked" && (r.reason||null)!==(r._reason0||null));
     const done = r.status==="done" && !r._was, noted = !!r.note && r.note!==r._note0;
     const photos = (r._photos||[]).map(p=>paths[p]).filter(Boolean);
-    if(!changed && !noted && !photos.length) return;
+    const old = new Set(r._parts0||[]), fresh = (r.parts||[]).filter(x=>!old.has(partKey(x)));
+    const part = fresh.length ? {m:Math.round(fresh.reduce((s,x)=>s + (x.m||0), 0)), of:r._of ?? null, u:r._line ? "m" : "m2"} : null;
+    if(!changed && !noted && !photos.length && !part) return;
     const line = {element_id:r.element_id, code:r._code, task_id:r.task_id, day, done, worker: r.worker||null, status: changed ? r.status : null,
       reason: changed && r.status==="blocked" ? r.reason||null : null, note: (done || noted) && r.note ? r.note : null, photo:null};
+    if(part) line.part = part;
     if(!photos.length) add.push(line);
-    else photos.forEach((p,i)=>add.push(i===0 ? {...line, photo:p} : {...line, done:false, status:null, reason:null, note:null, photo:p}));
+    else photos.forEach((p,i)=>add.push(i===0 ? {...line, photo:p} : {...line, done:false, status:null, reason:null, note:null, photo:p, ...(part ? {part:null} : {})}));
     if(done) lastTended.set(r.element_id, day);
   });
   const back = new Date(Date.now() - 864e5), yday = `${back.getFullYear()}-${String(back.getMonth()+1).padStart(2,"0")}-${String(back.getDate()).padStart(2,"0")}`;
@@ -2115,6 +2145,8 @@ async function writeLog(rows, paths){
     await sb.from("element_log").delete().eq("task_id", r.task_id).eq("element_id", r.element_id).eq("done", true).gte("day", yday);
   if(add.length){
     let {error} = await sb.from("element_log").insert(add);
+    // Until the log has the part column, log the rest without it
+    if(error && /'part' column/.test(error.message||"")){ add.forEach(l=>delete l.part); ({error} = await sb.from("element_log").insert(add)); }
     // Until the database has the status columns, keep logging done, notes and photos as before
     if(error && (error.code==="PGRST204" || /'(status|reason|worker)' column/.test(error.message||""))){
       const old = add.map(({status, reason, worker, ...l})=>l).filter(l=>l.done || l.note || l.photo);
@@ -2203,6 +2235,7 @@ async function showHistory(f){
     + (data.length ? data.map(r=>`<div class="hist">
         <div class="when"><b>${esc(longDate(r.day))}</b><span class="muted">${sinceText(r.day)}</span>${histPill(r)}</div>
         ${(isBoss() && r.worker) || taskName(r.task_id) ? `<div class="muted">${[isBoss() && r.worker ? esc(r.worker) : "", taskName(r.task_id) ? esc(taskName(r.task_id)) : ""].filter(Boolean).join(" · ")}</div>` : ""}
+        ${r.part ? `<div>📏 Stykke gjort: ${partTxt(r.part.m, r.part.u==="m")}${r.part.of ? ` af ${partTxt(r.part.of, r.part.u==="m")}` : ""}</div>` : ""}
         ${r.note ? `<div>${esc(r.note)}</div>` : ""}
         ${r.photo ? `<img src="${esc(photoUrl(r.photo))}" loading="lazy" alt="Billede fra ${esc(longDate(r.day))}">` : ""}</div>`).join("")
       : (local.length ? "" : `<p class="muted">Intet registreret endnu. Når elementets status sendes, eller det får en note eller et billede, kommer det her.</p>`));
@@ -2251,6 +2284,210 @@ $("btnTaskPhotos").onclick = showTaskPhotos;
 $("btnHistClose").onclick = ()=>{ $("pHist").hidden = true; };
 $("btnPhotoClose").onclick = $("photoView").onclick = ()=>{ $("photoView").hidden = true; };
 
+// ================= PART OF A LONG ELEMENT DONE =================
+// A long hedge, path or kerb done a bit at a time: the worker taps where they started and where they stopped.
+// Lines: the stretch along the line between the two taps. Areas: what lies within r metres of the taps' path
+// (a band; one tap alone is a circle). Kept on the progress row as parts:[{day, p:[[x,y],…], r (areas only), m (its size)}] in EPSG:25832.
+let partsOk = !sb; // the database has progress.parts (supabase/parts.sql); until then the button stays hidden
+async function checkParts(){ if(partsOk) return; const {error} = await sb.from("progress").select("parts").limit(1); partsOk = !error; }
+const partsOf = id => eff(id)?.parts || [];
+// The database reorders the keys inside each part, so parts are compared by their content
+const partKey = x => `${x.day}|${JSON.stringify(x.p)}|${x.r||""}`;
+const partsKey = ps => (ps||[]).map(partKey).join(";");
+const isLine = g => /LineString/.test(g.getType());
+const canPart = f => !!f && /LineString|Polygon/.test(f.getGeometry().getType());
+const linesOf = g => g.getType()==="LineString" ? [g.getCoordinates()] : g.getType()==="MultiLineString" ? g.getCoordinates() : [];
+const polysOf = g => g.getType()==="Polygon" ? [g.getCoordinates()] : g.getType()==="MultiPolygon" ? g.getCoordinates() : [];
+function segDist(p, a, b){
+  const dx = b[0]-a[0], dy = b[1]-a[1], L2 = dx*dx + dy*dy;
+  const t = L2 ? Math.max(0, Math.min(1, ((p[0]-a[0])*dx + (p[1]-a[1])*dy) / L2)) : 0;
+  return Math.hypot(a[0] + t*dx - p[0], a[1] + t*dy - p[1]);
+}
+function lineTotal(g){ let n = 0; linesOf(g).forEach(cs=>{ for(let i=1; i<cs.length; i++) n += Math.hypot(cs[i][0]-cs[i-1][0], cs[i][1]-cs[i-1][1]); }); return n; }
+function measureAt(g, pt){ // metres along the line to the spot nearest pt (the line's pieces counted one after the other)
+  let best = Infinity, at = 0, run = 0;
+  linesOf(g).forEach(cs=>{ for(let i=1; i<cs.length; i++){
+    const a = cs[i-1], b = cs[i], L = Math.hypot(b[0]-a[0], b[1]-a[1]);
+    const t = L ? Math.max(0, Math.min(1, ((pt[0]-a[0])*(b[0]-a[0]) + (pt[1]-a[1])*(b[1]-a[1])) / (L*L))) : 0;
+    const d = Math.hypot(a[0] + t*(b[0]-a[0]) - pt[0], a[1] + t*(b[1]-a[1]) - pt[1]);
+    if(d < best){ best = d; at = run + t*L; }
+    run += L; } });
+  return at;
+}
+function stretch(g, from, to){ // the bits of line between two measures
+  const out = []; let run = 0;
+  linesOf(g).forEach(cs=>{ let cur = null;
+    for(let i=1; i<cs.length; i++){
+      const a = cs[i-1], b = cs[i], L = Math.hypot(b[0]-a[0], b[1]-a[1]), s = run, e = run + L; run = e;
+      if(!L) continue;
+      if(e < from || s > to){ if(cur){ out.push(cur); cur = null; } continue; }
+      const at = m => [a[0] + (b[0]-a[0])*(m-s)/L, a[1] + (b[1]-a[1])*(m-s)/L];
+      if(!cur) cur = [at(Math.max(from, s))];
+      cur.push(at(Math.min(to, e)));
+    }
+    if(cur && cur.length > 1) out.push(cur); });
+  return out;
+}
+const rangeOf = (g, pts) => { const ms = pts.map(p=>measureAt(g, p)); return [Math.min(...ms), Math.max(...ms)]; };
+function mergeRanges(rs){
+  const out = [];
+  rs.filter(r=>r[1] > r[0]).sort((x,y)=>x[0]-y[0]).forEach(r=>{ const l = out[out.length-1]; if(l && r[0] <= l[1]) l[1] = Math.max(l[1], r[1]); else out.push([...r]); });
+  return out;
+}
+// The band around two taps (round ends; the same tap twice is a circle), counter-clockwise
+function capsule(a, b, r){
+  const ang = Math.atan2(b[1]-a[1], b[0]-a[0]), out = [], N = 10;
+  for(let i=0; i<=N; i++){ const t = ang - Math.PI/2 + Math.PI*i/N; out.push([b[0] + r*Math.cos(t), b[1] + r*Math.sin(t)]); }
+  for(let i=0; i<=N; i++){ const t = ang + Math.PI/2 + Math.PI*i/N; out.push([a[0] + r*Math.cos(t), a[1] + r*Math.sin(t)]); }
+  return out;
+}
+const segsOf = pt => pt.p.length===1 ? [[pt.p[0], pt.p[0]]] : pt.p.slice(1).map((q,i)=>[pt.p[i], q]);
+const bands = pt => segsOf(pt).map(([a,b])=>capsule(a, b, pt.r));
+const closeRing = r => r.length >= 3 ? [...r, r[0]] : [];
+function clipRing(ring, clip){ // Sutherland–Hodgman: a ring cut to a convex counter-clockwise shape
+  let out = ring;
+  for(let i=0; i<clip.length && out.length; i++){
+    const a = clip[i], b = clip[(i+1) % clip.length], inp = out; out = [];
+    const side = p => (b[0]-a[0])*(p[1]-a[1]) - (b[1]-a[1])*(p[0]-a[0]);
+    for(let j=0; j<inp.length; j++){
+      const p = inp[j], q = inp[(j+1) % inp.length], dp = side(p), dq = side(q);
+      const cut = () => { const t = dp / (dp - dq); return [p[0] + (q[0]-p[0])*t, p[1] + (q[1]-p[1])*t]; };
+      if(dq >= 0){ if(dp < 0) out.push(cut()); out.push(q); } else if(dp >= 0) out.push(cut());
+    }
+  }
+  return out;
+}
+function partGeomOf(g, parts){ // the green bit to draw on top of the element
+  if(isLine(g)){
+    const ls = mergeRanges(parts.map(pt=>rangeOf(g, pt.p))).flatMap(([a,b])=>stretch(g, a, b));
+    return ls.length ? new ol.geom.MultiLineString(ls) : null;
+  }
+  const polys = [];
+  parts.forEach(pt=>bands(pt).forEach(c=>polysOf(g).forEach(rs=>{
+    const outer = closeRing(clipRing(rs[0], c)); if(outer.length < 4) return;
+    polys.push([outer, ...rs.slice(1).map(h=>closeRing(clipRing(h, c))).filter(h=>h.length >= 4)]); })));
+  return polys.length ? new ol.geom.MultiPolygon(polys) : null;
+}
+// How much the parts cover: metres of line, or m² of area (counted on a fine grid, so overlapping taps count once)
+function partSize(g, parts){
+  if(!parts.length) return 0;
+  if(isLine(g)) return mergeRanges(parts.map(pt=>rangeOf(g, pt.p))).reduce((s,[a,b])=>s + b - a, 0);
+  const A = g.getArea(); if(!A) return 0;
+  const segs = parts.flatMap(pt=>segsOf(pt).map(([a,b])=>[a, b, pt.r]));
+  const ext = ol.extent.createEmpty();
+  segs.forEach(([a,b,r])=>ol.extent.extend(ext, [Math.min(a[0],b[0])-r, Math.min(a[1],b[1])-r, Math.max(a[0],b[0])+r, Math.max(a[1],b[1])+r]));
+  const box = ol.extent.getIntersection(ext, g.getExtent()); if(ol.extent.isEmpty(box)) return 0;
+  let step = Math.max(0.1, Math.sqrt(A/4000));
+  while(ol.extent.getArea(box) / (step*step) > 40000) step *= 1.5;
+  let n = 0;
+  for(let x = box[0] + step/2; x < box[2]; x += step) for(let y = box[1] + step/2; y < box[3]; y += step){
+    const p = [x, y]; if(segs.some(([a,b,r])=>segDist(p, a, b) <= r) && g.intersectsCoordinate(p)) n++; }
+  return Math.min(A, n*step*step);
+}
+const partTotal = g => isLine(g) ? lineTotal(g) : g.getArea();
+const partTxt = (m, line) => line ? (m < 1000 ? `${Math.round(m)} m` : fmtDist(m)) : fmtArea(m);
+// Share of the element done, worked out once per change of its parts
+function partShare(f){
+  const ps = partsOf(f.getId()), k = partsKey(ps);
+  if(f._sk !== k){ const g = f.getGeometry(), tot = partTotal(g), d = partSize(g, ps); f._sk = k; f._sv = {d, tot, pct: tot ? Math.min(100, Math.round(100*d/tot)) : 0}; }
+  return f._sv;
+}
+const PART_LINE = [{c:"#ffffff", w:12, z:14}, {c:COLORS.done, w:7, z:15}];
+function partStyle(f){
+  const id = f.getId(), ps = partsOf(id);
+  if(!ps.length || statusOf(id)==="done") return null;
+  const k = partsKey(ps) + (selSet.has(f) ? "s" : "");
+  if(f._pk !== k){
+    f._pk = k; const g = f.getGeometry(), pg = partGeomOf(g, ps), up = selSet.has(f) ? 20 : 0;
+    f._ps = !pg ? null : isLine(g)
+      ? PART_LINE.map(s=>new ol.style.Style({geometry:pg, stroke:new ol.style.Stroke({color:s.c, width:s.w, lineCap:"butt"}), zIndex:s.z + up}))
+      : [new ol.style.Style({geometry:pg, fill:new ol.style.Fill({color:COLORS.done + "e6"}), stroke:new ol.style.Stroke({color:COLORS.done, width:1}), zIndex:15 + up})];
+  }
+  return f._ps;
+}
+
+// Marking a stretch: taps on the map, a live green preview, Gem / Annullér
+let partEd = null; // {f, pts, r, old, cleared}
+const partSrc = new ol.source.Vector();
+const PIN = n => new ol.style.Style({image:new ol.style.Circle({radius:14, fill:new ol.style.Fill({color:"#fff"}), stroke:new ol.style.Stroke({color:COLORS.done, width:4})}),
+  text:new ol.style.Text({text:String(n), font:"700 14px system-ui,sans-serif", fill:new ol.style.Fill({color:"#1f3a2e"})}), zIndex:30});
+const partLayer = new ol.layer.Vector({source:partSrc, style:f=>{
+  const k = f.get("kind");
+  if(k==="pin") return PIN(f.get("n"));
+  if(k==="band") return new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffb3", width:1.5, lineDash:[6,6]}), zIndex:23});
+  return f.getGeometry().getType()==="MultiLineString"
+    ? [new ol.style.Style({stroke:new ol.style.Stroke({color:"#fff", width:14}), zIndex:21}), new ol.style.Style({stroke:new ol.style.Stroke({color:COLORS.done, width:9}), zIndex:22})]
+    : new ol.style.Style({fill:new ol.style.Fill({color:COLORS.done + "e6"}), stroke:new ol.style.Stroke({color:"#fff", width:2}), zIndex:21});
+}});
+map.addLayer(partLayer);
+function startPart(){
+  const f = selected; if(!f || !canPart(f) || !task) return;
+  const g = f.getGeometry(), line = isLine(g);
+  let r = 4;
+  if(!line){ // roughly the width of the area, so a tap at the edge of a path still covers it across
+    const per = polysOf(g).flat().reduce((s,ring)=>s + new ol.geom.LineString(ring).getLength(), 0);
+    r = Math.round(Math.min(40, Math.max(1.5, per ? 2*g.getArea()/per : 4)) * 2) / 2;
+  }
+  partEd = {f, pts:[], r, old:partsOf(f.getId()), cleared:false};
+  $("partTitle").textContent = titleOf(f);
+  pane("pPart"); renderPart();
+  map.getView().fit(g.getExtent(), {padding:[80,40,sheetPad(),40], maxZoom:13, duration:350});
+}
+function curPart(){
+  const e = partEd; if(!e) return null;
+  const line = isLine(e.f.getGeometry());
+  if(e.pts.length < (line ? 2 : 1)) return null;
+  return line ? {day:today(), p:e.pts.map(p=>[...p])} : {day:today(), p:e.pts.map(p=>[...p]), r:e.r};
+}
+function renderPart(){
+  const e = partEd, g = e.f.getGeometry(), line = isLine(g), cur = curPart(), n = e.pts.length;
+  partSrc.clear();
+  if(cur){ const pg = partGeomOf(g, [cur]); if(pg) partSrc.addFeature(new ol.Feature({geometry:pg, kind:"new"})); }
+  if(!line && n) bands({p:e.pts, r:e.r}).forEach(c=>partSrc.addFeature(new ol.Feature({geometry:new ol.geom.Polygon([closeRing(c)]), kind:"band"})));
+  e.pts.forEach((p,i)=>partSrc.addFeature(new ol.Feature({geometry:new ol.geom.Point(p), kind:"pin", n:i+1})));
+  $("partHint").textContent = line
+    ? (n===0 ? "Tryk på kortet, hvor du startede." : n===1 ? "Tryk nu, hvor du stoppede." : "Det grønne stykke er gjort. Tryk et andet sted for at flytte, hvor du stoppede.")
+    : (n===0 ? "Tryk på kortet, hvor du startede. Ét tryk giver en cirkel." : n===1 ? "Tryk, hvor du stoppede. Eller gem cirklen, som den er."
+      : "Det grønne stykke er gjort. Gik du rundt om et hjørne, så tryk flere steder.");
+  $("partWRow").hidden = line; $("partW").textContent = `${String(e.r*2).replace(".",",")} m`;
+  const tot = partTotal(g), all = [...e.old, ...(cur ? [cur] : [])], d = partSize(g, all), pct = tot ? Math.min(100, Math.round(100*d/tot)) : 0;
+  $("partSum").innerHTML = cur
+    ? `Dette stykke: <b class="num">${partTxt(partSize(g, [cur]), line)}</b><br><span class="muted">Gjort i alt: ${partTxt(d, line)} af ${partTxt(tot, line)} (${pct}&nbsp;%)</span>`
+    : e.old.length ? `<span class="muted">Gjort før: ${partTxt(d, line)} af ${partTxt(tot, line)} (${pct}&nbsp;%)</span>`
+    : `<span class="muted">Hele stedet: ${partTxt(tot, line)}</span>`;
+  $("btnPartUndo").disabled = !n;
+  $("btnPartOk").disabled = !cur && !e.cleared;
+  $("btnPartOk").textContent = cur || !e.cleared ? "Gem stykket" : "Gem ændringen";
+  $("btnPartClear").hidden = !e.old.length;
+}
+function endPart(){ partEd = null; partSrc.clear(); if(selected) showEl(false); else pane("pWork"); }
+function partTap(c){
+  const g = partEd.f.getGeometry(), line = isLine(g);
+  const p = (line ? g.getClosestPoint(c) : c).map(v=>Math.round(v*10)/10); // lines: the spot on the line nearest the tap
+  if(line && partEd.pts.length >= 2) partEd.pts[1] = p; else partEd.pts.push(p);
+  renderPart();
+}
+$("btnPart").onclick = startPart;
+$("btnPartCancel").onclick = endPart;
+$("btnPartUndo").onclick = ()=>{ partEd.pts.pop(); renderPart(); };
+$("btnPartLess").onclick = ()=>{ partEd.r = Math.max(0.5, Math.round(partEd.r/1.4*2)/2); renderPart(); };
+$("btnPartMore").onclick = ()=>{ partEd.r = Math.min(60, Math.round(partEd.r*1.4*2)/2 || 1); renderPart(); };
+$("btnPartClear").onclick = ()=>{
+  const b = $("btnPartClear");
+  if(!b.dataset.armed){ b.dataset.armed = 1; b.textContent = "Tryk igen for at fjerne dem"; setTimeout(()=>{ delete b.dataset.armed; b.textContent = "Fjern de tidligere stykker"; }, 3000); return; }
+  delete b.dataset.armed; b.textContent = "Fjern de tidligere stykker";
+  partEd.old = []; partEd.cleared = true; renderPart();
+  toast("De tidligere stykker er fjernet. Tryk Gem for at sende det.");
+};
+$("btnPartOk").onclick = ()=>{
+  const e = partEd, g = e.f.getGeometry(), line = isLine(g), id = e.f.getId(), cur = curPart();
+  if(cur) cur.m = Math.round(partSize(g, [cur])*10)/10;
+  const all = [...e.old, ...(cur ? [cur] : [])], tot = partTotal(g), pct = tot ? Math.min(100, Math.round(100*partSize(g, all)/tot)) : 0;
+  setStatus([id], cur && statusOf(id)==="todo" ? "doing" : null, null, null, null, all);
+  endPart();
+  toast(!cur ? "Stykkerne er fjernet" : pct >= 97 ? "Det ser ud til at være hele stedet. Tryk Færdig, hvis det er." : `Stykket er gemt: ${pct}\u00a0% af stedet er gjort`, 4000);
+};
+
 // ================= ELEMENT VIEW =================
 function select(f){
   selected = f; selSet = new Set(f ? [f] : []);
@@ -2275,6 +2512,12 @@ function showEl(zoom){
     $("multiHint").textContent = "Tryk på flere for at markere dem.";
   }
   showReqs([...new Set(fs.map(g=>g.get("elementkode")))]);
+  // One line or area: "📏 Marker et stykke", and how much of it is done so far
+  const canP = n===1 && partsOk && canPart(f) && statusOf(f.getId())!=="done";
+  $("partRow").hidden = !canP;
+  if(canP){ const sh = partShare(f), line = isLine(f.getGeometry());
+    $("elPart").innerHTML = partsOf(f.getId()).length ? `📏 ${partTxt(sh.d, line)} af ${partTxt(sh.tot, line)} gjort <span class="muted">(${sh.pct}&nbsp;%)</span>`
+      : `<span class="muted">Kun nået et stykke?</span>`; }
   $("btnClearSel").textContent = n>1 ? `✕ Ryd ${n} markerede` : "✕ Ryd markerede";
   const sts = new Set(fs.map(g=>statusOf(g.getId())));
   const s = sts.size===1 ? [...sts][0] : null;
@@ -2311,6 +2554,7 @@ $("reqs").addEventListener("toggle", ()=>{ store.set("reqsOpen", $("reqs").open)
 $("reqs").querySelector("summary").addEventListener("click", ()=>setTimeout(()=>{ if($("reqs").open) $("reqs").scrollIntoView({block:"nearest", behavior:"smooth"}); }, 0));
 map.on("singleclick", e=>{
   if(areaEd) return;
+  if(partEd){ partTap(e.coordinate); return; }
   if(pick){ // tapping a spot puts it in the task or takes it out
     const f = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:0})[0]
            || map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:12})[0];
@@ -2426,7 +2670,7 @@ function renderList(){
   const tc = byTypeNow() ? tcol : null;
   $("elList").innerHTML = fs.length ? fs.map(([f,d])=>{ const s=statusOf(f.getId()), pr=eff(f.getId());
     return `<button class="item" data-id="${esc(f.getId())}">${tc ? `<i class="swatch" style="background:${COLORS[tc[f.get("elementkode")]] || COLORS.none}"></i>` : ""}<div class="grow"><div class="t">${esc(titleOf(f))}</div>
-      <div class="s num">${fmtDist(d)}${pr?.worker && s!=="todo" && !isBoss() ? " · "+esc(pr.worker) : ""}${lastTended.has(f.getId()) ? " · passet "+sinceText(lastTended.get(f.getId())).replace(" dage siden"," d. siden") : ""}${s==="blocked" ? " · 🚧 "+esc(pr.reason||"Andet") : ""}${hasMedia(f.getId()) ? " · 📷" : ""}${pr?.note ? " · "+esc(pr.note) : ""}</div></div>
+      <div class="s num">${fmtDist(d)}${pr?.worker && s!=="todo" && !isBoss() ? " · "+esc(pr.worker) : ""}${lastTended.has(f.getId()) ? " · passet "+sinceText(lastTended.get(f.getId())).replace(" dage siden"," d. siden") : ""}${s==="blocked" ? " · 🚧 "+esc(pr.reason||"Andet") : ""}${s!=="done" && pr?.parts?.length ? ` · 📏 ${partShare(f).pct}\u00a0% gjort` : ""}${hasMedia(f.getId()) ? " · 📷" : ""}${pr?.note ? " · "+esc(pr.note) : ""}</div></div>
       <span class="pill ${s}">${LABEL[s]}</span></button>`; }).join("") : `<p class="muted" style="margin:0">Intet tilbage. Godt gået.</p>`;
   $("elList").querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>select(elSrc.getFeatureById(b.dataset.id)));
 }
