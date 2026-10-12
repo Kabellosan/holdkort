@@ -365,6 +365,17 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     </div>
   </div>
 
+  <!-- A task made by tapping the spots on the map, anywhere in the kommune -->
+  <div class="pane" id="pSpots" hidden>
+    <div class="row"><div class="grow"><div class="eyebrow">Tryk på stederne</div><h2 id="spotsName">Ny opgave</h2></div><button class="btn ghost" id="btnSpotsCancel">Annullér</button></div>
+    <div class="muted" id="spotsHint"></div>
+    <div class="row">
+      <span class="grow"><b class="num" id="spotsCount">0</b> <span class="muted" id="spotsOf">steder valgt</span></span>
+      <button class="btn" id="btnSpotsOwn">📍 Eget punkt</button>
+    </div>
+    <button class="btn primary" id="btnSpotsOk">Videre ▸</button>
+  </div>
+
   <!-- Part of one long element done: tap where you started and where you stopped -->
   <div class="pane" id="pPart" hidden>
     <div><div class="eyebrow">Marker et stykke</div><h2 id="partTitle"></h2></div>
@@ -421,6 +432,28 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   </div>
 </div>
 
+<!-- New task: a whole area, or the spots tapped one by one -->
+<div class="ask" id="askNew" hidden role="dialog" aria-modal="true" aria-labelledby="askNewQ">
+  <div>
+    <h2 id="askNewQ">Hvordan vil du lave opgaven?</h2>
+    <button class="btn primary" id="askNewSpots">☝ Tryk på stederne</button>
+    <div class="muted" style="margin-top:-6px">Vælg de enkelte steder på kortet, fx dem maskinen ikke kan komme til. Du kan også sætte et eget punkt.</div>
+    <button class="btn" id="askNewArea">▭ Et helt område</button>
+    <div class="muted" style="margin-top:-6px">Alt af nogle typer inden for et område, fx al pur i Brande.</div>
+    <button class="btn ghost" id="askNewNo">Annullér</button>
+  </div>
+</div>
+
+<!-- Stop picking spots without saving -->
+<div class="ask" id="askSpots" hidden role="dialog" aria-modal="true" aria-labelledby="askSpotsQ">
+  <div>
+    <h2 id="askSpotsQ">Stop uden at gemme?</h2>
+    <div class="muted" id="askSpotsSub"></div>
+    <button class="btn" id="askSpotsYes">Ja, stop</button>
+    <button class="btn primary" id="askSpotsNo">Nej, fortsæt</button>
+  </div>
+</div>
+
 <!-- Why an element is blocked -->
 <div class="ask" id="askBlock" hidden role="dialog" aria-modal="true" aria-labelledby="askBlockQ">
   <div>
@@ -452,15 +485,16 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 <div class="panel" id="pNew" hidden>
   <header>
     <div class="row"><h2 class="grow">Ny opgave</h2><button class="btn ghost" id="btnNewCancel">Annullér</button></div>
-    <div class="section" style="margin:0">Pakker</div>
+    <div class="section" style="margin:0" id="packHead">Pakker</div>
     <div class="packs" id="packList"></div>
     <input type="search" id="codeSearch" placeholder="Søg type: pur, fortov, løs belægning, bænk …" autocomplete="off">
+    <div class="section" style="margin:0" id="spotsHead" hidden>Stederne i opgaven</div>
   </header>
   <div class="list" id="codeList"></div>
   <footer>
     <div class="chosen" id="chosen"></div>
     <input type="text" id="taskTitle" placeholder="Navn, fx 'Pur i Brande, uge 41'">
-    <label class="switch"><input type="checkbox" id="newPick"><span><b>Kun udvalgte steder</b><br><span class="muted">Du vælger dem på kortet bagefter</span></span></label>
+    <label class="switch" id="newPickRow"><input type="checkbox" id="newPick"><span><b>Kun udvalgte steder</b><br><span class="muted">Du vælger dem på kortet bagefter</span></span></label>
     <div class="section" id="assignWho">Hvem skal lave den?</div>
     <div class="people" id="assignList"></div>
     <div class="muted" id="assignSelf" hidden>Opgaven er til dig. Kun en koordinator kan give opgaver til andre.</div>
@@ -650,18 +684,25 @@ function workTcol(){
 }
 const byTypeNow = () => !!(workTcol() && store.get("workMode","status")==="type");
 function elStyle(f, res){
-  if(pick) return shapeStyle(pick.ids.has(f.getId()) ? "pick" : "off", false, res > 3.2);
+  const pin = f.get("_own")!=null ? [OWN_PIN] : []; // a spot set by hand
+  if(pick) return [...(pick.ids.has(f.getId()) ? shapeStyle("pick", false, res > 3.2) : pick.spots ? SPOT_OFF : shapeStyle("off", false, res > 3.2)), ...pin];
   const st = statusOf(f.getId()), k = byTypeNow() ? tcol[f.get("elementkode")] || "none" : st;
   const s = shapeStyle(k, selSet.has(f), res > 3.2, k===st ? null : st);
   const p = partStyle(f); // a long element partly done gets its done stretch drawn green on top
-  return hasMedia(f.getId()) || p ? [...s, ...(p||[]), ...(hasMedia(f.getId()) ? [CAMERA] : [])] : s;
+  return hasMedia(f.getId()) || p || pin.length ? [...s, ...(p||[]), ...(hasMedia(f.getId()) ? [CAMERA] : []), ...pin] : s;
 }
+// While tapping spots: everything the kommune has here, drawn thin and grey so the aerial photo still shows
+const SPOT_OFF = [new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffaa", width:3.5}), image:new ol.style.Circle({radius:7, fill:new ol.style.Fill({color:"#ffffffaa"})})}),
+  new ol.style.Style({stroke:new ol.style.Stroke({color:"#5f6368", width:1.5}), fill:new ol.style.Fill({color:"#9aa0a633"}),
+    image:new ol.style.Circle({radius:5, fill:new ol.style.Fill({color:"#9aa0a6"}), stroke:new ol.style.Stroke({color:"#5f6368", width:1.5})})})];
 // 📷 beside elements that have a photo in the open task, so the boss can see where to look
 const centerPoint = f => { const g = f.getGeometry(), t = g.getType();
   if(t==="Point") return g;
   if(t==="Polygon") return g.getInteriorPoint();
   if(t==="MultiPolygon") return new ol.geom.Point(g.getInteriorPoints().getCoordinates()[0]);
   return new ol.geom.Point(g.getClosestPoint(ol.extent.getCenter(g.getExtent()))); };
+// A spot set by hand on the map (not in the kommune's data)
+const OWN_PIN = new ol.style.Style({zIndex:41, text:new ol.style.Text({text:"📍", font:"22px sans-serif", offsetY:-18})});
 const CAMERA = new ol.style.Style({geometry:centerPoint, zIndex:40,
   text:new ol.style.Text({text:"📷", font:"20px sans-serif", offsetX:18, offsetY:-14, backgroundFill:new ol.style.Fill({color:"#ffffffdd"}), padding:[2,3,0,3]})});
 function shapeStyle(s, sel, far, st){ // st: the status, when s is a type colour
@@ -792,7 +833,7 @@ const sheetPad = () => sheetH() + 20;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function toast(t, ms=2600){const el=$("toast"); el.textContent=t; el.classList.add("show"); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove("show"),ms);}
-const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick","pPlace","pPart"];
+const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick","pPlace","pPart","pSpots"];
 const curPane = () => PANES.find(p=>!$(p).hidden);
 function pane(id){ PANES.forEach(p=>$(p).hidden = p!==id); }
 // Only the day is ever shown, never the clock time
@@ -807,7 +848,7 @@ const longDate = day => new Date(day + "T12:00").toLocaleDateString("da-DK",{day
 function fmtDist(m){ return m<1000 ? `${Math.round(m/10)*10} m` : `${(m/1000).toFixed(1).replace(".",",")} km`; }
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2));
 // "Pur (HA3)": the plain name with the kommune's code, so crew and the GIS data use the same words
-const typeName = c => CODES[c] ? `${CODES[c]} (${c})` : c;
+const typeName = c => !c ? "Eget punkt" : CODES[c] ? `${CODES[c]} (${c})` : c;
 let packs = store.get("packs", []); // saved groups of types, see PACKAGES
 // Types named by the packages they fill (biggest first), then any other types: "Fast belægning + Pur"
 function packNames(codes){
@@ -909,7 +950,7 @@ const GUIDES = {
   crew: [
     {ic:"👋", t:"Velkommen til Holdkort", h:`<p>Her ser du dine opgaver på kortet og markerer, hvad der er lavet. Så ved alle, hvor I er nået til, uden at ringe rundt.</p>`},
     {ic:"📋", t:"Vælg en opgave", h:`<p>Tryk på en opgave i listen. Kortet viser så de steder, der hører til.</p><p>Du ser dine egne opgaver og dem, der er til alle.</p>`},
-    {ic:"➕", t:"Lav din egen opgave", h:`<p>Tryk <b>+ Ny opgave</b>, tegn området og vælg typerne. Opgaven er kun til dig.</p><p>Du kan selv afslutte de opgaver, du har lavet.</p>`},
+    {ic:"➕", t:"Lav din egen opgave", h:`<p>Tryk <b>+ Ny opgave</b>. Tegn et område og vælg typerne, eller tryk på de enkelte steder på kortet. Opgaven er kun til dig.</p><p>Du kan selv afslutte de opgaver, du har lavet.</p>`},
     COLOR_STEP, MARK_STEP, SEND_STEP, HELP_STEP],
   helper: [
     {ic:"👋", t:"Velkommen til Holdkort", h:`<p>Her ser du de opgaver, du er sat på, og markerer, hvad der er lavet.</p>`},
@@ -917,7 +958,7 @@ const GUIDES = {
     COLOR_STEP, MARK_STEP, SEND_STEP, HELP_STEP],
   boss: [
     {ic:"👋", t:"Velkommen, koordinator", h:`<p>Du laver opgaverne og fordeler dem. Holdet markerer på kortet, hvad de har lavet, så du kan følge med.</p>`},
-    {ic:"➕", t:"Lav en opgave", h:`<p>Tryk <b>+ Ny opgave</b>. Tegn området på kortet, eller vælg en by eller en vej.</p><p>Vælg så typerne, fx pur eller fortov, og hvem der skal lave den.</p>`},
+    {ic:"➕", t:"Lav en opgave", h:`<p>Tryk <b>+ Ny opgave</b>. Vælg <b>Et helt område</b>: tegn det på kortet, og vælg typerne, fx al pur i Brande.</p><p>Eller vælg <b>Tryk på stederne</b>: tryk på de enkelte steder, der skal med. Med <b>📍 Eget punkt</b> sætter du et sted, kommunens kort ikke har.</p>`},
     {ic:"▦", t:"Overblik", h:`<p><b>▦ Overblik</b> viser én type i hele kommunen, farvet efter hvor langt holdet er.</p><p><b>Lilla</b> er steder, der ikke er med i nogen opgave endnu.</p>`},
     {ic:"👥", t:"Holdet", h:`<p>Under <b>Holdet</b> ser du hver person og deres opgaver. Her kan du også tilføje eller fjerne folk.</p>`},
     COLOR_STEP,
@@ -1027,6 +1068,7 @@ const AREA_FALLBACK = "Databasen kan ikke gemme frie former endnu. Området er g
 async function saveTask(t){
   if(sb){
     let {error} = await sb.from("tasks").insert(t);
+    if(t.spots && /spots/.test(error?.message||"")){ toast("Databasen er ikke klar til opgaver med udvalgte steder endnu (supabase/spots.sql mangler).", 6000); return false; }
     if(noAreaCol(error)){ if(t.area) toast(AREA_FALLBACK, 5000); delete t.area; ({error} = await sb.from("tasks").insert(t)); }
     if(error){ toast(/row-level security/.test(error.message||"") ? "Opgaven blev ikke gemt: du kan kun lave opgaver til dig selv." : "Opgaven blev ikke gemt: " + error.message, 5000); return false; }
   }
@@ -1142,6 +1184,34 @@ async function fetchElements(codes, extent, area){
   const shape = prepShape({extent, area});
   return fetchLayers([`${codeIn(codes)} AND BBOX(wkb_geometry,${extent.join(",")})`, codeIn(codes)], g=>inShape(g, shape));
 }
+// A task of hand-picked spots (tasks.spots) asks only for the picked types, in a small box around each spot,
+// and keeps exactly the picked elements. Spots set by hand ("egen:…") aren't the kommune's, so they're made here.
+const ownFeat = s => { const f = new ol.Feature({geometry:new ol.geom.Point(s.xy), _own:s.name || ""}); f.setId(s.id); return f; };
+function mergeBoxes(boxes){ // boxes within 50 m of each other become one, so spots on the same street are one box
+  const out = [];
+  boxes.forEach(b=>{ b = b.slice(); let hit;
+    while((hit = out.findIndex(o=>ol.extent.intersects(ol.extent.buffer(o, 50), b))) >= 0) b = ol.extent.extend(out.splice(hit, 1)[0], b);
+    out.push(b); });
+  return out;
+}
+async function fetchSpots(spots){
+  const ks = spots.filter(s=>s.code), want = new Set(ks.map(s=>s.id)), got = new Map();
+  if(ks.length){
+    const codes = [...new Set(ks.map(s=>s.code))], boxes = mergeBoxes(ks.map(s=>ol.extent.buffer(s.box, 2)));
+    for(let i = 0; i < boxes.length; i += 30){ // keeps each request's address short
+      const part = boxes.slice(i, i+30), or = part.map(b=>`BBOX(wkb_geometry,${b.map(Math.round).join(",")})`).join(" OR ");
+      // if the server won't take several boxes in one filter, ask for the types in the whole kommune (as Overblik does)
+      const fs = await fetchLayers([`${codeIn(codes)} AND (${or})`, codeIn(codes)], g=>part.some(b=>g.intersectsExtent(b)));
+      fs.forEach(f=>{ if(want.has(f.getId())) got.set(f.getId(), f); });
+    }
+  }
+  return spots.map(s=>{
+    if(!s.code) return ownFeat(s);
+    const f = got.get(s.id);
+    if(f && !f.get("vejnavn") && s.street) f.set("_street", s.street);
+    return f;
+  }).filter(Boolean);
+}
 // Every element of one type in the whole kommune (overview)
 const fetchKommune = code => fetchLayers([codeIn([code])], ()=>true);
 
@@ -1149,7 +1219,7 @@ const fetchKommune = code => fetchLayers([codeIn([code])], ()=>true);
 const shapeGeom = s => s.area ? new ol.geom.Polygon(s.area.coordinates) : ol.geom.Polygon.fromExtent(s.extent);
 const prepShape = s => ({extent:s.extent, poly: s.area ? new ol.geom.Polygon(s.area.coordinates) : null});
 const inShape = (g, s) => s.poly ? hitsArea(g, s.poly) : g.intersectsExtent(s.extent);
-const areaKey = t => JSON.stringify(t.area || t.extent);
+const areaKey = t => JSON.stringify(t.spots || t.area || t.extent);
 function paths(g){ // a geometry as lists of coordinates (lines and rings)
   switch(g.getType()){
     case "Point": return [[g.getCoordinates()]];
@@ -1187,6 +1257,9 @@ async function nameByStreet(feats, extent){
   const pad = 60, ext = [extent[0]-pad, extent[1]-pad, extent[2]+pad, extent[3]+pad];
   let roads;
   try{ roads = await wfs(ROAD_LAYER, {bbox: ext.join(",") + ",EPSG:25832"}); }catch(e){ return; }
+  nameNear(needs, roads);
+}
+function nameNear(needs, roads){
   roads = roads.filter(r=>r.get("vejnavn"));
   if(!roads.length) return;
   const idx = new ol.source.Vector({features:roads});
@@ -1197,11 +1270,13 @@ async function nameByStreet(feats, extent){
   });
 }
 function titleOf(f){
+  if(f.get("_own")!=null) return f.get("_own") || "Eget punkt";
   const name = typeName(f.get("elementkode"));
   const street = f.get("vejnavn") || f.get("_street");
   return street ? `${name} · ${street}` : name;
 }
 function subOf(f){
+  if(f.get("_own")!=null) return "Eget punkt · ikke i kommunens kort";
   const p = f.getProperties(), bits = [];
   if(p.geometri_areal) bits.push(`${Math.round(p.geometri_areal)} m²`);
   if(p.geometri_laengde) bits.push(`${Math.round(p.geometri_laengde)} m`);
@@ -1351,7 +1426,11 @@ async function elCacheGet(id){ try{ const r = await (await caches.open(EL_CACHE)
 async function elCachePut(id, feats, key){ try{ await (await caches.open(EL_CACHE)).put(elKey(id), new Response(JSON.stringify({saved:Date.now(), key, geojson:fmt.writeFeatures(feats)}))); }catch(e){} }
 async function elCacheDel(id){ try{ await (await caches.open(EL_CACHE)).delete(elKey(id)); }catch(e){} }
 const rushHour = () => { const h = new Date().getHours(); return h >= 6 && h < 9; };
-async function downloadElements(t){ const fs = await fetchElements(t.codes, t.extent, t.area); await nameByStreet(fs, t.extent); await elCachePut(t.id, fs, areaKey(t)); return fs; }
+async function downloadElements(t){
+  const fs = t.spots ? await fetchSpots(t.spots) : await fetchElements(t.codes, t.extent, t.area);
+  if(!t.spots) await nameByStreet(fs, t.extent);
+  await elCachePut(t.id, fs, areaKey(t)); return fs;
+}
 function showDataAge(saved){
   if(!saved){ $("dataAge").textContent = ""; return; }
   $("dataAge").textContent = `Kortdata hentet ${ago(new Date(saved).toISOString())} · gemt på telefonen`;
@@ -1362,6 +1441,7 @@ let taskAll = [], pick = null; // pick: {t, ids} while a boss picks spots
 const onlyPicked = (t, fs) => { if(!t.elements) return fs; const ids = new Set(t.elements); return fs.filter(f=>ids.has(f.getId())); };
 function swapElements(fs){
   taskAll = fs;
+  if(pick?.spots) return;
   if(pick){ elSrc.clear(); elSrc.addFeatures(fs); pickCount(); return; }
   fs = onlyPicked(task, fs);
   loadLastTended(fs.map(f=>f.getId())).then(m=>{ if(task){ lastTended = m; refresh(); } });
@@ -1382,8 +1462,8 @@ async function openTask(t){
   task = t; selected = null; selSet.clear(); elSrc.clear(); areaSrc.clear(); clearTimeout(refreshTimer);
   taskAll = []; pick = null;
   geo.setTracking(true);
-  areaSrc.addFeature(new ol.Feature(shapeGeom(t)));
-  $("btnEditArea").hidden = $("btnPick").hidden = !canManage(t);
+  if(!t.spots) areaSrc.addFeature(new ol.Feature(shapeGeom(t))); // hand-picked spots have no area to outline
+  $("btnPick").hidden = !canManage(t); $("btnEditArea").hidden = !canManage(t) || !!t.spots;
   $("btnTaskPhotos").hidden = !sb || !logOk; taskMedia = new Map(); $("taskPhotoN").textContent = "Billeder";
   if(!partsOk) checkParts().then(()=>{ if(task===t) refresh(); });
   $("workName").textContent = t.name; $("workCodes").textContent = packCodes(t.codes) + scopeOf(t);
@@ -1410,6 +1490,8 @@ async function openTask(t){
   loadLastTended(feats.map(f=>f.getId())).then(m=>{ if(task===t){ lastTended = m; refresh(); } });
   loadTaskMedia(t);
   if(!feats.length && !t.elements) toast("Ingen elementer af den type i området", 4000);
+  const gone = t.spots ? t.elements.length - feats.length : 0;
+  if(gone > 0) toast(`${gone} af de valgte steder findes ikke længere i kommunens kort`, 5000);
   // Stale data: refresh quietly later, spread out over a few minutes so phones don't all ask at once
   if(cached && Date.now() - cached.saved > DAY && !rushHour())
     refreshTimer = setTimeout(()=>{ if(task===t && navigator.onLine && !rushHour()) refreshElements(t, false); }, 15000 + Math.random()*180000);
@@ -1475,12 +1557,126 @@ async function savePick(ids){
   t.elements = ids; store.set("tasks", tasks);
   endPick(); toast(ids ? `${ids.length} ${ids.length===1?"sted":"steder"} gemt` : "Hele området er med i opgaven");
 }
-$("btnPick").onclick = ()=>{ if(task) startPick(task, false); };
+$("btnPick").onclick = ()=>{ if(task) task.spots ? startSpots(task) : startPick(task, false); };
 $("btnPickCancel").onclick = endPick;
 $("btnPickAll").onclick = ()=>savePick(null);
 $("btnPickOk").onclick = ()=>{
   if(!pick.ids.size){ toast("Tryk på mindst ét sted, eller vælg Hele området", 4000); return; }
   savePick(taskAll.map(f=>f.getId()).filter(id=>pick.ids.has(id)));
+};
+
+// ================= HAND-PICKED SPOTS: a task made by tapping the places on the map =================
+// For a few spots spread around town (e.g. where the machine can't go): no area to draw, no types to choose.
+// When zoomed in, the map shows everything the kommune has around what you look at (fetched for that view only);
+// tapping an element puts it in the task, tapping again takes it out. "Eget punkt" adds a spot the kommune doesn't have.
+// The same element can be in other tasks too. Stored as tasks.elements (the ids) and tasks.spots (what's needed
+// to fetch them again, see fetchSpots); a spot set by hand is {id:"egen:…", name, xy}.
+const SPOT_VIEW = 5e6; // m²: how small the view must be before the phone asks the kommune what's there
+let spotT = null, newSpots = null; // newSpots: the picked spots while the new-task panel is open
+const spotsOf = p => [...p.info.values()].filter(s=>p.ids.has(s.id));
+function spotsExtent(sp){
+  const e = ol.extent.createEmpty();
+  sp.forEach(s=>ol.extent.extend(e, s.box || [s.xy[0], s.xy[1], s.xy[0], s.xy[1]]));
+  return ol.extent.buffer(e, 40).map((v,i)=>i<2 ? Math.floor(v) : Math.ceil(v));
+}
+// t: the task being changed, or null for a new one. from: the spots of a new task, when going back to change them
+function startSpots(t, from){
+  if(t && (task!==t || !taskAll.length) && t.elements?.length){ toast("Kortet er ikke hentet endnu. Prøv igen om lidt.", 4000); return; }
+  closeOverview(); clearTimeout(refreshTimer);
+  const keep = from ? from.keep : t ? taskAll.filter(f=>(t.elements||[]).includes(f.getId())) : [];
+  pick = {spots:true, t, ids:new Set(from ? from.ids : t?.elements || []), info:new Map((from ? [...from.info.values()] : t?.spots || []).map(s=>[s.id, s])),
+    got:[], busy:0, own:false};
+  selected = null; selSet.clear(); elSrc.clear(); areaSrc.clear();
+  elSrc.addFeatures(keep);
+  $("spotsName").textContent = t ? t.name : "Ny opgave";
+  $("btnSpotsOk").textContent = t ? "Gem steder" : "Videre ▸";
+  pane("pSpots"); spotsCount();
+  if(keep.length && !from) map.getView().fit(spotsExtent(spotsOf(pick)), {padding:[70,30,sheetPad(),30], maxZoom:11, duration:300});
+  spotLoad();
+}
+function spotsCount(){
+  const p = pick, n = p.ids.size;
+  $("spotsCount").textContent = n; $("spotsOf").textContent = `${n===1 ? "sted" : "steder"} valgt`;
+  $("btnSpotsOwn").textContent = p.own ? "✕ Intet punkt" : "📍 Eget punkt";
+  $("btnSpotsOwn").classList.toggle("on", p.own);
+  const v = map.getView().calculateExtent(map.getSize());
+  $("spotsHint").innerHTML = p.own ? "<b>Tryk på kortet, hvor punktet skal være.</b>"
+    : p.busy ? `<span class="spin"></span> Henter kommunens elementer her …`
+    : ol.extent.getArea(v) > SPOT_VIEW ? "Zoom ind på kortet for at se kommunens elementer. Brug <b>⌕ Søg</b> for at finde en by eller vej."
+    : "Tryk på de steder, der skal med. Tryk igen for at fjerne et. <b>Blå</b> er med.";
+  elLayer.changed();
+}
+// Ask the kommune for every element around the view, once per place: only when zoomed in, and a bit wider than the screen
+async function spotLoad(){
+  const p = pick; if(!p?.spots) return;
+  const v = map.getView().calculateExtent(map.getSize());
+  if(ol.extent.getArea(v) > SPOT_VIEW || p.got.some(e=>ol.extent.containsExtent(e, v))){ spotsCount(); return; }
+  const ext = ol.extent.buffer(v, Math.min(ol.extent.getWidth(v), ol.extent.getHeight(v)) * .25).map(Math.round);
+  p.busy++; spotsCount();
+  try{
+    const fs = await fetchLayers([`BBOX(wkb_geometry,${ext.join(",")})`], g=>g.intersectsExtent(ext));
+    if(pick!==p) return;
+    p.got.push(ext);
+    nameNear(fs.filter(f=>!f.get("vejnavn")), fs.filter(f=>f.getId().startsWith("vej_sti:")));
+    elSrc.addFeatures(fs.filter(f=>f.get("elementkode") && !elSrc.getFeatureById(f.getId())));
+  }catch(e){ console.error(e); if(pick===p) toast("Kunne ikke hente kommunens kort her. Flyt kortet lidt for at prøve igen.", 4000); }
+  finally{ p.busy--; if(pick===p) spotsCount(); }
+}
+map.on("moveend", ()=>{ if(pick?.spots){ clearTimeout(spotT); spotT = setTimeout(spotLoad, 400); } });
+// Under the finger there are often several elements (a hedge on a lawn beside a road): take the smallest
+const spotSize = f => { const g = f.getGeometry(), ty = g.getType();
+  return /Point/.test(ty) ? 0 : /LineString/.test(ty) ? 2 * (g.getLength?.() || 0) : g.getArea?.() || 0; };
+function spotTap(e){
+  const p = pick;
+  if(p.own){ // a spot set by hand, where the kommune has nothing registered
+    const name = window.prompt("Hvad skal der laves her? Skriv et kort navn, fx 'Bed ved kirken'.", "");
+    if(name===null) return;
+    const s = {id:"egen:" + uuid(), name:name.trim().slice(0, 80) || "Eget punkt", xy:e.coordinate.map(Math.round)};
+    p.info.set(s.id, s); p.ids.add(s.id); elSrc.addFeature(ownFeat(s)); p.own = false;
+    spotsCount(); toast(`📍 ${s.name} er med`); return;
+  }
+  const hits = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:12});
+  if(!hits.length) return;
+  const f = hits.slice().sort((a,b)=>spotSize(a) - spotSize(b))[0], id = f.getId();
+  if(p.ids.has(id)){
+    p.ids.delete(id);
+    if(f.get("_own")!=null){ p.info.delete(id); elSrc.removeFeature(f); }
+    toast(`${titleOf(f)} er taget ud`);
+  } else {
+    const [x0,y0,x1,y1] = f.getGeometry().getExtent();
+    p.info.delete(id); // a spot taken out and put back goes to the end, in tapping order
+    p.info.set(id, {id, code:f.get("elementkode"), box:[Math.floor(x0), Math.floor(y0), Math.ceil(x1), Math.ceil(y1)], street:f.get("vejnavn") || f.get("_street") || null});
+    p.ids.add(id);
+    toast(`${titleOf(f)} er med`);
+  }
+  spotsCount();
+}
+function endSpots(){ const p = pick; pick = null; clearTimeout(spotT); elSrc.clear(); pane("pTasks"); return p; }
+const spotsLeave = ()=>{ $("askSpots").hidden = true; const p = endSpots(); if(p.t) openTask(p.t); };
+$("btnSpotsCancel").onclick = ()=>{
+  const n = pick.ids.size;
+  if(!n || pick.t){ spotsLeave(); return; }
+  $("askSpotsSub").textContent = `${n} ${n===1 ? "valgt sted" : "valgte steder"} bliver ikke gemt.`;
+  $("askSpots").hidden = false; $("askSpotsNo").focus();
+};
+$("askSpotsYes").onclick = ()=>{ newSpots = null; spotsLeave(); };
+$("askSpotsNo").onclick = ()=>{ $("askSpots").hidden = true; };
+$("btnSpotsOwn").onclick = ()=>{ pick.own = !pick.own; spotsCount(); };
+$("btnSpotsOk").onclick = async ()=>{
+  const p = pick, sp = spotsOf(p);
+  if(!sp.length){ toast("Tryk på mindst ét sted på kortet", 4000); return; }
+  const keep = elSrc.getFeatures().filter(f=>p.ids.has(f.getId()));
+  if(!p.t){ newSpots = {ids:new Set(p.ids), info:p.info, keep}; endSpots(); showNewPanel(); return; }
+  const t = p.t, patch = {elements:sp.map(s=>s.id), spots:sp, codes:[...new Set(sp.filter(s=>s.code).map(s=>s.code))], extent:spotsExtent(sp)};
+  if(sb){
+    $("btnSpotsOk").disabled = true;
+    const {error} = await sb.from("tasks").update(patch).eq("id", t.id);
+    $("btnSpotsOk").disabled = false;
+    if(error){ toast("Stederne blev ikke gemt. Tjek forbindelsen og prøv igen.", 4000); return; }
+  }
+  Object.assign(t, patch); store.set("tasks", tasks);
+  await elCachePut(t.id, keep, areaKey(t)); // already on the phone, so no need to ask the kommune again
+  endSpots(); toast(`${sp.length} ${sp.length===1 ? "sted" : "steder"} gemt`); openTask(t);
 };
 
 // ================= NEW TASK (full screen) =================
@@ -1514,6 +1710,7 @@ function codeChecks(el, q, set, changed, here){
 function renderCodes(){ codeChecks($("codeList"), $("codeSearch").value, picked, renderChosen, newHere); }
 const sameCodes = (a, b) => a.length===b.size && a.every(c=>b.has(c));
 function renderChosen(){
+  if(newSpots) return; // a task of tapped spots gets its types from the spots
   // whole packages show as one chip, so a big package doesn't push the type list off the screen
   const chips = packNames([...picked]).map(n=>packs.some(p=>p.name===n) ? `📦 ${n}` : n);
   $("chosen").innerHTML = (chips.map(n=>`<span>${esc(n)}</span>`).join("") || `<span class="muted" style="background:none;color:var(--ink2);padding:0">Ingen typer valgt</span>`)
@@ -1529,7 +1726,13 @@ async function loadPacks(){
   if(sb){ const {data, error} = await sb.from("packages").select("*").order("name"); if(!error){ packs = data; store.set("packs", packs); } }
   if(!$("pNew").hidden) renderChosen();
 }
-const autoTitle = () => packNames([...picked]).join(" + ") + (picked.size && newShape?.place ? " i " + newShape.place : "");
+const autoTitle = () => newSpots ? spotsTitle() : packNames([...picked]).join(" + ") + (picked.size && newShape?.place ? " i " + newShape.place : "");
+// e.g. "Pur + Fortov, 7 steder på Storegade, Østergade"
+function spotsTitle(){
+  const sp = spotsOf(newSpots), n = sp.length, names = packNames([...picked]);
+  const streets = [...new Set(sp.map(s=>s.street).filter(Boolean))];
+  return `${names.length ? names.join(" + ") + ", " : ""}${n} ${n===1 ? "sted" : "steder"}${streets.length && streets.length <= 2 ? " på " + streets.join(", ") : ""}`;
+}
 const packOn = p => p.codes.length > 0 && p.codes.every(c=>picked.has(c));
 function renderPacks(){
   $("packList").innerHTML = packs.map(p=>`<button data-k="${esc(p.id)}" class="${packOn(p)?"on":""}">📦 ${esc(p.name)}</button>`).join("")
@@ -1602,25 +1805,55 @@ async function delPack(p){
 // Step 1: draw the area on the map. Step 2: pick types and people.
 let newHere = null; // types counted in the place the task was started from: {code: count}
 function beginNewTask(code, shape, here){
-  newHere = here || null;
+  newHere = here || null; newSpots = null;
   picked = new Set(code ? [code] : []); $("codeSearch").value=""; $("taskTitle").value=""; delete $("taskTitle").dataset.touched; $("newPick").checked = false;
   assignees = new Set();
   startArea({shape:shape||null, peek:isBoss(), done:s=>{ newShape = s; showNewPanel(); }});
 }
 function showNewPanel(){
-  $("newAreaInfo").textContent = `Område: ${fmtArea(shapeGeom(newShape).getArea())}${newShape.place ? ", " + newShape.place : newShape.area ? ", tegnet frit" : ""}`;
-  renderCodes(); renderChosen(); $("pNew").hidden = false;
+  const sp = !!newSpots;
+  ["packHead","packList","codeSearch","newPickRow"].forEach(id=>$(id).hidden = sp); $("spotsHead").hidden = !sp;
+  $("btnNewArea").textContent = sp ? "Ret steder" : "Ret område";
+  if(sp){
+    const list = spotsOf(newSpots), n = list.length, byId = new Map(newSpots.keep.map(f=>[f.getId(), f]));
+    picked = new Set(list.filter(s=>s.code).map(s=>s.code));
+    $("newAreaInfo").textContent = `${n} ${n===1 ? "sted" : "steder"} valgt på kortet`;
+    $("codeList").innerHTML = list.map((s,i)=>{ const f = byId.get(s.id);
+      return `<div class="code-item"><span class="num muted">${i+1}</span><span class="grow">${esc(f ? titleOf(f) : s.name || typeName(s.code))}${f && subOf(f) ? `<br><span class="muted">${esc(subOf(f))}</span>` : ""}</span>${s.code ? `<span class="code">${esc(s.code)}</span>` : "📍"}</div>`; }).join("");
+    if(!$("taskTitle").dataset.touched) $("taskTitle").value = autoTitle();
+    $("chosen").innerHTML = "";
+  } else {
+    $("newAreaInfo").textContent = `Område: ${fmtArea(shapeGeom(newShape).getArea())}${newShape.place ? ", " + newShape.place : newShape.area ? ", tegnet frit" : ""}`;
+    renderCodes(); renderChosen();
+  }
+  $("pNew").hidden = false;
   $("assignWho").hidden = $("assignList").hidden = !isBoss(); $("assignSelf").hidden = isBoss();
   if(isBoss()){ renderAssign(); loadPeople().then(renderAssign); }
-  loadPacks();
+  if(!sp) loadPacks();
 }
-$("btnNewTask").onclick = ()=>beginNewTask(null);
+// "+ Ny opgave": a whole area of some types, or the spots tapped one by one
+function askNewTask(){ $("askNew").hidden = false; $("askNewSpots").focus(); }
+$("askNewSpots").onclick = ()=>{ $("askNew").hidden = true; newSpots = null; picked = new Set(); assignees = new Set();
+  $("taskTitle").value = ""; delete $("taskTitle").dataset.touched; startSpots(null); };
+$("askNewArea").onclick = ()=>{ $("askNew").hidden = true; beginNewTask(null); };
+$("askNewNo").onclick = ()=>{ $("askNew").hidden = true; };
+$("btnNewTask").onclick = askNewTask;
 $("btnNewArea").onclick = ()=>{ $("pNew").hidden = true;
+  if(newSpots){ startSpots(null, newSpots); return; }
   startArea({shape:newShape, done:s=>{ if(areaKey(s)!==areaKey(newShape)) newHere = null; newShape = s; showNewPanel(); }, cancel:()=>{ $("pNew").hidden = false; }}); };
 $("codeSearch").oninput = renderCodes;
 $("taskTitle").oninput = ()=>$("taskTitle").dataset.touched = 1;
-$("btnNewCancel").onclick = ()=>{ $("pNew").hidden = true; };
+$("btnNewCancel").onclick = ()=>{ $("pNew").hidden = true; newSpots = null; };
 $("btnCreate").onclick = async ()=>{
+  if(newSpots){
+    const sp = spotsOf(newSpots), keep = newSpots.keep;
+    const t = {id:uuid(), name:$("taskTitle").value.trim() || autoTitle(), codes:[...picked], extent:spotsExtent(sp), area:null,
+      elements:sp.map(s=>s.id), spots:sp, assignees:isBoss() ? [...assignees] : [me], created_by:me, created_at:new Date().toISOString(), archived:false};
+    if(!await saveTask(t)) return;
+    t.made_by_crew = !isBoss(); newSpots = null; $("pNew").hidden = true;
+    await elCachePut(t.id, keep, areaKey(t)); // what was tapped is already on the phone
+    await openTask(t); return;
+  }
   if(!picked.size){ toast("Vælg mindst én type"); return; }
   const t = {id:uuid(), name:$("taskTitle").value.trim() || autoTitle(), codes:[...picked],
     extent:newShape.extent, area:newShape.area, assignees:isBoss() ? [...assignees] : [me], created_by:me, created_at:new Date().toISOString(), archived:false};
@@ -1905,7 +2138,7 @@ async function overPaint(){
   const [prog, ages] = await Promise.all([progressFor(tl.map(t=>t.id)), o.mode==="age" ? tendedForCode(o.code) : null]);
   if(over!==o) return;
   areaSrc.clear();
-  tl.forEach(t=>{ const f = new ol.Feature(shapeGeom(t)); f.setProperties({label:t.name, tid:t.id, color:col.get(t.id)}); areaSrc.addFeature(f); });
+  tl.forEach(t=>{ if(t.spots) return; const f = new ol.Feature(shapeGeom(t)); f.setProperties({label:t.name, tid:t.id, color:col.get(t.id)}); areaSrc.addFeature(f); });
   const shapes = tl.map(t=>({t, s:prepShape(t), pk: t.elements ? new Set(t.elements) : null})), RANK = {todo:0, doing:1, blocked:2, done:3};
   const per = new Map(tl.map(t=>[t.id, {done:0, blocked:0, total:0}])), c = {none:0, todo:0, doing:0, blocked:0, done:0};
   const flt = overFilter?.prep;
@@ -2044,7 +2277,7 @@ async function placePaint(){
   const tl = cand.filter(t=>per.get(t.id).total);
   areaSrc.clear();
   const col = new Map(tl.map((t,i)=>[t.id, TASK_COLORS[i % TASK_COLORS.length]]));
-  tl.forEach(t=>{ const f = new ol.Feature(shapeGeom(t)); f.setProperties({label:t.name, tid:t.id, color:col.get(t.id)}); areaSrc.addFeature(f); });
+  tl.forEach(t=>{ if(t.spots) return; const f = new ol.Feature(shapeGeom(t)); f.setProperties({label:t.name, tid:t.id, color:col.get(t.id)}); areaSrc.addFeature(f); });
   const n = feats.length;
   $("placeBar").innerHTML = !n ? "" : byType ? tys.map(([k,ty])=>`<i style="width:${ty.n/n*100}%;background:${COLORS[p.tcol[k]]}"></i>`).join("")
     : ["done","doing","blocked","todo","none"].map(s=>`<i style="width:${c[s]/n*100}%;background:${COLORS[s]}"></i>`).join("");
@@ -2555,6 +2788,7 @@ $("reqs").querySelector("summary").addEventListener("click", ()=>setTimeout(()=>
 map.on("singleclick", e=>{
   if(areaEd) return;
   if(partEd){ partTap(e.coordinate); return; }
+  if(pick?.spots){ spotTap(e); return; }
   if(pick){ // tapping a spot puts it in the task or takes it out
     const f = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:0})[0]
            || map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:12})[0];
