@@ -432,7 +432,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="row"><h2 class="grow">Ny opgave</h2><button class="btn ghost" id="btnNewCancel">Annullér</button></div>
     <div class="section" style="margin:0">Pakker</div>
     <div class="packs" id="packList"></div>
-    <input type="search" id="codeSearch" placeholder="Søg type: pur, fortov, græs, bænk …" autocomplete="off">
+    <input type="search" id="codeSearch" placeholder="Søg type: pur, fortov, løs belægning, bænk …" autocomplete="off">
   </header>
   <div class="list" id="codeList"></div>
   <footer>
@@ -463,7 +463,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <header>
     <div class="row"><h2 class="grow">Overblik: vælg type</h2><button class="btn ghost" id="btnTypeClose">Luk</button></div>
     <button class="btn" id="btnPlaceFind">⌕ Se alt i en by eller på en vej</button>
-    <input type="search" id="typeSearch" placeholder="Eller søg type: pur, fortov, græs …" autocomplete="off">
+    <input type="search" id="typeSearch" placeholder="Eller søg type: pur, fortov, løs belægning …" autocomplete="off">
   </header>
   <div class="list" id="typeList"></div>
   <footer><div class="muted">Viser alle elementer af typen i hele kommunen, og hvilke der er med i en opgave. Hentes fra kommunen højst én gang om dagen.</div></footer>
@@ -576,6 +576,14 @@ const CODES = {
  VA3:"Grøft",VA3c:"Grøfteunderføring",VA3d:"Rabat",
  SB4a:"Sportsbelægning, gummi",SB4b:"Sportsbelægning, rødgrus",SB4e:"Kunstgræs, indendørs",SB4f:"Kunstgræs, udendørs",SB4g:"Faldsand",SB4h:"Strandsand"
 };
+
+// The kommune's code families (the letters before the number), so a search for "løs belægning" finds "Grus, sti" (LB2a) too.
+const GROUPS = {HA:"Hæk og pur",FB:"Fast belægning",LB:"Løs belægning",GR:"Græs",BU:"Buske",BL:"Blomster",BI:"Biodiversitet",
+ KL:"Klatreplanter",TR:"Træer",SK:"Skov og krat",BY:"Bygværker",UD:"Udstyr",VA:"Vand og grøfter",SB:"Sportsbelægning"};
+const groupOf = k => GROUPS[k.replace(/\d.*$/,"")] || "";
+const typeHit = (k, v, q) => !q || k.toLowerCase().includes(q) || v.toLowerCase().includes(q) || groupOf(k).toLowerCase().includes(q);
+// Shown under a type when the search matched its family but not its own name.
+const groupNote = (k, v, q) => q && !v.toLowerCase().includes(q) && !k.toLowerCase().includes(q) && groupOf(k) ? `<span class="muted"> · ${esc(groupOf(k).toLowerCase())}</span>` : "";
 
 // "Krav og sikkerhed" shown folded under each element, per type code.
 // done = when the element counts as Færdig; safety = what to watch out for. One line per bullet.
@@ -1429,9 +1437,9 @@ function renderAssign(){
 // A checklist of every type; set holds the ticked codes
 function codeChecks(el, q, set, changed, here){
   q = q.trim().toLowerCase();
-  const list = Object.entries(CODES).filter(([k,v])=>!q || k.toLowerCase().includes(q) || v.toLowerCase().includes(q));
+  const list = Object.entries(CODES).filter(([k,v])=>typeHit(k, v, q));
   if(here) list.sort((a,b)=>(here[b[0]]||0) - (here[a[0]]||0));
-  el.innerHTML = list.map(([k,v])=>`<label class="code-item ${set.has(k)?"on":""}"><input type="checkbox" value="${k}" ${set.has(k)?"checked":""}><span class="grow">${esc(v)}${here?.[k] ? ` <span class="muted">· ${here[k]} her</span>` : ""}</span><span class="code">${k}</span></label>`).join("")
+  el.innerHTML = list.map(([k,v])=>`<label class="code-item ${set.has(k)?"on":""}"><input type="checkbox" value="${k}" ${set.has(k)?"checked":""}><span class="grow">${esc(v)}${groupNote(k, v, q)}${here?.[k] ? ` <span class="muted">· ${here[k]} her</span>` : ""}</span><span class="code">${k}</span></label>`).join("")
     || `<p class="muted">Ingen typer matcher "${esc(q)}"</p>`;
   el.querySelectorAll("input").forEach(i=>i.onchange=()=>{
     i.checked ? set.add(i.value) : set.delete(i.value);
@@ -1736,9 +1744,9 @@ let over = null; // {code, t: timer}
 function renderTypes(){
   const q = $("typeSearch").value.trim().toLowerCase();
   const used = {}; tasks.forEach(t=>(t.codes||[]).forEach(c=>used[c]=(used[c]||0)+1));
-  const list = Object.entries(CODES).filter(([k,v])=>!q || k.toLowerCase().includes(q) || v.toLowerCase().includes(q))
+  const list = Object.entries(CODES).filter(([k,v])=>typeHit(k, v, q))
     .sort((a,b)=>(used[b[0]]||0)-(used[a[0]]||0));
-  $("typeList").innerHTML = list.map(([k,v])=>`<button class="item" data-c="${k}"><div class="grow"><div class="t">${esc(v)}</div>
+  $("typeList").innerHTML = list.map(([k,v])=>`<button class="item" data-c="${k}"><div class="grow"><div class="t">${esc(v)}${groupNote(k, v, q)}</div>
     ${used[k] ? `<div class="s">${used[k]} ${used[k]===1?"aktiv opgave":"aktive opgaver"}</div>` : ""}</div><span class="code">${k}</span></button>`).join("")
     || `<p class="muted">Ingen typer matcher "${esc(q)}"</p>`;
   $("typeList").querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{ $("pType").hidden = true; openOverview(b.dataset.c); });
