@@ -338,6 +338,11 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <div style="text-align:right"><div class="big num" id="workCount">–</div><div class="muted">færdige</div></div>
     </div>
     <div class="bar" id="bar"></div>
+    <div class="seg" id="workMode" role="group" aria-label="Farver" hidden>
+      <button data-o="status">Status</button>
+      <button data-o="type">Farve pr. type</button>
+    </div>
+    <div class="legend" id="workLegend" hidden></div>
     <div class="row"><span class="muted grow" id="dataAge"></span><button class="btn ghost" id="btnRefresh" style="min-height:36px;padding:4px 8px">Opdater</button></div>
     <div class="row">
       <button class="btn primary fill" id="btnNext">Næste ▸</button>
@@ -616,9 +621,23 @@ AGES.forEach(a=>COLORS[a.k] = a.c);
 const ageKey = day => day ? AGES.find(a=>daysSince(day) <= a.max).k : "never";
 const elSrc = new ol.source.Vector();
 const styleCache = {};
-const elStyle = (f, res) => pick ? shapeStyle(pick.ids.has(f.getId()) ? "pick" : "off", false, res > 3.2)
-  : hasMedia(f.getId()) ? [...shapeStyle(statusOf(f.getId()), selSet.has(f), res > 3.2), CAMERA]
-  : shapeStyle(statusOf(f.getId()), selSet.has(f), res > 3.2);
+// A task with several types can be coloured by type instead (workMode): done ones still fade and blocked ones keep 🚧
+// Colours follow the order the types were ticked in, so they stay put; null for a one-type task.
+// Green, yellow and red come last so a type isn't mistaken for Færdig / I gang / Mangler
+const WORK_TY = [0,1,3,5,6,7,9,10,11,2,4,8];
+let tcol = null, tcolFor = "";
+function workTcol(){
+  const cs = task?.codes || [], k = cs.join(",");
+  if(k!==tcolFor){ tcolFor = k; tcol = cs.length > 1 ? Object.fromEntries(cs.map((c,i)=>[c, "ty" + WORK_TY[i % WORK_TY.length]])) : null; }
+  return tcol;
+}
+const byTypeNow = () => !!(workTcol() && store.get("workMode","status")==="type");
+function elStyle(f, res){
+  if(pick) return shapeStyle(pick.ids.has(f.getId()) ? "pick" : "off", false, res > 3.2);
+  const st = statusOf(f.getId()), k = byTypeNow() ? tcol[f.get("elementkode")] || "none" : st;
+  const s = shapeStyle(k, selSet.has(f), res > 3.2, k===st ? null : st);
+  return hasMedia(f.getId()) ? [...s, CAMERA] : s;
+}
 // 📷 beside elements that have a photo in the open task, so the boss can see where to look
 const centerPoint = f => { const g = f.getGeometry(), t = g.getType();
   if(t==="Point") return g;
@@ -627,10 +646,10 @@ const centerPoint = f => { const g = f.getGeometry(), t = g.getType();
   return new ol.geom.Point(g.getClosestPoint(ol.extent.getCenter(g.getExtent()))); };
 const CAMERA = new ol.style.Style({geometry:centerPoint, zIndex:40,
   text:new ol.style.Text({text:"📷", font:"20px sans-serif", offsetX:18, offsetY:-14, backgroundFill:new ol.style.Fill({color:"#ffffffdd"}), padding:[2,3,0,3]})});
-function shapeStyle(s, sel, far){
-  const key = s + sel + (far ? "far" : "near");
+function shapeStyle(s, sel, far, st){ // st: the status, when s is a type colour
+  const key = s + sel + (far ? "far" : "near") + (st || "");
   if(!styleCache[key]){
-    const c = COLORS[s], low = s==="done" || s==="off"; // done and not-picked sit underneath and fade
+    const c = COLORS[s], low = s==="done" || s==="off" || st==="done"; // done and not-picked sit underneath and fade
     styleCache[key] = [
       new ol.style.Style({ // white halo so shapes pop on the aerial photo
         stroke:new ol.style.Stroke({color:"#ffffffcc", width: sel ? 9 : far ? 6 : 5}),
@@ -638,8 +657,8 @@ function shapeStyle(s, sel, far){
         zIndex: sel ? 30 : low ? 0 : 10
       }),
       new ol.style.Style({
-        fill:new ol.style.Fill({color: c + (sel ? "aa" : low ? "66" : "99")}),
-        stroke:new ol.style.Stroke({color:c, width: sel ? 5 : far ? 4 : 3}),
+        fill:new ol.style.Fill({color: c + (sel ? "aa" : st==="done" ? "33" : low ? "66" : "99")}),
+        stroke:new ol.style.Stroke({color: st==="done" && !sel ? c + "99" : c, width: sel ? 5 : far ? 4 : 3}),
         image:new ol.style.Circle({radius: sel?10:7, fill:new ol.style.Fill({color:c})}),
         zIndex: sel ? 31 : low ? 1 : 11
       })];
@@ -648,7 +667,7 @@ function shapeStyle(s, sel, far){
       image:new ol.style.Circle({radius: sel?9:6, fill:new ol.style.Fill({color:c}), stroke:new ol.style.Stroke({color:"#fff",width:2})}),
       zIndex: sel ? 32 : low ? 2 : 12
     }));
-    if(s==="blocked") styleCache[key].push(new ol.style.Style({ // a roadwork sign in the middle, so blocked stands out from far away too
+    if(s==="blocked" || st==="blocked") styleCache[key].push(new ol.style.Style({ // a roadwork sign in the middle, so blocked stands out from far away too
       geometry: centerPoint,
       text:new ol.style.Text({text:"🚧", font:`${sel ? 24 : far ? 16 : 20}px sans-serif`}),
       zIndex: sel ? 33 : 13
@@ -1342,6 +1361,7 @@ async function openTask(t){
   $("btnTaskPhotos").hidden = !sb || !logOk; taskMedia = new Map(); $("taskPhotoN").textContent = "Billeder";
   $("workName").textContent = t.name; $("workCodes").textContent = packCodes(t.codes) + scopeOf(t);
   $("workCount").innerHTML = `<span class="spin"></span>`; $("bar").innerHTML = ""; $("dataAge").textContent = "";
+  workLegend([]);
   pane("pWork");
   // Only jump to the task area the first time; after that the map stays where you left it
   const seen = store.get("seen:"+t.id, false);
@@ -1378,9 +1398,26 @@ function refresh(){
   $("workCount").innerHTML = `${c.done}<span class="muted" style="font-size:18px">/${n}</span>`;
   store.set("count:"+task.id, [c.done, n]);
   $("bar").innerHTML = n ? ["done","doing","blocked","todo"].map(s=>`<i style="width:${c[s]/n*100}%;background:${COLORS[s]}"></i>`).join("") : "";
+  workLegend(elSrc.getFeatures());
   if(selected && !$("pEl").hidden) showEl(false);
   if(!$("pList").hidden) renderList();
 }
+
+// Several types in one task: a switch between status colours and a colour per type, with a legend of the types
+function workLegend(fs){
+  const tc = workTcol(), byType = byTypeNow();
+  $("workMode").hidden = !tc;
+  document.querySelectorAll("#workMode [data-o]").forEach(b=>b.classList.toggle("on", b.dataset.o===(byType ? "type" : "status")));
+  $("workLegend").hidden = !byType;
+  if(!byType){ $("workLegend").innerHTML = ""; return; }
+  const per = {}; fs.forEach(f=>{ const k = f.get("elementkode"), q = per[k] ||= {n:0, done:0}; q.n++; if(statusOf(f.getId())==="done") q.done++; });
+  $("workLegend").innerHTML = task.codes.filter(k=>per[k]).map(k=>`<span><i style="background:${COLORS[tc[k]]}"></i>${esc(CODES[k] || k)} <b class="num">${per[k].done}/${per[k].n}</b></span>`).join("")
+    + `<span class="muted">Lyse = færdige</span>`;
+}
+document.querySelectorAll("#workMode [data-o]").forEach(b=>b.onclick=()=>{
+  if(store.get("workMode","status")===b.dataset.o) return;
+  store.set("workMode", b.dataset.o); refresh();
+});
 
 // ================= PICKING SPOTS: a boss chooses which elements of the area are in the task =================
 // fresh: a new task starts with nothing picked; an existing whole-area task starts with everything picked
@@ -2386,8 +2423,9 @@ function renderList(){
   $("fltTodo").textContent = onlyOpen ? "Vis alle" : "Skjul færdige";
   const p = here();
   const fs = elSrc.getFeatures().filter(f=>!onlyOpen || statusOf(f.getId())!=="done").map(f=>[f, distTo(f,p)]).sort((a,b)=>a[1]-b[1]).slice(0,300);
+  const tc = byTypeNow() ? tcol : null;
   $("elList").innerHTML = fs.length ? fs.map(([f,d])=>{ const s=statusOf(f.getId()), pr=eff(f.getId());
-    return `<button class="item" data-id="${esc(f.getId())}"><div class="grow"><div class="t">${esc(titleOf(f))}</div>
+    return `<button class="item" data-id="${esc(f.getId())}">${tc ? `<i class="swatch" style="background:${COLORS[tc[f.get("elementkode")]] || COLORS.none}"></i>` : ""}<div class="grow"><div class="t">${esc(titleOf(f))}</div>
       <div class="s num">${fmtDist(d)}${pr?.worker && s!=="todo" && !isBoss() ? " · "+esc(pr.worker) : ""}${lastTended.has(f.getId()) ? " · passet "+sinceText(lastTended.get(f.getId())).replace(" dage siden"," d. siden") : ""}${s==="blocked" ? " · 🚧 "+esc(pr.reason||"Andet") : ""}${hasMedia(f.getId()) ? " · 📷" : ""}${pr?.note ? " · "+esc(pr.note) : ""}</div></div>
       <span class="pill ${s}">${LABEL[s]}</span></button>`; }).join("") : `<p class="muted" style="margin:0">Intet tilbage. Godt gået.</p>`;
   $("elList").querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>select(elSrc.getFeatureById(b.dataset.id)));
