@@ -636,11 +636,26 @@ const CODES = {
 // The kommune's code families (the letters before the number), so a search for "løs belægning" finds "Grus, sti" (LB2a) too.
 const GROUPS = {HA:"Hæk og pur",FB:"Fast belægning",LB:"Løs belægning",GR:"Græs",BU:"Buske",BL:"Blomster",BI:"Biodiversitet",
  KL:"Klatreplanter",TR:"Træer",SK:"Skov og krat",BY:"Bygværker",UD:"Udstyr",VA:"Vand og grøfter",SB:"Sportsbelægning"};
-// Where the kommune's map files a type under another family than its letters say.
-const GROUP_OF = {GR7d:"Fast belægning"};
-const groupOf = k => GROUP_OF[k] || GROUPS[k.replace(/\d.*$/,"")] || "";
+// The folders on the kommune's map (Captain's screenshots, 2026-10-13), so a search for a folder name finds every type in it,
+// even where the folder isn't the code's family: "sport og leg" finds Boldbane B (GR5b) and Legeplads (UD6).
+const FOLDERS = {
+ "Træer":["TR1","TR2","TR3","TR4"],
+ "Græs":["GR2","GR3","GR4","GR6l","GR6m","GR6n","GR6o","GR7","GR7b","GR7c","GR9","GR20","GR30"],
+ "Sport og leg":["GR5b","GR5c","SB4a","SB4b","SB4e","SB4f","SB4g","SB4h","UD6"],
+ "Løs belægning":["LB2","LB2a","LB2b","LB2c","LB3"],
+ "Fast belægning":["FB1","FB1a","FB1b","FB1c","FB1j","FB2a","FB3a","FB3b","GR7d"],
+ "Afvanding":["VA3","VA3c","VA3d"],
+ "Bevoksning":["SK2","SK3","SK5","SK6a","SK7"],
+ "Buske og hæk":["BU1","BU1a","BU2","BU3","HA1","HA3","HA11","HA21"],
+ "Bygværker":["BY1","BY2","BY2a","BY3","BY9"],
+ "Blomster":["BL1","BL3","BL5"],
+ "Klatreplanter":["KL2","KL3"]
+};
+const FOLDER_OF = Object.fromEntries(Object.entries(FOLDERS).flatMap(([name, ks])=>ks.map(k=>[k, name])));
+// A type's group: the kommune map's folder, else its code family (BI, UD)
+const groupOf = k => FOLDER_OF[k] || GROUPS[k.replace(/\d.*$/,"")] || "";
 const typeHit = (k, v, q) => !q || k.toLowerCase().includes(q) || v.toLowerCase().includes(q) || groupOf(k).toLowerCase().includes(q);
-// Shown under a type when the search matched its family but not its own name.
+// Shown under a type when the search matched its group but not its own name.
 const groupNote = (k, v, q) => q && !v.toLowerCase().includes(q) && !k.toLowerCase().includes(q) && groupOf(k) ? `<span class="muted"> · ${esc(groupOf(k).toLowerCase())}</span>` : "";
 
 // "Krav og sikkerhed" shown folded under each element, per type code.
