@@ -52,7 +52,19 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
 /* Bottom sheet */
 .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--card);border-radius:20px 20px 0 0;
   padding:10px 18px calc(env(safe-area-inset-bottom,0px) + 16px);box-shadow:0 -6px 24px #0003;max-height:58vh;display:flex;flex-direction:column}
-.grip{width:40px;height:5px;border-radius:9px;background:var(--line);margin:0 auto 12px;flex:none}
+/* The bar at the top of the sheet: drag it down (or tap it) to fold the sheet to its main buttons and see more map; drag up or tap again to unfold */
+.grip{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:calc(100% + 36px);margin:-10px -18px 4px;min-height:34px;
+  padding:6px 0;border:0;background:transparent;color:var(--ink2);font-size:13px;touch-action:none;cursor:grab}
+.grip i{display:block;width:44px;height:5px;border-radius:9px;background:var(--line)}
+.grip span{display:none}
+.sheet:not(.can-fold) .grip{pointer-events:none}
+.sheet.can-fold .grip i{width:52px;height:6px;background:var(--ink2);opacity:.55}
+.sheet.dragging{transition:none}
+.sheet{transition:transform .2s}
+@media (max-width:1023px){
+  .sheet.folded .pane>:not([data-keep]){display:none!important}
+  .sheet.folded .grip span{display:block}
+}
 .pane{display:flex;flex-direction:column;gap:14px;min-height:0}
 .row{display:flex;gap:10px;align-items:center}
 .wrap{flex-wrap:wrap}
@@ -253,7 +265,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 <div class="toast" id="toast" role="status"></div>
 
 <div class="sheet" id="sheet">
-  <div class="grip"></div>
+  <button class="grip" id="grip" aria-label="Gør panelet mindre" aria-expanded="true"><i></i><span>▲ Vis mere</span></button>
   <div class="outbox" id="outbox" hidden>
     <span class="grow"><b id="outCount">0</b> <span id="outLabel">ændringer</span> ikke sendt</span>
     <button class="btn primary" id="btnSend">Send</button>
@@ -276,7 +288,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 
   <!-- Drawing a task's area on the map -->
   <div class="pane" id="pArea" hidden>
-    <div class="row"><h2 class="grow" id="areaTitle">Tegn opgavens område</h2><button class="btn ghost" id="btnAreaCancel">Annullér</button></div>
+    <div class="row" data-keep><h2 class="grow" id="areaTitle">Tegn opgavens område</h2><button class="btn ghost" id="btnAreaCancel">Annullér</button></div>
     <div class="seg" role="group" aria-label="Form">
       <button data-m="box">▭ Firkant</button>
       <button data-m="draw">✎ Tegn frit</button>
@@ -286,7 +298,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button class="btn" id="btnAreaPeek" hidden>Se alt her</button>
     </div>
     <div class="muted" id="areaHint"></div>
-    <div class="row">
+    <div class="row" data-keep>
       <span class="muted grow num" id="areaSize"></span>
       <button class="btn" id="btnRedraw" hidden>Tegn igen</button>
       <button class="btn primary" id="btnAreaOk">Videre ▸</button>
@@ -295,12 +307,12 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 
   <!-- One element type across the whole kommune -->
   <div class="pane" id="pOver" hidden>
-    <div class="row">
+    <div class="row" data-keep>
       <button class="btn ghost" id="btnOverBack">‹ Opgaver</button>
       <div class="grow"></div>
       <button class="btn ghost" id="btnOverType">Skift type</button>
     </div>
-    <div><div class="eyebrow" id="overCode"></div><h2 id="overName"></h2></div>
+    <div data-keep><div class="eyebrow" id="overCode"></div><h2 id="overName"></h2></div>
     <button class="btn" id="btnOverFind">⌕ Kun én by eller vej</button>
     <div class="row filt" id="overFilt" hidden><span class="grow">Kun i <b id="overFiltName"></b></span><button class="btn ghost" id="btnOverAll">✕ Hele kommunen</button></div>
     <div class="seg" id="overMode" role="group" aria-label="Farver">
@@ -316,12 +328,12 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 
   <!-- Everything in one town or along one street: all types, and the tasks there -->
   <div class="pane" id="pPlace" hidden>
-    <div class="row">
+    <div class="row" data-keep>
       <button class="btn ghost" id="btnPlaceBack">‹ Opgaver</button>
       <div class="grow"></div>
       <button class="btn ghost" id="btnPlaceOther">⌕ Andet sted</button>
     </div>
-    <div><div class="eyebrow">Alt hvad kommunen har registreret i</div><h2 id="placeName"></h2></div>
+    <div data-keep><div class="eyebrow">Alt hvad kommunen har registreret i</div><h2 id="placeName"></h2></div>
     <div class="seg" id="placeMode" role="group" aria-label="Farver">
       <button data-o="type">Farve pr. type</button>
       <button data-o="status">Status</button>
@@ -335,14 +347,14 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 
   <!-- Working a task -->
   <div class="pane" id="pWork" hidden>
-    <div class="row">
+    <div class="row" data-keep>
       <button class="btn ghost" id="btnBack" aria-label="Tilbage til opgaver">‹ Opgaver</button>
       <div class="grow"></div>
       <button class="btn ghost" id="btnEditArea" hidden>▭ Område</button>
       <button class="btn ghost" id="btnPick" hidden>☝ Steder</button>
       <button class="btn ghost" id="btnGps">◎ Min position</button>
     </div>
-    <div class="row">
+    <div class="row" data-keep>
       <div class="grow"><div class="eyebrow" id="workCodes"></div><h2 id="workName"></h2></div>
       <div style="text-align:right"><div class="big num" id="workCount">–</div><div class="muted">færdige</div></div>
     </div>
@@ -353,7 +365,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     </div>
     <div class="legend" id="workLegend" hidden></div>
     <div class="row"><span class="muted grow" id="dataAge"></span><button class="btn ghost" id="btnRefresh" style="min-height:36px;padding:4px 8px">Opdater</button></div>
-    <div class="row">
+    <div class="row" data-keep>
       <button class="btn primary fill" id="btnNext">Næste ▸</button>
       <button class="btn" id="btnList">Liste</button>
       <button class="btn" id="btnTaskPhotos" hidden>📷 <span id="taskPhotoN">Billeder</span></button>
@@ -362,10 +374,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 
   <!-- A boss picks which elements of the area belong to the task -->
   <div class="pane" id="pPick" hidden>
-    <div><div class="eyebrow">Vælg steder</div><h2 id="pickName"></h2></div>
+    <div data-keep><div class="eyebrow">Vælg steder</div><h2 id="pickName"></h2></div>
     <div class="muted">Tryk på de steder, holdet skal tage. Tryk igen for at fjerne et sted. Blå er med, grå er ikke.</div>
-    <div class="row"><span class="grow"><b class="num" id="pickCount">0</b> <span class="muted" id="pickOf"></span></span><button class="btn" id="btnPickAll">Hele området</button></div>
-    <div class="row">
+    <div class="row" data-keep><span class="grow"><b class="num" id="pickCount">0</b> <span class="muted" id="pickOf"></span></span><button class="btn" id="btnPickAll">Hele området</button></div>
+    <div class="row" data-keep>
       <button class="btn" id="btnPickCancel">Annullér</button>
       <button class="btn primary fill" id="btnPickOk">Gem steder</button>
     </div>
@@ -373,22 +385,22 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 
   <!-- A task made by tapping the spots on the map, anywhere in the kommune -->
   <div class="pane" id="pSpots" hidden>
-    <div class="row"><div class="grow"><div class="eyebrow">Tryk på stederne</div><h2 id="spotsName">Ny opgave</h2></div><button class="btn ghost" id="btnSpotsCancel">Annullér</button></div>
+    <div class="row" data-keep><div class="grow"><div class="eyebrow">Tryk på stederne</div><h2 id="spotsName">Ny opgave</h2></div><button class="btn ghost" id="btnSpotsCancel">Annullér</button></div>
     <div class="muted" id="spotsHint"></div>
-    <div class="row">
+    <div class="row" data-keep>
       <span class="grow"><b class="num" id="spotsCount">0</b> <span class="muted" id="spotsOf">steder valgt</span></span>
       <button class="btn" id="btnSpotsOwn">📍 Eget punkt</button>
     </div>
-    <button class="btn primary" id="btnSpotsOk">Videre ▸</button>
+    <button class="btn primary" id="btnSpotsOk" data-keep>Videre ▸</button>
   </div>
 
   <!-- Part of one long element done: tap where you started and where you stopped -->
   <div class="pane" id="pPart" hidden>
-    <div><div class="eyebrow">Marker et stykke</div><h2 id="partTitle"></h2></div>
+    <div data-keep><div class="eyebrow">Marker et stykke</div><h2 id="partTitle"></h2></div>
     <div class="parthint" id="partHint"></div>
     <div class="row" id="partWRow"><span class="grow">Bredde <b class="num" id="partW"></b></span><button class="btn big" id="btnPartLess" aria-label="Smallere">−</button><button class="btn big" id="btnPartMore" aria-label="Bredere">+</button></div>
-    <div class="row"><span class="grow" id="partSum"></span><button class="btn" id="btnPartUndo">↶ Fortryd</button></div>
-    <div class="row">
+    <div class="row" data-keep><span class="grow" id="partSum"></span><button class="btn" id="btnPartUndo">↶ Fortryd</button></div>
+    <div class="row" data-keep>
       <button class="btn" id="btnPartCancel">Annullér</button>
       <button class="btn primary fill" id="btnPartOk">Gem stykket</button>
     </div>
@@ -397,17 +409,17 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 
   <!-- One element -->
   <div class="pane" id="pEl" hidden>
-    <div class="row">
+    <div class="row" data-keep>
       <div class="grow"><div class="eyebrow" id="elCode"></div><h2 id="elTitle"></h2><div class="muted" id="elSub"></div></div>
       <button class="btn ghost" id="btnElClose" aria-label="Luk">✕</button>
     </div>
-    <div class="status">
+    <div class="status" data-keep>
       <button data-s="todo"><i style="background:var(--todo)"></i><span>Mangler</span></button>
       <button data-s="doing"><i style="background:var(--doing)"></i><span>I gang</span></button>
       <button data-s="done"><i style="background:var(--done)"></i><span>Færdig</span></button>
       <button data-s="blocked"><i style="background:var(--blocked);outline:2px solid #fff;outline-offset:-1px"></i><span>🚧 Blokeret</span></button>
     </div>
-    <div class="row"><span class="muted grow" id="elMeta"></span><button class="btn primary" id="btnNext2">Næste ▸</button></div>
+    <div class="row" data-keep><span class="muted grow" id="elMeta"></span><button class="btn primary" id="btnNext2">Næste ▸</button></div>
     <div class="blockinfo" id="elBlock" hidden></div>
     <div id="partRow" hidden><span id="elPart"></span></div>
     <!-- The less used actions, one row of big icon buttons so the panel fits a small phone -->
@@ -871,7 +883,23 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;
 function toast(t, ms=2600){const el=$("toast"); el.textContent=t; el.classList.add("show"); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove("show"),ms);}
 const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick","pPlace","pPart","pSpots"];
 const curPane = () => PANES.find(p=>!$(p).hidden);
-function pane(id){ PANES.forEach(p=>$(p).hidden = p!==id); }
+function pane(id){ if(id!==curPane()) fold(false); PANES.forEach(p=>$(p).hidden = p!==id);
+  $("sheet").classList.toggle("can-fold", !!$(id).querySelector(":scope>[data-keep]")); }
+// Fold the sheet down to the rows marked data-keep (its main buttons), so more of the map shows
+function fold(on){ const s = $("sheet"); if(!s) return; s.classList.toggle("folded", on);
+  $("grip").setAttribute("aria-expanded", String(!on)); $("grip").setAttribute("aria-label", on ? "Vis hele panelet" : "Gør panelet mindre"); }
+{ // Drag the bar down to fold, up to unfold; a tap flips it
+  const g = $("grip"), s = $("sheet"); let y0 = null, dy = 0;
+  g.addEventListener("pointerdown", e => { if(wide() || !s.classList.contains("can-fold")) return; y0 = e.clientY; dy = 0; g.setPointerCapture(e.pointerId); s.classList.add("dragging"); });
+  g.addEventListener("pointermove", e => { if(y0 === null) return; dy = e.clientY - y0;
+    const folded = s.classList.contains("folded"); // follow the finger, only in the direction that does something
+    s.style.transform = `translateY(${folded ? Math.max(dy, -60) / 4 : Math.max(dy, 0)}px)`; });
+  const end = () => { if(y0 === null) return; y0 = null; s.classList.remove("dragging"); s.style.transform = "";
+    const folded = s.classList.contains("folded");
+    if(Math.abs(dy) < 8) fold(!folded); else if(!folded && dy > 30) fold(true); else if(folded && dy < -20) fold(false); };
+  g.addEventListener("pointerup", end); g.addEventListener("pointercancel", end);
+  g.addEventListener("click", e => { if(e.detail === 0 && s.classList.contains("can-fold")) fold(!s.classList.contains("folded")); }); // keyboard
+}
 // Only the day is ever shown, never the clock time
 function ago(ts){ if(!ts) return ""; const d=new Date(ts), t=new Date(); const day=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate());
   const diff=Math.round((day(t)-day(d))/864e5);
