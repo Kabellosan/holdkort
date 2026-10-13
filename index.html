@@ -139,6 +139,8 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 /* Packages: saved groups of types */
 #pNew footer{max-height:60%;overflow-y:auto}
 .packs{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.packbox{display:flex;flex-direction:column;gap:10px;margin-bottom:4px}
+.codes{display:flex;flex-direction:column;gap:6px}
 .packs button{border-radius:999px;border:2px solid var(--line);background:var(--card);padding:8px 14px;min-height:44px;font-size:15px}
 .packs button.on{border-color:var(--moss2);background:var(--moss);color:#fff}
 .packs button.edit{border-style:dashed;color:var(--ink2)}
@@ -485,12 +487,18 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 <div class="panel" id="pNew" hidden>
   <header>
     <div class="row"><h2 class="grow">Ny opgave</h2><button class="btn ghost" id="btnNewCancel">Annullér</button></div>
-    <div class="section" style="margin:0" id="packHead">Pakker</div>
-    <div class="packs" id="packList"></div>
     <input type="search" id="codeSearch" placeholder="Søg type: pur, fortov, løs belægning, bænk …" autocomplete="off">
     <div class="section" style="margin:0" id="spotsHead" hidden>Stederne i opgaven</div>
   </header>
-  <div class="list" id="codeList"></div>
+  <!-- Packages scroll with the types, so a long row of packages can't squeeze the type list off a phone screen -->
+  <div class="list">
+    <div class="packbox" id="packBox">
+      <div class="section" style="margin:0" id="packHead">Pakker</div>
+      <div class="packs" id="packList"></div>
+      <div class="section" id="typesHead">Typer</div>
+    </div>
+    <div class="codes" id="codeList"></div>
+  </div>
   <footer>
     <div class="chosen" id="chosen"></div>
     <input type="text" id="taskTitle" placeholder="Navn, fx 'Pur i Brande, uge 41'">
@@ -1361,9 +1369,10 @@ function renderTasks(){
   if(!user){ L.innerHTML = ""; return; }
   if(isBoss() && bossView==="team") L.innerHTML = teamHtml();
   else if(!tasks.length) L.innerHTML = isBoss()
-      ? `<h2>Opgaver</h2><p class="muted" style="margin:0">Ingen opgaver endnu. Tryk <b>Ny opgave</b> og tegn området på kortet.</p>`
+      ? `<p class="muted" style="margin:0">Ingen opgaver endnu. Tryk <b>Ny opgave</b> og tegn området på kortet.</p>`
       : `<h2>Dine opgaver</h2><p class="muted" style="margin:0">Ingen opgaver lige nu. ${ownHint()}</p>`;
-  else if(isBoss()) L.innerHTML = `<h2>Opgaver</h2>` + tasks.map(t=>taskRow(t)).join("");
+  // the Opgaver/Holdet switch above is the heading
+  else if(isBoss()) L.innerHTML = tasks.map(t=>taskRow(t)).join("");
   else {
     // The crew only sees tasks given to them by name, or to everyone
     const mine = tasks.filter(forMe);
@@ -1724,7 +1733,10 @@ function codeChecks(el, q, set, changed, here){
     changed();
   });
 }
-function renderCodes(){ codeChecks($("codeList"), $("codeSearch").value, picked, renderChosen, newHere); }
+function renderCodes(){
+  codeChecks($("codeList"), $("codeSearch").value, picked, renderChosen, newHere);
+  $("packBox").hidden = !!$("codeSearch").value.trim(); // while searching, the hits come first
+}
 const sameCodes = (a, b) => a.length===b.size && a.every(c=>b.has(c));
 function renderChosen(){
   if(newSpots) return; // a task of tapped spots gets its types from the spots
@@ -1829,7 +1841,7 @@ function beginNewTask(code, shape, here){
 }
 function showNewPanel(){
   const sp = !!newSpots;
-  ["packHead","packList","codeSearch","newPickRow"].forEach(id=>$(id).hidden = sp); $("spotsHead").hidden = !sp;
+  ["packBox","codeSearch","newPickRow"].forEach(id=>$(id).hidden = sp); $("spotsHead").hidden = !sp;
   $("btnNewArea").textContent = sp ? "Ret steder" : "Ret område";
   if(sp){
     const list = spotsOf(newSpots), n = list.length, byId = new Map(newSpots.keep.map(f=>[f.getId(), f]));
@@ -2768,7 +2780,8 @@ function showEl(zoom){
   if(canP){ const sh = partShare(f), line = isLine(f.getGeometry());
     $("elPart").innerHTML = partsOf(f.getId()).length ? `📏 ${partTxt(sh.d, line)} af ${partTxt(sh.tot, line)} gjort <span class="muted">(${sh.pct}&nbsp;%)</span>`
       : `<span class="muted">Kun nået et stykke?</span>`; }
-  $("btnClearSel").textContent = n>1 ? `✕ Ryd ${n} markerede` : "✕ Ryd markerede";
+  $("btnClearSel").hidden = n<2; // one element: the ✕ at the top does the same
+  $("btnClearSel").textContent = `✕ Ryd ${n} markerede`;
   const sts = new Set(fs.map(g=>statusOf(g.getId())));
   const s = sts.size===1 ? [...sts][0] : null;
   document.querySelectorAll(".status [data-s]").forEach(b=>b.classList.toggle("on", b.dataset.s===s));
