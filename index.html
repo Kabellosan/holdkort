@@ -388,6 +388,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="row" data-keep><div class="grow"><div class="eyebrow">Tryk på stederne</div><h2 id="spotsName">Ny opgave</h2></div><button class="btn ghost" id="btnSpotsCancel">Annullér</button></div>
     <div class="muted" id="spotsHint"></div>
     <div class="row"><span class="grow" id="spotsShow"></span><button class="btn" id="btnSpotsShow">Skift</button></div>
+    <div class="legend" id="spotsLegend" hidden></div>
     <div class="row" data-keep>
       <span class="grow"><b class="num" id="spotsCount">0</b> <span class="muted" id="spotsOf">steder valgt</span></span>
       <button class="btn" id="btnSpotsOwn">📍 Eget punkt</button>
@@ -767,7 +768,10 @@ const byTypeNow = () => !!(workTcol() && store.get("workMode","status")==="type"
 function elStyle(f, res){
   const pin = f.get("_own")!=null ? [OWN_PIN] : []; // a spot set by hand
   if(pick?.show && spotHidden(f)) return null;
-  if(pick) return [...(pick.ids.has(f.getId()) ? shapeStyle("pick", false, res > 3.2) : pick.spots ? SPOT_OFF : shapeStyle("off", false, res > 3.2)), ...pin];
+  if(pick){ // picking spots with only some types shown: each type its own colour, the picked ones thick blue on top
+    const far = res > 3.2, ty = pick.spots && pick.show && pick.tcol?.get(f.get("elementkode"));
+    return [...(pick.ids.has(f.getId()) ? shapeStyle("pick", !!pick.spots, far) : ty ? shapeStyle(ty, false, far) : pick.spots ? SPOT_OFF : shapeStyle("off", false, far)), ...pin];
+  }
   const st = statusOf(f.getId()), k = byTypeNow() ? tcol[f.get("elementkode")] || "none" : st;
   const s = shapeStyle(k, selSet.has(f), res > 3.2, k===st ? null : st);
   const p = partStyle(f); // a long element partly done gets its done stretch drawn green on top
@@ -1699,7 +1703,7 @@ function startSpots(t, from, show = null){
   elSrc.addFeatures(keep);
   $("spotsName").textContent = t ? t.name : "Ny opgave";
   $("btnSpotsOk").textContent = t ? "Gem steder" : "Videre ▸";
-  pane("pSpots"); spotsCount();
+  pane("pSpots"); spotColors(); spotsCount();
   if(keep.length && !from) map.getView().fit(spotsExtent(spotsOf(pick)), {padding:[70,30,sheetPad(),30], maxZoom:11, duration:300});
   spotLoad();
 }
@@ -1708,6 +1712,9 @@ function spotsCount(){
   $("spotsCount").textContent = n; $("spotsOf").textContent = `${n===1 ? "sted" : "steder"} valgt`;
   $("btnSpotsOwn").textContent = p.own ? "✕ Intet punkt" : "📍 Eget punkt";
   $("btnSpotsOwn").classList.toggle("on", p.own);
+  const leg = p.show && p.tcol ? [...p.tcol].filter(([c])=>p.show.has(c)) : [];
+  $("spotsLegend").innerHTML = leg.map(([c,k])=>`<span><i style="background:${COLORS[k]}"></i>${esc(CODES[c] || c)}</span>`).join("");
+  $("spotsLegend").hidden = !leg.length;
   $("spotsShow").innerHTML = p.show ? `Viser kun: <b>${esc(shortCodes([...p.show]))}</b>` : `Viser: <b>alt</b>`;
   const v = map.getView().calculateExtent(map.getSize());
   $("spotsHint").innerHTML = p.own ? "<b>Tryk på kortet, hvor punktet skal være.</b>"
@@ -1738,6 +1745,7 @@ async function spotLoad(){
       await nameByStreet(add, e); if(pick!==p) return;
     }
     elSrc.addFeatures(add.filter(f=>!elSrc.getFeatureById(f.getId())));
+    spotColors();
   }catch(e){ console.error(e); if(pick===p) toast("Kunne ikke hente kommunens kort her. Flyt kortet lidt for at prøve igen.", 4000); }
   finally{ p.busy--; if(pick===p) spotsCount(); }
 }
@@ -1769,6 +1777,15 @@ function spotTap(e){
     toast(`${titleOf(f)} er med`);
   }
   spotsCount();
+}
+// With some types shown, each gets a type colour in the order they turn up on the map, kept while panning.
+// The blues are left out: blue means "picked"
+const SPOT_TY = [1,2,3,4,5,6,7,8,9,11];
+function spotColors(){
+  const p = pick; if(!p?.spots || !p.show) return;
+  p.tcol ||= new Map();
+  elSrc.getFeatures().forEach(f=>{ const c = f.get("elementkode");
+    if(c && p.show.has(c) && !p.tcol.has(c)) p.tcol.set(c, "ty" + SPOT_TY[p.tcol.size % SPOT_TY.length]); });
 }
 // A type left out of what the map shows is hidden and can't be tapped; spots already in the task always show
 const spotHidden = f => !!(pick?.show && !pick.ids.has(f.getId()) && f.get("_own")==null && !pick.show.has(f.get("elementkode")));
@@ -1807,7 +1824,7 @@ $("btnShowOk").onclick = ()=>{
 };
 $("btnShowAll").onclick = ()=>{ $("pShow").hidden = true; showThen(null); };
 $("btnShowClose").onclick = ()=>{ $("pShow").hidden = true; if(!pick) $("askShow").hidden = false; }; // a new task goes back to the question
-$("btnSpotsShow").onclick = ()=>{ showThen = show=>{ if(!pick?.spots) return; pick.show = show; spotsCount(); spotLoad(); }; openShow(); };
+$("btnSpotsShow").onclick = ()=>{ showThen = show=>{ if(!pick?.spots) return; pick.show = show; pick.tcol = null; spotColors(); spotsCount(); spotLoad(); }; openShow(); };
 function endSpots(){ const p = pick; pick = null; clearTimeout(spotT); elSrc.clear(); pane("pTasks"); return p; }
 const spotsLeave = ()=>{ $("askSpots").hidden = true; const p = endSpots(); if(p.t) openTask(p.t); };
 $("btnSpotsCancel").onclick = ()=>{
