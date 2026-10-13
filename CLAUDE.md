@@ -8,6 +8,7 @@ A phone web app for Captain's idverde crew (Ikast-Brande Kommune contract). Boss
 - Live: https://kabellosan.github.io/holdkort/ (GitHub Pages, branch `main`, repo root)
 - Repo: `Kabellosan/holdkort`. Everything is in `index.html` (one file, OpenLayers 10 + proj4 + supabase-js from jsDelivr), `sw.js`, `manifest.json`.
 - Layout: phone first. At `min-width:1024px` the bottom sheet and the full-screen panels become a left sidebar (`--side`) and the map fills the rest; `wide()`/`sheetH()` keep map fits and the default task rectangle right. Ny opgave (`#pNew`) is wider there, in two columns: types on the left, name/people/Opret on the right. Package chips scroll with the type list (`packBox`, hidden while searching) so they can't squeeze the list off a phone screen. The phone layout must stay unchanged.
+- Folding the bottom sheet (2026-10-13, Captain tried dragging the bar down while drawing an area): on phones the bar at the top of the sheet (`#grip`) folds the sheet when dragged down or tapped, leaving only the rows marked `data-keep` (title/back row and the main buttons, e.g. Annullér and Videre) plus "▲ Vis mere"; drag up or tap to unfold. Panes without `data-keep` rows (task list, Liste) don't fold (`can-fold`). Switching pane unfolds it (`pane()` → `fold(false)`).
 - UI language: **Danish**. README and these notes: English.
 
 ## Data sources (all verified working from the browser, CORS ok)
