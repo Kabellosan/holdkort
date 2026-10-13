@@ -153,7 +153,6 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .outbox .btn{min-height:44px;padding:8px 12px;font-size:15px}
 .chip.unsent{border:2px solid var(--doing);font-weight:600}
 .outbox b{font-variant-numeric:tabular-nums}
-.badge{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:var(--moss);color:#fff;border-radius:6px;padding:2px 6px}
 .section{font-size:13px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink2);margin:6px 0 0}
 .panel .body{flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:14px;-webkit-overflow-scrolling:touch}
 .panel .body p{margin:0;max-width:60ch}
@@ -169,6 +168,11 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .err{color:var(--todo);font-size:14px;min-height:1.2em}
 .selrow{align-items:center}
 .btn.clear{min-height:50px;font-weight:600;flex:none;white-space:nowrap}
+.tools{display:flex;gap:6px}
+.tools .btn{flex:1 1 0;min-width:0;flex-direction:column;gap:2px;padding:6px 2px;min-height:64px;font-size:13px}
+.tools .btn span{font-size:22px;line-height:1}
+.tools .btn.on{border-color:var(--moss2);background:var(--paper)}
+#multiHint{font-size:14px}
 .ask{position:absolute;inset:0;background:#0007;display:flex;align-items:center;justify-content:center;padding:18px;z-index:30}
 .ask>div{background:var(--card);border-radius:20px;padding:20px;max-width:360px;width:100%;display:flex;flex-direction:column;gap:12px;box-shadow:0 10px 40px #0005}
 .ask h2{font-size:20px}
@@ -233,7 +237,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 <div id="map"></div>
 
 <div class="top">
-  <button class="chip" id="who" title="Din profil"><span class="dot" id="syncdot"></span><span id="whoName">Navn?</span><span class="badge" id="whoBadge" hidden></span></button>
+  <button class="chip" id="who" title="Din profil"><span class="dot" id="syncdot"></span><span id="whoName">Navn?</span></button>
   <button class="chip unsent" id="btnUnsent" hidden aria-label="Vis ændringer, der ikke er sendt"><span class="dot" style="background:var(--doing)"></span><span><span id="unsentCount">0</span> ikke sendt</span></button>
   <button class="chip" id="btnSearch" style="margin-left:auto" aria-label="Søg sted">⌕ <span>Søg</span></button>
   <button class="chip help" id="btnHelp" aria-label="Vis vejledning" title="Vejledning" hidden>?</button>
@@ -403,13 +407,20 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button data-s="done"><i style="background:var(--done)"></i><span>Færdig</span></button>
       <button data-s="blocked"><i style="background:var(--blocked);outline:2px solid #fff;outline-offset:-1px"></i><span>🚧 Blokeret</span></button>
     </div>
-    <div class="row" id="partRow" hidden><span class="grow" id="elPart"></span><button class="btn" id="btnPart">📏 Marker et stykke</button></div>
-    <div class="row"><span class="muted grow" id="elMeta"></span><button class="btn" id="btnRoute">🧭 Vis vej</button><button class="btn primary" id="btnNext2">Næste ▸</button></div>
+    <div class="row"><span class="muted grow" id="elMeta"></span><button class="btn primary" id="btnNext2">Næste ▸</button></div>
     <div class="blockinfo" id="elBlock" hidden></div>
-    <div class="row"><input type="text" id="note" placeholder="Note til holdet"><button class="btn" id="btnNote">Gem</button></div>
-    <div class="row"><span class="tended grow" id="elTended"></span><button class="btn" id="btnPhoto">📷 Billede</button><button class="btn" id="btnHist">Historik</button></div>
+    <div id="partRow" hidden><span id="elPart"></span></div>
+    <!-- The less used actions, one row of big icon buttons so the panel fits a small phone -->
+    <div class="tools">
+      <button class="btn" id="btnPart"><span>📏</span>Stykke</button>
+      <button class="btn" id="btnNoteOpen" aria-expanded="false"><span>📝</span>Note</button>
+      <button class="btn" id="btnPhoto"><span>📷</span>Billede</button>
+      <button class="btn" id="btnRoute"><span>🧭</span>Vis vej</button>
+      <button class="btn" id="btnHist"><span>📜</span>Historik</button>
+    </div>
+    <div class="row" id="noteRow" hidden><input type="text" id="note" placeholder="Note til holdet"><button class="btn" id="btnNote">Gem</button></div>
     <input type="file" id="photoIn" accept="image/*" hidden>
-    <div class="row selrow"><span class="muted grow" id="multiHint">Tryk på flere for at markere dem.</span><button class="btn clear" id="btnClearSel">✕ Ryd markerede</button></div>
+    <div class="row selrow"><div class="grow"><div class="tended" id="elTended"></div><div class="muted" id="multiHint">Tryk på flere for at markere dem.</div></div><button class="btn clear" id="btnClearSel">✕ Ryd markerede</button></div>
     <details class="reqs" id="reqs"><summary>📋 Krav og sikkerhed</summary><div class="rbody" id="reqsBody"></div></details>
   </div>
 
@@ -915,7 +926,6 @@ async function signIn(code){
 }
 function applyUser(){
   $("whoName").textContent = me || "Navn?";
-  $("whoBadge").hidden = !user; $("whoBadge").textContent = ROLE_NAME[user?.role] || "";
   $("seeOwn").innerHTML = isHelper() ? "<b>Du ser kun de opgaver, der har dit navn på.</b> Koordinatorerne kan se, hvem der er sat på hvilke opgaver."
     : "<b>Du ser kun dine egne opgaver</b> og dem, der er til alle. Koordinatorerne kan se, hvem der er sat på hvilke opgaver.";
   $("bossRow").hidden = !canCreate(); $("btnOverview").hidden = !isBoss();
@@ -966,7 +976,7 @@ const COLOR_STEP = {ic:"🎨", t:"Farverne på kortet", h:`<div class="gcol">
   ${dotC("var(--blocked)")}<span><b>Sort</b> = blokeret, fx en bil holder der</span></div>`};
 const MARK_STEP = {ic:"👆", t:"Marker et sted", h:`<p>Tryk på et sted på kortet. Tryk så <b>Færdig</b>, <b>I gang</b>, <b>Mangler</b> eller <b>🚧 Blokeret</b>.</p>
   <p>Tryk på flere steder for at markere dem på én gang. <b>Næste ▸</b> viser det nærmeste sted, der mangler.</p>
-  <p>Kun nået et stykke af en lang hæk eller sti? Tryk <b>📏 Marker et stykke</b>, og tryk så, hvor du startede, og hvor du stoppede.</p>`};
+  <p>Kun nået et stykke af en lang hæk eller sti? Tryk <b>📏 Stykke</b>, og tryk så, hvor du startede, og hvor du stoppede.</p>`};
 const SEND_STEP = {ic:"📤", t:"Husk at sende", h:`<p>Det, du markerer, bliver på telefonen, til du trykker <b>Send</b>. Så kan du vente, til du har forbindelse.</p>
   <p>Din position bliver altid på telefonen.</p>`};
 const HELP_STEP = {ic:"❓", t:"Hjælp, når du skal bruge den", h:`<p>Tryk på <b>?</b> øverst på skærmen for at se det her igen.</p>
@@ -2751,8 +2761,9 @@ $("btnPartOk").onclick = ()=>{
 };
 
 // ================= ELEMENT VIEW =================
+let noteOpen = false;
 function select(f){
-  selected = f; selSet = new Set(f ? [f] : []);
+  selected = f; selSet = new Set(f ? [f] : []); noteOpen = false;
   elLayer.changed();
   if(f) showEl(true); else pane("pWork");
 }
@@ -2776,10 +2787,10 @@ function showEl(zoom){
   showReqs([...new Set(fs.map(g=>g.get("elementkode")))]);
   // One line or area: "📏 Marker et stykke", and how much of it is done so far
   const canP = n===1 && partsOk && canPart(f) && statusOf(f.getId())!=="done";
-  $("partRow").hidden = !canP;
-  if(canP){ const sh = partShare(f), line = isLine(f.getGeometry());
-    $("elPart").innerHTML = partsOf(f.getId()).length ? `📏 ${partTxt(sh.d, line)} af ${partTxt(sh.tot, line)} gjort <span class="muted">(${sh.pct}&nbsp;%)</span>`
-      : `<span class="muted">Kun nået et stykke?</span>`; }
+  $("btnPart").hidden = !canP;
+  $("partRow").hidden = !(canP && partsOf(f.getId()).length);
+  if(!$("partRow").hidden){ const sh = partShare(f), line = isLine(f.getGeometry());
+    $("elPart").innerHTML = `📏 ${partTxt(sh.d, line)} af ${partTxt(sh.tot, line)} gjort <span class="muted">(${sh.pct}&nbsp;%)</span>`; }
   $("btnClearSel").hidden = n<2; // one element: the ✕ at the top does the same
   $("btnClearSel").textContent = `✕ Ryd ${n} markerede`;
   const sts = new Set(fs.map(g=>statusOf(g.getId())));
@@ -2790,6 +2801,9 @@ function showEl(zoom){
   $("elBlock").hidden = !why.length;
   $("elBlock").textContent = why.length ? `🚧 Midlertidigt blokeret: ${why.join(", ")}` : "";
   if(document.activeElement !== $("note")) $("note").value = n>1 ? "" : (p?.note || "");
+  // The note box shows when there is a note to read, or after tapping 📝 Note
+  $("noteRow").hidden = !noteOpen && !$("note").value;
+  $("btnNoteOpen").classList.toggle("on", !$("noteRow").hidden); $("btnNoteOpen").setAttribute("aria-expanded", String(!$("noteRow").hidden));
   const unsent = fs.some(g=>pending.has(task.id+"|"+g.getId()));
   const latest = fs.map(g=>progress.get(g.getId())).filter(Boolean).sort((a,b)=>a.updated_at<b.updated_at?1:-1)[0];
   $("elMeta").textContent = unsent ? "Ikke sendt endnu"
@@ -2892,6 +2906,10 @@ $("askBlock").querySelectorAll("[data-r]").forEach(b=>b.onclick=()=>{
 $("askBlockNo").onclick = closeBlock;
 $("askBlock").onclick = e=>{ if(e.target===$("askBlock")) closeBlock(); };
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !$("askBlock").hidden) closeBlock(); });
+$("btnNoteOpen").onclick = ()=>{
+  if($("noteRow").hidden){ noteOpen = true; showEl(false); }
+  $("note").focus();
+};
 $("btnNote").onclick = ()=>{ setStatus([...selSet].map(g=>g.getId()), null, $("note").value); toast("Note gemt"); };
 $("btnElClose").onclick = ()=>select(null);
 // Directions in Google Maps (opens the Maps app on phones). Goes to the marked element nearest you,
