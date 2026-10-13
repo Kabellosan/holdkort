@@ -913,6 +913,9 @@ const canManage = t => isBoss() || (user?.role === "crew" && !!t?.made_by_crew &
 const ROLE_NAME = {boss:"Koordinator", crew:"Udførende", helper:"Hjælper"};
 // people.role only knows crew/boss; a helper is on the team like the crew
 const dbRole = r => r==="boss" ? "boss" : "crew";
+// A koordinator logging in only adds a missing row: it must not turn someone on the team (crew) into "boss",
+// or they would drop out of Holdet and the people picker
+const savePerson = (name, role) => sb.from("people").upsert({name, role:dbRole(role)}, {onConflict:"name", ignoreDuplicates:dbRole(role)==="boss"}).then(()=>{});
 const roleOf = session => Object.keys(ROLE_EMAIL).find(r=>ROLE_EMAIL[r]===session?.user?.email) || null;
 // Tries the code as each role's password; the first that fits is the role
 async function signIn(code){
@@ -943,7 +946,7 @@ $("btnLogin").onclick = async ()=>{
   const role = r.role;
   if(role!=="boss" && await isRemoved(name)){ sb.auth.signOut({scope:"local"}); $("loginErr").textContent = "Du er ikke på holdet. Spørg din koordinator."; return; }
   user = {name, role}; me = name; store.set("user", user);
-  if(sb) sb.from("people").upsert({name, role:dbRole(role)}).then(()=>{});
+  if(sb) savePerson(name, role);
   bossView = "tasks";
   applyUser(); loadTasks();
 };
@@ -1415,12 +1418,15 @@ function askAdd(){
     if(!n){ $("personErr").textContent = "Skriv et navn"; return; }
     if(crew.some(c=>norm(c)===norm(n))){ $("personErr").textContent = `${n} er allerede på holdet.`; return; }
     $("btnPersonOk").disabled = true;
-    // Someone who was taken off before gets their old row back, so their history stays under one name
+    // Someone who was taken off before, or who once logged in with the koordinator code, gets their old row back
+    // as crew (only crew rows show under Holdet), so their history stays under one name
     const old = rowsFor(peopleRows, n);
     const {error} = old.length
-      ? await sb.from("people").update({removed:null}).in("name", old.map(p=>p.name))
+      ? await sb.from("people").update({removed:null, role:"crew"}).in("name", old.map(p=>p.name))
       : await sb.from("people").insert({name:n, role:"crew"});
     if(error){ $("btnPersonOk").disabled = false; $("personErr").textContent = "Det lykkedes ikke. Tjek forbindelsen og prøv igen."; return; }
+    // Show them at once; loadCrew then brings the list in line with the database
+    crew.push(n); renderTasks();
     $("pPerson").hidden = true; toast(`${n} er tilføjet holdet`); loadCrew();
   };
 }
@@ -3311,7 +3317,7 @@ if(user && sb) sb.auth.getSession().then(({data, error})=>{
     return;
   }
   if(role!==user.role){ user.role = role; store.set("user", user); applyUser(); renderTasks(); }
-  sb.from("people").upsert({name:me, role:dbRole(user.role)}).then(()=>{});
+  savePerson(me, user.role);
   // Someone a boss took off the team is logged out, once nothing they marked is waiting to be sent
   if(!isBoss()) isRemoved(me).then(gone=>{
     if(!gone) return;
