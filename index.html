@@ -375,7 +375,8 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <!-- A boss picks which elements of the area belong to the task -->
   <div class="pane" id="pPick" hidden>
     <div data-keep><div class="eyebrow">Vælg steder</div><h2 id="pickName"></h2></div>
-    <div class="muted">Tryk på de steder, holdet skal tage. Tryk igen for at fjerne et sted. Blå er med, grå er ikke.</div>
+    <div class="muted" id="pickHint">Tryk på de steder, holdet skal tage. Tryk igen for at fjerne et sted. Blå er med, grå er ikke.</div>
+    <div class="legend" id="pickLegend" hidden></div>
     <div class="row" data-keep><span class="grow"><b class="num" id="pickCount">0</b> <span class="muted" id="pickOf"></span></span><button class="btn" id="btnPickAll">Hele området</button></div>
     <div class="row" data-keep>
       <button class="btn" id="btnPickCancel">Annullér</button>
@@ -768,9 +769,11 @@ const byTypeNow = () => !!(workTcol() && store.get("workMode","status")==="type"
 function elStyle(f, res){
   const pin = f.get("_own")!=null ? [OWN_PIN] : []; // a spot set by hand
   if(pick?.show && spotHidden(f)) return null;
-  if(pick){ // picking spots with only some types shown: each type its own colour, the picked ones thick blue on top
-    const far = res > 3.2, ty = pick.spots && pick.show && pick.tcol?.get(f.get("elementkode"));
-    return [...(pick.ids.has(f.getId()) ? shapeStyle("pick", !!pick.spots, far) : ty ? shapeStyle(ty, false, far) : pick.spots ? SPOT_OFF : shapeStyle("off", false, far)), ...pin];
+  if(pick){ // picking: each type (or with Vis alt, each group) its own colour
+    const far = res > 3.2, ty = pick.tcol?.get(pickKey(f)), on = pick.ids.has(f.getId());
+    // picking in a task's area, where most are usually in: the ones in keep their type colour, the rest go grey
+    if(!pick.spots) return shapeStyle(on ? ty || "pick" : "off", false, far);
+    return [...(on ? shapeStyle("pick", true, far) : ty ? shapeStyle(ty, false, far) : SPOT_OFF), ...pin];
   }
   const st = statusOf(f.getId()), k = byTypeNow() ? tcol[f.get("elementkode")] || "none" : st;
   const s = shapeStyle(k, selSet.has(f), res > 3.2, k===st ? null : st);
@@ -1643,11 +1646,13 @@ function startPick(t, fresh){
   pick = {t, ids:new Set(t.elements || (fresh ? [] : taskAll.map(f=>f.getId())))};
   selected = null; selSet.clear();
   elSrc.clear(); elSrc.addFeatures(taskAll);
-  $("pickName").textContent = t.name; pane("pPick"); pickCount();
+  $("pickName").textContent = t.name; pane("pPick"); spotColors(); pickCount();
 }
 function pickCount(){
   $("pickCount").textContent = pick.ids.size;
   $("pickOf").textContent = `valgt af ${taskAll.length} i området`;
+  pickLegend($("pickLegend"));
+  $("pickHint").textContent = "Tryk på de steder, holdet skal tage. Tryk igen for at fjerne et sted. " + (pick.tcol?.size ? "Farvet er med, grå er ikke." : "Blå er med, grå er ikke.");
   elLayer.changed();
 }
 function endPick(){
@@ -1712,9 +1717,7 @@ function spotsCount(){
   $("spotsCount").textContent = n; $("spotsOf").textContent = `${n===1 ? "sted" : "steder"} valgt`;
   $("btnSpotsOwn").textContent = p.own ? "✕ Intet punkt" : "📍 Eget punkt";
   $("btnSpotsOwn").classList.toggle("on", p.own);
-  const leg = p.show && p.tcol ? [...p.tcol].filter(([c])=>p.show.has(c)) : [];
-  $("spotsLegend").innerHTML = leg.map(([c,k])=>`<span><i style="background:${COLORS[k]}"></i>${esc(CODES[c] || c)}</span>`).join("");
-  $("spotsLegend").hidden = !leg.length;
+  pickLegend($("spotsLegend"));
   $("spotsShow").innerHTML = p.show ? `Viser kun: <b>${esc(shortCodes([...p.show]))}</b>` : `Viser: <b>alt</b>`;
   const v = map.getView().calculateExtent(map.getSize());
   $("spotsHint").innerHTML = p.own ? "<b>Tryk på kortet, hvor punktet skal være.</b>"
@@ -1778,14 +1781,23 @@ function spotTap(e){
   }
   spotsCount();
 }
-// With some types shown, each gets a type colour in the order they turn up on the map, kept while panning.
+// While picking, every type gets a type colour in the order it turns up on the map, kept while panning, so you
+// see at once what things are. With Vis alt there are too many types for that, so each group gets one instead
+// (Græs, Hæk og pur, Fast belægning …, the kommune map's folders). One type alone stays grey.
 // The blues are left out: blue means "picked"
 const SPOT_TY = [1,2,3,4,5,6,7,8,9,11];
+const pickKey = f => { const c = f.get("elementkode"); return !c ? null : pick.spots && !pick.show ? groupOf(c) || "Andet" : c; };
 function spotColors(){
-  const p = pick; if(!p?.spots || !p.show) return;
+  const p = pick; if(!p) return;
   p.tcol ||= new Map();
-  elSrc.getFeatures().forEach(f=>{ const c = f.get("elementkode");
-    if(c && p.show.has(c) && !p.tcol.has(c)) p.tcol.set(c, "ty" + SPOT_TY[p.tcol.size % SPOT_TY.length]); });
+  elSrc.getFeatures().forEach(f=>{ const k = pickKey(f);
+    if(k && !(p.show && !p.show.has(f.get("elementkode"))) && !p.tcol.has(k)) p.tcol.set(k, "ty" + SPOT_TY[p.tcol.size % SPOT_TY.length]); });
+  if(p.tcol.size < 2) p.tcol = new Map(); // one colour tells nothing
+}
+function pickLegend(el){
+  const p = pick, groups = p.spots && !p.show;
+  el.innerHTML = [...(p.tcol || [])].map(([k,c])=>`<span><i style="background:${COLORS[c]}"></i>${esc(groups ? k : CODES[k] || k)}</span>`).join("");
+  el.hidden = !p.tcol?.size;
 }
 // A type left out of what the map shows is hidden and can't be tapped; spots already in the task always show
 const spotHidden = f => !!(pick?.show && !pick.ids.has(f.getId()) && f.get("_own")==null && !pick.show.has(f.get("elementkode")));
