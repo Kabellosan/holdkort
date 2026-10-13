@@ -1675,7 +1675,11 @@ $("btnPickOk").onclick = ()=>{
 // tapping an element puts it in the task, tapping again takes it out. "Eget punkt" adds a spot the kommune doesn't have.
 // The same element can be in other tasks too. Stored as tasks.elements (the ids) and tasks.spots (what's needed
 // to fetch them again, see fetchSpots); a spot set by hand is {id:"egen:…", name, xy}.
-const SPOT_VIEW = 5e6; // m²: how small the view must be before the phone asks the kommune what's there
+// m²: how small the view must be before the phone asks the kommune what's there. With only some types shown
+// the answer is much smaller (Overblik asks for one type in the whole kommune), so it may be asked from as far out
+// as a task's area may be big
+const SPOT_VIEW = 5e6, SPOT_VIEW_TYPES = 60e6;
+const spotView = p => p.show ? SPOT_VIEW_TYPES : SPOT_VIEW;
 let spotT = null, newSpots = null; // newSpots: the picked spots while the new-task panel is open
 const spotsOf = p => [...p.info.values()].filter(s=>p.ids.has(s.id));
 function spotsExtent(sp){
@@ -1708,23 +1712,32 @@ function spotsCount(){
   const v = map.getView().calculateExtent(map.getSize());
   $("spotsHint").innerHTML = p.own ? "<b>Tryk på kortet, hvor punktet skal være.</b>"
     : p.busy ? `<span class="spin"></span> Henter kommunens elementer her …`
-    : ol.extent.getArea(v) > SPOT_VIEW ? "Zoom ind på kortet for at se kommunens elementer. Brug <b>⌕ Søg</b> for at finde en by eller vej."
+    : ol.extent.getArea(v) > spotView(p) ? "Zoom ind på kortet for at se kommunens elementer. Brug <b>⌕ Søg</b> for at finde en by eller vej."
     : "Tryk på de steder, der skal med. Tryk igen for at fjerne et. <b>Blå</b> er med.";
   elLayer.changed();
 }
-// Ask the kommune for every element around the view, once per place: only when zoomed in, and a bit wider than the screen
+// Ask the kommune for every element (or only the types shown) around the view, once per place: only when zoomed in, and a bit wider than the screen
 async function spotLoad(){
   const p = pick; if(!p?.spots) return;
   const v = map.getView().calculateExtent(map.getSize());
-  if(ol.extent.getArea(v) > SPOT_VIEW || p.got.some(e=>ol.extent.containsExtent(e, v))){ spotsCount(); return; }
-  const ext = ol.extent.buffer(v, Math.min(ol.extent.getWidth(v), ol.extent.getHeight(v)) * .25).map(Math.round);
+  // got: what was fetched, {ext, codes} (codes null = every type); a fetch of everything covers any choice of types
+  const show = p.show, has = g => ol.extent.containsExtent(g.ext, v) && (!g.codes || (show && [...show].every(c=>g.codes.has(c))));
+  if(ol.extent.getArea(v) > spotView(p) || p.got.some(has)){ spotsCount(); return; }
+  // a margin around the view, so a small move doesn't ask again; none when that would go over MAX_AREA
+  const ext = ol.extent.buffer(v, ol.extent.getArea(v) * 2.25 > MAX_AREA ? 0 : Math.min(ol.extent.getWidth(v), ol.extent.getHeight(v)) * .25).map(Math.round);
   p.busy++; spotsCount();
   try{
-    const fs = await fetchLayers([`BBOX(wkb_geometry,${ext.join(",")})`], g=>g.intersectsExtent(ext));
+    const box = `BBOX(wkb_geometry,${ext.join(",")})`;
+    const fs = await fetchLayers([show ? `${codeIn([...show])} AND ${box}` : box], g=>g.intersectsExtent(ext));
     if(pick!==p) return;
-    p.got.push(ext);
-    nameNear(fs.filter(f=>!f.get("vejnavn")), fs.filter(f=>f.getId().startsWith("vej_sti:")));
-    elSrc.addFeatures(fs.filter(f=>f.get("elementkode") && !elSrc.getFeatureById(f.getId())));
+    p.got.push({ext, codes: show && new Set(show)});
+    const add = fs.filter(f=>f.get("elementkode") && !elSrc.getFeatureById(f.getId()));
+    if(!show) nameNear(fs.filter(f=>!f.get("vejnavn")), fs.filter(f=>f.getId().startsWith("vej_sti:")));
+    else if(add.length){ // the roads weren't asked for, so fetch the ones around what came back for the street names
+      const e = ol.extent.createEmpty(); add.forEach(f=>ol.extent.extend(e, f.getGeometry().getExtent()));
+      await nameByStreet(add, e); if(pick!==p) return;
+    }
+    elSrc.addFeatures(add.filter(f=>!elSrc.getFeatureById(f.getId())));
   }catch(e){ console.error(e); if(pick===p) toast("Kunne ikke hente kommunens kort her. Flyt kortet lidt for at prøve igen.", 4000); }
   finally{ p.busy--; if(pick===p) spotsCount(); }
 }
@@ -1794,7 +1807,7 @@ $("btnShowOk").onclick = ()=>{
 };
 $("btnShowAll").onclick = ()=>{ $("pShow").hidden = true; showThen(null); };
 $("btnShowClose").onclick = ()=>{ $("pShow").hidden = true; if(!pick) $("askShow").hidden = false; }; // a new task goes back to the question
-$("btnSpotsShow").onclick = ()=>{ showThen = show=>{ if(!pick?.spots) return; pick.show = show; spotsCount(); }; openShow(); };
+$("btnSpotsShow").onclick = ()=>{ showThen = show=>{ if(!pick?.spots) return; pick.show = show; spotsCount(); spotLoad(); }; openShow(); };
 function endSpots(){ const p = pick; pick = null; clearTimeout(spotT); elSrc.clear(); pane("pTasks"); return p; }
 const spotsLeave = ()=>{ $("askSpots").hidden = true; const p = endSpots(); if(p.t) openTask(p.t); };
 $("btnSpotsCancel").onclick = ()=>{
