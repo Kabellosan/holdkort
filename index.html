@@ -387,6 +387,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <div class="pane" id="pSpots" hidden>
     <div class="row" data-keep><div class="grow"><div class="eyebrow">Tryk på stederne</div><h2 id="spotsName">Ny opgave</h2></div><button class="btn ghost" id="btnSpotsCancel">Annullér</button></div>
     <div class="muted" id="spotsHint"></div>
+    <div class="row"><span class="grow" id="spotsShow"></span><button class="btn" id="btnSpotsShow">Skift</button></div>
     <div class="row" data-keep>
       <span class="grow"><b class="num" id="spotsCount">0</b> <span class="muted" id="spotsOf">steder valgt</span></span>
       <button class="btn" id="btnSpotsOwn">📍 Eget punkt</button>
@@ -470,6 +471,17 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 </div>
 
 <!-- Stop picking spots without saving -->
+<!-- Tapping spots: show everything the kommune has, or only some types -->
+<div class="ask" id="askShow" hidden role="dialog" aria-modal="true" aria-labelledby="askShowQ">
+  <div>
+    <h2 id="askShowQ">Hvad skal vises på kortet?</h2>
+    <button class="btn primary" id="askShowAll">Vis alt</button>
+    <div class="muted" style="margin-top:-6px">Alt hvad kommunen har registreret, fx græs, hæk, fortov og bænke.</div>
+    <button class="btn" id="askShowSome">Vælg typer eller pakker</button>
+    <div class="muted" style="margin-top:-6px">Kun det, opgaven handler om, fx al pur. Så er det lettere at ramme det rigtige.</div>
+    <button class="btn ghost" id="askShowNo">Annullér</button>
+  </div>
+</div>
 <div class="ask" id="askSpots" hidden role="dialog" aria-modal="true" aria-labelledby="askSpotsQ">
   <div>
     <h2 id="askSpotsQ">Stop uden at gemme?</h2>
@@ -554,6 +566,27 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   </header>
   <div class="list" id="typeList"></div>
   <footer><div class="muted">Viser alle elementer af typen i hele kommunen, og hvilke der er med i en opgave. Hentes fra kommunen højst én gang om dagen.</div></footer>
+</div>
+
+<!-- Tapping spots: which types the map shows, picked like in Ny opgave -->
+<div class="panel" id="pShow" hidden>
+  <header>
+    <div class="row"><h2 class="grow">Hvad skal vises på kortet?</h2><button class="btn ghost" id="btnShowClose">‹ Tilbage</button></div>
+    <input type="search" id="showSearch" placeholder="Søg type: pur, fortov, løs belægning, bænk …" autocomplete="off">
+  </header>
+  <div class="list">
+    <div class="packbox" id="showPackBox">
+      <div class="section" style="margin:0">Pakker</div>
+      <div class="packs" id="showPacks"></div>
+      <div class="section">Typer</div>
+    </div>
+    <div class="codes" id="showList"></div>
+  </div>
+  <footer>
+    <div class="chosen" id="showChosen"></div>
+    <button class="btn primary" id="btnShowOk">Vis på kortet</button>
+    <button class="btn ghost" id="btnShowAll">Vis alt i stedet</button>
+  </footer>
 </div>
 
 <!-- One element's log: when it was tended, notes and photos -->
@@ -733,6 +766,7 @@ function workTcol(){
 const byTypeNow = () => !!(workTcol() && store.get("workMode","status")==="type");
 function elStyle(f, res){
   const pin = f.get("_own")!=null ? [OWN_PIN] : []; // a spot set by hand
+  if(pick?.show && spotHidden(f)) return null;
   if(pick) return [...(pick.ids.has(f.getId()) ? shapeStyle("pick", false, res > 3.2) : pick.spots ? SPOT_OFF : shapeStyle("off", false, res > 3.2)), ...pin];
   const st = statusOf(f.getId()), k = byTypeNow() ? tcol[f.get("elementkode")] || "none" : st;
   const s = shapeStyle(k, selSet.has(f), res > 3.2, k===st ? null : st);
@@ -1024,7 +1058,7 @@ const GUIDES = {
     COLOR_STEP, MARK_STEP, SEND_STEP, HELP_STEP],
   boss: [
     {ic:"👋", t:"Velkommen, koordinator", h:`<p>Du laver opgaverne og fordeler dem. Holdet markerer på kortet, hvad de har lavet, så du kan følge med.</p>`},
-    {ic:"➕", t:"Lav en opgave", h:`<p>Tryk <b>+ Ny opgave</b>. Vælg <b>Et helt område</b>: tegn det på kortet, og vælg typerne, fx al pur i Brande.</p><p>Eller vælg <b>Tryk på stederne</b>: tryk på de enkelte steder, der skal med. Med <b>📍 Eget punkt</b> sætter du et sted, kommunens kort ikke har.</p>`},
+    {ic:"➕", t:"Lav en opgave", h:`<p>Tryk <b>+ Ny opgave</b>. Vælg <b>Et helt område</b>: tegn det på kortet, og vælg typerne, fx al pur i Brande.</p><p>Eller vælg <b>Tryk på stederne</b>: vælg om kortet skal vise alt eller kun nogle typer eller pakker, og tryk så på de enkelte steder, der skal med. Med <b>📍 Eget punkt</b> sætter du et sted, kommunens kort ikke har.</p>`},
     {ic:"▦", t:"Overblik", h:`<p><b>▦ Overblik</b> viser én type i hele kommunen, farvet efter hvor langt holdet er.</p><p><b>Lilla</b> er steder, der ikke er med i nogen opgave endnu.</p>`},
     {ic:"👥", t:"Holdet", h:`<p>Under <b>Holdet</b> ser du hver person og deres opgaver. Her kan du også tilføje eller fjerne folk.</p>`},
     COLOR_STEP,
@@ -1650,12 +1684,13 @@ function spotsExtent(sp){
   return ol.extent.buffer(e, 40).map((v,i)=>i<2 ? Math.floor(v) : Math.ceil(v));
 }
 // t: the task being changed, or null for a new one. from: the spots of a new task, when going back to change them
-function startSpots(t, from){
+// show: the types the map shows (a Set), or null for everything
+function startSpots(t, from, show = null){
   if(t && (task!==t || !taskAll.length) && t.elements?.length){ toast("Kortet er ikke hentet endnu. Prøv igen om lidt.", 4000); return; }
   closeOverview(); clearTimeout(refreshTimer);
   const keep = from ? from.keep : t ? taskAll.filter(f=>(t.elements||[]).includes(f.getId())) : [];
   pick = {spots:true, t, ids:new Set(from ? from.ids : t?.elements || []), info:new Map((from ? [...from.info.values()] : t?.spots || []).map(s=>[s.id, s])),
-    got:[], busy:0, own:false};
+    got:[], busy:0, own:false, show: from ? from.show : show};
   selected = null; selSet.clear(); elSrc.clear(); areaSrc.clear();
   elSrc.addFeatures(keep);
   $("spotsName").textContent = t ? t.name : "Ny opgave";
@@ -1669,6 +1704,7 @@ function spotsCount(){
   $("spotsCount").textContent = n; $("spotsOf").textContent = `${n===1 ? "sted" : "steder"} valgt`;
   $("btnSpotsOwn").textContent = p.own ? "✕ Intet punkt" : "📍 Eget punkt";
   $("btnSpotsOwn").classList.toggle("on", p.own);
+  $("spotsShow").innerHTML = p.show ? `Viser kun: <b>${esc(shortCodes([...p.show]))}</b>` : `Viser: <b>alt</b>`;
   const v = map.getView().calculateExtent(map.getSize());
   $("spotsHint").innerHTML = p.own ? "<b>Tryk på kortet, hvor punktet skal være.</b>"
     : p.busy ? `<span class="spin"></span> Henter kommunens elementer her …`
@@ -1705,7 +1741,7 @@ function spotTap(e){
     p.info.set(s.id, s); p.ids.add(s.id); elSrc.addFeature(ownFeat(s)); p.own = false;
     spotsCount(); toast(`📍 ${s.name} er med`); return;
   }
-  const hits = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:12});
+  const hits = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:12}).filter(f=>!spotHidden(f));
   if(!hits.length) return;
   const f = hits.slice().sort((a,b)=>spotSize(a) - spotSize(b))[0], id = f.getId();
   if(p.ids.has(id)){
@@ -1721,6 +1757,44 @@ function spotTap(e){
   }
   spotsCount();
 }
+// A type left out of what the map shows is hidden and can't be tapped; spots already in the task always show
+const spotHidden = f => !!(pick?.show && !pick.ids.has(f.getId()) && f.get("_own")==null && !pick.show.has(f.get("elementkode")));
+// The choice is made like the types in Ny opgave (packages and a search); the last one is ticked in advance next time
+let showSet = new Set(), showThen = null; // showThen(Set | null): what to do with the choice
+function askShow(then){ showThen = then; $("askShow").hidden = false; $("askShowAll").focus(); }
+$("askShowAll").onclick = ()=>{ $("askShow").hidden = true; showThen(null); };
+$("askShowSome").onclick = ()=>{ $("askShow").hidden = true; openShow(); };
+$("askShowNo").onclick = ()=>{ $("askShow").hidden = true; };
+function openShow(){
+  showSet = new Set(pick?.show || store.get("spotShow", []).filter(c=>CODES[c]));
+  $("showSearch").value = ""; renderShow(); $("pShow").hidden = false;
+  loadPacks().then(()=>{ if(!$("pShow").hidden) renderShow(); });
+}
+function renderShow(){
+  const q = $("showSearch").value;
+  codeChecks($("showList"), q, showSet, renderShowFoot);
+  $("showPackBox").hidden = !!q.trim(); // while searching, the hits come first
+  renderShowFoot();
+}
+function renderShowFoot(){
+  const on = p => p.codes.length > 0 && p.codes.every(c=>showSet.has(c)), n = showSet.size;
+  $("showPacks").innerHTML = packs.map(p=>`<button data-k="${esc(p.id)}" class="${on(p)?"on":""}">📦 ${esc(p.name)}</button>`).join("");
+  $("showPacks").querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{
+    const p = packs.find(x=>x.id===b.dataset.k), was = on(p);
+    p.codes.forEach(c=>was ? showSet.delete(c) : showSet.add(c)); renderShow();
+  });
+  $("showChosen").innerHTML = packNames([...showSet]).map(n=>`<span>${esc(packs.some(p=>p.name===n) ? "📦 " + n : n)}</span>`).join("")
+    || `<span class="muted" style="background:none;color:var(--ink2);padding:0">Tryk på en pakke eller sæt flueben ved typerne</span>`;
+  $("btnShowOk").textContent = n ? `Vis ${n===1 ? "1 type" : n + " typer"} på kortet` : "Vis på kortet";
+}
+$("showSearch").oninput = renderShow;
+$("btnShowOk").onclick = ()=>{
+  if(!showSet.size){ toast("Vælg mindst én type eller pakke, eller tryk Vis alt i stedet", 4000); return; }
+  store.set("spotShow", [...showSet]); $("pShow").hidden = true; showThen(new Set(showSet));
+};
+$("btnShowAll").onclick = ()=>{ $("pShow").hidden = true; showThen(null); };
+$("btnShowClose").onclick = ()=>{ $("pShow").hidden = true; if(!pick) $("askShow").hidden = false; }; // a new task goes back to the question
+$("btnSpotsShow").onclick = ()=>{ showThen = show=>{ if(!pick?.spots) return; pick.show = show; spotsCount(); }; openShow(); };
 function endSpots(){ const p = pick; pick = null; clearTimeout(spotT); elSrc.clear(); pane("pTasks"); return p; }
 const spotsLeave = ()=>{ $("askSpots").hidden = true; const p = endSpots(); if(p.t) openTask(p.t); };
 $("btnSpotsCancel").onclick = ()=>{
@@ -1736,7 +1810,7 @@ $("btnSpotsOk").onclick = async ()=>{
   const p = pick, sp = spotsOf(p);
   if(!sp.length){ toast("Tryk på mindst ét sted på kortet", 4000); return; }
   const keep = elSrc.getFeatures().filter(f=>p.ids.has(f.getId()));
-  if(!p.t){ newSpots = {ids:new Set(p.ids), info:p.info, keep}; endSpots(); showNewPanel(); return; }
+  if(!p.t){ newSpots = {ids:new Set(p.ids), info:p.info, keep, show:p.show}; endSpots(); showNewPanel(); return; }
   const t = p.t, patch = {elements:sp.map(s=>s.id), spots:sp, codes:[...new Set(sp.filter(s=>s.code).map(s=>s.code))], extent:spotsExtent(sp)};
   if(sb){
     $("btnSpotsOk").disabled = true;
@@ -1907,7 +1981,7 @@ function showNewPanel(){
 // "+ Ny opgave": a whole area of some types, or the spots tapped one by one
 function askNewTask(){ $("askNew").hidden = false; $("askNewSpots").focus(); }
 $("askNewSpots").onclick = ()=>{ $("askNew").hidden = true; newSpots = null; picked = new Set(); assignees = new Set();
-  $("taskTitle").value = ""; delete $("taskTitle").dataset.touched; startSpots(null); };
+  $("taskTitle").value = ""; delete $("taskTitle").dataset.touched; askShow(show=>startSpots(null, null, show)); };
 $("askNewArea").onclick = ()=>{ $("askNew").hidden = true; beginNewTask(null); };
 $("askNewNo").onclick = ()=>{ $("askNew").hidden = true; };
 $("btnNewTask").onclick = askNewTask;
