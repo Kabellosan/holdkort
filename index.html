@@ -636,7 +636,9 @@ const CODES = {
 // The kommune's code families (the letters before the number), so a search for "løs belægning" finds "Grus, sti" (LB2a) too.
 const GROUPS = {HA:"Hæk og pur",FB:"Fast belægning",LB:"Løs belægning",GR:"Græs",BU:"Buske",BL:"Blomster",BI:"Biodiversitet",
  KL:"Klatreplanter",TR:"Træer",SK:"Skov og krat",BY:"Bygværker",UD:"Udstyr",VA:"Vand og grøfter",SB:"Sportsbelægning"};
-const groupOf = k => GROUPS[k.replace(/\d.*$/,"")] || "";
+// Where the kommune's map files a type under another family than its letters say.
+const GROUP_OF = {GR7d:"Fast belægning"};
+const groupOf = k => GROUP_OF[k] || GROUPS[k.replace(/\d.*$/,"")] || "";
 const typeHit = (k, v, q) => !q || k.toLowerCase().includes(q) || v.toLowerCase().includes(q) || groupOf(k).toLowerCase().includes(q);
 // Shown under a type when the search matched its family but not its own name.
 const groupNote = (k, v, q) => q && !v.toLowerCase().includes(q) && !k.toLowerCase().includes(q) && groupOf(k) ? `<span class="muted"> · ${esc(groupOf(k).toLowerCase())}</span>` : "";
