@@ -185,6 +185,20 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .tools .btn{flex:1 1 0;min-width:0;flex-direction:column;gap:2px;padding:6px 2px;min-height:64px;font-size:13px}
 .tools .btn span{font-size:22px;line-height:1}
 .tools .btn.on{border-color:var(--moss2);background:var(--paper)}
+/* The element's current note, tap to open Noter og billeder */
+.notepeek{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;text-align:left;padding:10px 14px;border-radius:var(--r);border:1px solid var(--line);border-left:5px solid var(--moss2);background:var(--paper);color:var(--ink);font:inherit;font-size:16px}
+.notepeek small{color:var(--ink2);font-size:13px}
+/* Noter og billeder: one element's notes and photos, oldest at the top, like a text conversation */
+.msg{display:flex;flex-direction:column;gap:6px;padding:10px 14px;border-radius:var(--r);background:var(--paper);max-width:92%;align-self:flex-start}
+.msg.mine{align-self:flex-end;background:var(--card);border:1px solid var(--line)}
+.msg .by{font-size:13px;color:var(--ink2)}
+.msg .by b{color:var(--ink);font-size:14px}
+.msg .txt{font-size:17px;white-space:pre-wrap;overflow-wrap:anywhere}
+.msg img{width:100%;max-height:240px;object-fit:cover;border-radius:10px;cursor:zoom-in;background:var(--line)}
+.msg .cur{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--ink2)}
+.msg .cur .btn{min-height:40px;font-size:14px}
+.msg.wait{border:2px dashed var(--line)}
+#noteIn{font:inherit;font-size:17px;width:100%;min-height:76px;padding:12px;border-radius:var(--r);border:1px solid var(--line);background:var(--paper);color:var(--ink);resize:vertical;box-sizing:border-box}
 #multiHint{font-size:14px}
 .ask{position:absolute;inset:0;background:#0007;display:flex;align-items:center;justify-content:center;padding:18px;z-index:30}
 .ask>div{background:var(--card);border-radius:20px;padding:20px;max-width:360px;width:100%;display:flex;flex-direction:column;gap:12px;box-shadow:0 10px 40px #0005}
@@ -430,12 +444,12 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <!-- The less used actions, one row of big icon buttons so the panel fits a small phone -->
     <div class="tools">
       <button class="btn" id="btnPart"><span>📏</span>Stykke</button>
-      <button class="btn" id="btnNoteOpen" aria-expanded="false"><span>📝</span>Note</button>
+      <button class="btn" id="btnNoteOpen"><span>📝</span>Note</button>
       <button class="btn" id="btnPhoto"><span>📷</span>Billede</button>
       <button class="btn" id="btnRoute"><span>🧭</span>Vis vej</button>
       <button class="btn" id="btnHist"><span>📜</span>Historik</button>
     </div>
-    <div class="row" id="noteRow" hidden><input type="text" id="note" placeholder="Note til holdet"><button class="btn" id="btnNote">Gem</button></div>
+    <button class="notepeek" id="notePeek" hidden><span id="notePeekTxt"></span><small id="notePeekBy"></small></button>
     <input type="file" id="photoIn" accept="image/*" hidden>
     <input type="file" id="photoCam" accept="image/*" capture="environment" hidden>
     <div class="row selrow"><div class="grow"><div class="tended" id="elTended"></div><div class="muted" id="multiHint">Tryk på flere for at markere dem.</div></div><button class="btn clear" id="btnClearSel">✕ Ryd markerede</button></div>
@@ -612,6 +626,15 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <header><div class="row"><div class="grow"><div class="eyebrow" id="histEyebrow">Historik</div><h2 id="histTitle"></h2></div><button class="btn ghost" id="btnHistClose">Luk</button></div></header>
   <div class="body" id="histList"></div>
 </div>
+<!-- Noter og billeder for one element (or the marked ones): earlier notes with who wrote them and when, and a box for a new one -->
+<div class="panel" id="pNotes" hidden>
+  <header><div class="row"><button class="btn ghost" id="btnNotesClose">‹ Tilbage</button><div class="grow"><div class="eyebrow">Noter og billeder</div><h2 id="notesTitle"></h2></div></div></header>
+  <div class="body" id="notesList"></div>
+  <footer>
+    <textarea id="noteIn" rows="2" placeholder="Skriv en note til holdet …" enterkeyhint="enter"></textarea>
+    <div class="row"><button class="btn" id="btnNotePhoto">📷 Billede</button><button class="btn primary grow" id="btnNote">Gem noten</button></div>
+  </footer>
+</div>
 <div class="photo-view" id="photoView" hidden role="dialog" aria-modal="true" aria-label="Billede"><img id="photoImg" alt=""><button class="btn" id="btnPhotoClose">✕ Luk</button></div>
 
 <!-- Place search, full screen -->
@@ -659,10 +682,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <li><i>📍</i><span><b>Din position forlader aldrig telefonen.</b> GPS bruges kun til at finde det nærmeste element. Den gemmes og sendes ikke.</span></li>
       <li><i>📤</i><span><b>Intet sendes, før du trykker Send</b> (medmindre du selv slår automatisk til).</span></li>
       <li><i>🧾</i><span><b>Det, der sendes:</b> hvilket element, status (mangler / i gang / færdig / blokeret og hvorfor), en evt. note, dit navn og <i>dagen</i> det blev sendt. Ikke klokkeslæt for hver markering, og ingen rute.</span></li>
-      <li><i>👀</i><span><b>Holdet</b> kan se, hvem der har markeret hvad, så I ikke tager det samme. <b>Koordinatorerne</b> ser, hvor meget af opgaven der er færdigt, og i elementets historik, hvem der ændrede hvad og hvilken dag.</span></li>
+      <li><i>👀</i><span><b>Holdet</b> kan se, hvem der har markeret hvad, så I ikke tager det samme. <b>Koordinatorerne</b> ser, hvor meget af opgaven der er færdigt, og i elementets historik, hvem der ændrede hvad og hvilken dag. <b>Noter og billeder</b> ved et sted kan alle se, med navn og dag, ligesom en besked til holdet.</span></li>
       <li><i>📋</i><span id="seeOwn"><b>Du ser kun dine egne opgaver</b> og dem, der er til alle. Koordinatorerne kan se, hvem der er sat på hvilke opgaver.</span></li>
       <li><i>📷</i><span><b>Billeder</b> gøres mindre på telefonen, og placering og andre skjulte oplysninger fjernes, før de sendes. De sendes også først, når du trykker Send.</span></li>
-      <li><i>🗑️</i><span><b>Når en opgave afsluttes,</b> slettes alle markeringer (de gemmes skjult i 14 dage, så en fejl kan rettes). Tilbage er kun "færdig, 47 af 47" og en log over hvert element: hver statusændring med <i>dag</i>, navn og evt. note og billede. Loggen kan kun ses af koordinatorerne.</span></li>
+      <li><i>🗑️</i><span><b>Når en opgave afsluttes,</b> slettes alle markeringer (de gemmes skjult i 14 dage, så en fejl kan rettes). Tilbage er kun "færdig, 47 af 47" og en log over hvert element: hver statusændring med <i>dag</i>, navn og evt. note og billede. Navnene ved statusændringerne kan kun ses af koordinatorerne; noter og billeder står med navn for alle.</span></li>
     </ul>
     <p class="muted" id="profHonest"></p>
     <button class="btn" id="btnProfGuide">? Vis vejledningen igen</button>
@@ -1224,9 +1247,12 @@ function setStatus(ids, status, note, reason, photo, parts){
   ids.forEach(id=>{ const prev = eff(id) || {}, key = task.id+"|"+id;
     const base = progress.get(id) || {status:"todo", note:""};
     const photos = [...(pending.get(key)?._photos || []), ...(photo ? [photo] : [])];
+    // Each note written goes in the log on its own (a second note before Send doesn't wipe the first from the history)
+    const notes = [...(pending.get(key)?._notes || [])], nt = (note ?? "").trim();
+    if(nt && nt!==(prev.note||"").trim()) notes.push(nt);
     // _fields are for the log only: what the team had before, the element's type, photos waiting to be sent
     const r = {task_id:task.id, element_id:id, status: status ?? prev.status ?? "todo", note: note ?? prev.note ?? "", worker:me,
-      _was: base.status==="done", _st0: base.status||"todo", _reason0: base.reason||null, _note0: base.note||"", _code: elSrc.getFeatureById(id)?.get("elementkode") || null, _photos: photos};
+      _was: base.status==="done", _st0: base.status||"todo", _reason0: base.reason||null, _note0: base.note||"", _code: elSrc.getFeatureById(id)?.get("elementkode") || null, _photos: photos, _notes: notes};
     // The reason only belongs to "blocked"; any other status clears it
     r.reason = r.status==="blocked" ? (reason ?? prev.reason ?? "Andet") : null;
     // Stretches done on a long element (only once the database can keep them)
@@ -1234,7 +1260,7 @@ function setStatus(ids, status, note, reason, photo, parts){
     if(parts){ const g = elSrc.getFeatureById(id)?.getGeometry(); if(g){ r._of = Math.round(partTotal(g)); r._line = isLine(g); } }
     else if(prev._of != null){ r._of = prev._of; r._line = prev._line; }
     // Setting an element back to what the team already has is not a change, so it leaves the outbox
-    if(r.status===base.status && r.note===(base.note||"") && r.reason===(base.reason||null) && partsKey(r.parts)===partsKey(base.parts) && !photos.length) pending.delete(key); else pending.set(key, r); });
+    if(r.status===base.status && r.note===(base.note||"") && r.reason===(base.reason||null) && partsKey(r.parts)===partsKey(base.parts) && !photos.length && !notes.length) pending.delete(key); else pending.set(key, r); });
   store.set("pending", [...pending.values()]);
   renderOutbox(); refresh();
   if(autoSend) sendPending();
@@ -2601,16 +2627,19 @@ async function writeLog(rows, paths){
     if(r._was && r.status!=="done") undo.push(r);
     const st0 = r._st0 ?? (r._was ? "done" : null); // marks queued before this version have no _st0
     const changed = r.status!==st0 || (r.status==="blocked" && (r.reason||null)!==(r._reason0||null));
-    const done = r.status==="done" && !r._was, noted = !!r.note && r.note!==r._note0;
+    // Rows queued before notes were kept one by one have no _notes: log their current note as before
+    const done = r.status==="done" && !r._was, notes = r._notes || (!!r.note && r.note!==r._note0 ? [r.note] : []), noted = notes.length > 0;
     const photos = (r._photos||[]).map(p=>paths[p]).filter(Boolean);
     const old = new Set(r._parts0||[]), fresh = (r.parts||[]).filter(x=>!old.has(partKey(x)));
     const part = fresh.length ? {m:Math.round(fresh.reduce((s,x)=>s + (x.m||0), 0)), of:r._of ?? null, u:r._line ? "m" : "m2"} : null;
     if(!changed && !noted && !photos.length && !part) return;
+    const each = r._notes ? notes : []; // with _notes every note is a line of its own
     const line = {element_id:r.element_id, code:r._code, task_id:r.task_id, day, done, worker: r.worker||null, status: changed ? r.status : null,
-      reason: changed && r.status==="blocked" ? r.reason||null : null, note: (done || noted) && r.note ? r.note : null, photo:null};
+      reason: changed && r.status==="blocked" ? r.reason||null : null, note: r._notes ? null : (done || noted) && r.note ? r.note : null, photo:null};
     if(part) line.part = part;
-    if(!photos.length) add.push(line);
+    if(!photos.length){ if(changed || done || part || !r._notes) add.push(line); } // nothing but notes: they get their own lines below
     else photos.forEach((p,i)=>add.push(i===0 ? {...line, photo:p} : {...line, done:false, status:null, reason:null, note:null, photo:p, ...(part ? {part:null} : {})}));
+    each.forEach(n=>add.push({element_id:r.element_id, code:r._code, task_id:r.task_id, day, done:false, worker: r.worker||null, status:null, reason:null, note:n, photo:null}));
     if(done) lastTended.set(r.element_id, day);
   });
   const back = new Date(Date.now() - 864e5), yday = `${back.getFullYear()}-${String(back.getMonth()+1).padStart(2,"0")}-${String(back.getDate()).padStart(2,"0")}`;
@@ -2691,7 +2720,7 @@ $("photoIn").onchange = $("photoCam").onchange = async e=>{
   const ids = [...selSet].map(g=>g.getId()); if(!file || !ids.length) return;
   try{
     const id = uuid(); await photoPut(id, await shrink(file));
-    setStatus(ids, null, null, undefined, id);
+    setStatus(ids, null, null, undefined, id); // also redraws Noter og billeder if it's open
     toast(autoSend ? "Billede tilføjet" : "Billedet er lagt klar. Tryk Send", 3000);
   }catch(err){ console.error(err); toast("Billedet kunne ikke gemmes. Prøv igen.", 4000); }
 };
@@ -2969,9 +2998,8 @@ $("btnPartOk").onclick = ()=>{
 };
 
 // ================= ELEMENT VIEW =================
-let noteOpen = false;
 function select(f){
-  selected = f; selSet = new Set(f ? [f] : []); noteOpen = false;
+  selected = f; selSet = new Set(f ? [f] : []);
   elLayer.changed();
   if(f) showEl(true); else pane("pWork");
 }
@@ -3008,10 +3036,13 @@ function showEl(zoom){
   const why = [...new Set(fs.map(g=>eff(g.getId())).filter(x=>x?.status==="blocked").map(x=>x.reason||"Andet"))];
   $("elBlock").hidden = !why.length;
   $("elBlock").textContent = why.length ? `🚧 Midlertidigt blokeret: ${why.join(", ")}` : "";
-  if(document.activeElement !== $("note")) $("note").value = n>1 ? "" : (p?.note || "");
-  // The note box shows when there is a note to read, or after tapping 📝 Note
-  $("noteRow").hidden = !noteOpen && !$("note").value;
-  $("btnNoteOpen").classList.toggle("on", !$("noteRow").hidden); $("btnNoteOpen").setAttribute("aria-expanded", String(!$("noteRow").hidden));
+  // The current note stays readable in the panel; tapping it (or 📝 Note) opens Noter og billeder
+  const cur = n===1 ? (p?.note||"").trim() : "";
+  $("notePeek").hidden = !cur;
+  if(cur){ $("notePeekTxt").textContent = "📝 " + cur;
+    const b0 = progress.get(f.getId()), by = pending.get(task.id+"|"+f.getId())?._notes?.includes(cur) || !b0 ? "Ikke sendt endnu" : [b0.worker, b0.updated_at ? ago(b0.updated_at) : ""].filter(Boolean).join(" · ");
+    $("notePeekBy").textContent = (by ? by + " · " : "") + "Tryk for alle noter"; }
+  if(!$("pNotes").hidden) showNotes();
   const unsent = fs.some(g=>pending.has(task.id+"|"+g.getId()));
   const latest = fs.map(g=>progress.get(g.getId())).filter(Boolean).sort((a,b)=>a.updated_at<b.updated_at?1:-1)[0];
   $("elMeta").textContent = unsent ? "Ikke sendt endnu"
@@ -3103,22 +3134,77 @@ document.querySelectorAll(".status [data-s]").forEach(b=>b.onclick=()=>{
   setStatus(ids, b.dataset.s);
   if(b.dataset.s==="done") toast(ids.length>1 ? `${ids.length} færdige ✓ Tryk Næste` : "Færdig ✓ Tryk Næste for den nærmeste");
 });
-function askBlock(){ $("blockNote").value = $("note").value; $("askBlock").hidden = false; }
+function askBlock(){ $("blockNote").value = ""; $("askBlock").hidden = false; }
 function closeBlock(){ $("askBlock").hidden = true; }
 $("askBlock").querySelectorAll("[data-r]").forEach(b=>b.onclick=()=>{
   const ids = [...selSet].map(g=>g.getId()), note = $("blockNote").value.trim();
-  closeBlock(); $("note").value = note;
-  setStatus(ids, "blocked", note, b.dataset.r);
+  closeBlock();
+  setStatus(ids, "blocked", note || null, b.dataset.r); // no note typed keeps the one there is
   toast(`${ids.length>1 ? ids.length + " blokeret" : "Blokeret"}: ${b.dataset.r}. Tryk Næste`, 3000);
 });
 $("askBlockNo").onclick = closeBlock;
 $("askBlock").onclick = e=>{ if(e.target===$("askBlock")) closeBlock(); };
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !$("askBlock").hidden) closeBlock(); });
-$("btnNoteOpen").onclick = ()=>{
-  if($("noteRow").hidden){ noteOpen = true; showEl(false); }
-  $("note").focus();
+// ================= NOTER OG BILLEDER =================
+// One element's notes and photos from every task, oldest first like a text conversation, each with who and which day.
+// The newest note is the element's current note (shown in the panel and the list); "Ikke aktuel mere" takes it off but keeps it here.
+async function showNotes(){
+  const fs = [...selSet], n = fs.length, f = selected, L = $("notesList"), first = $("pNotes").hidden;
+  if(!n || !task) return closeNotes();
+  $("pNotes").hidden = false;
+  $("notesTitle").textContent = n>1 ? `${n} markerede steder` : titleOf(f);
+  if(n>1){ L.innerHTML = `<p class="muted">Noten kommer på alle ${n} markerede steder.</p>`; if(first) $("noteIn").focus(); return; }
+  const id = f.getId(), seq = ++notesSeq;
+  if(first) L.innerHTML = `<p class="muted"><span class="spin"></span> Henter …</p>`;
+  let data = [], failed = false;
+  if(sb && logOk){
+    const res = await sb.from("element_log").select("id,task_id,day,worker,note,photo").eq("element_id", id).or("note.not.is.null,photo.not.is.null")
+      .order("day",{ascending:false}).order("id",{ascending:false}).limit(100);
+    if(res.error) failed = true; else data = res.data.reverse();
+  }
+  if(seq !== notesSeq || $("pNotes").hidden) return;
+  // Before notes were logged one by one, a done line repeated the task's note: show each note once per task
+  const msgs = [], last = {};
+  data.forEach(r=>{
+    if(r.note && last[r.task_id]===r.note) r = {...r, note:null};
+    if(r.note) last[r.task_id] = r.note;
+    if(r.note || r.photo) msgs.push({who:r.worker, day:r.day, tid:r.task_id, note:r.note, photo: r.photo ? photoUrl(r.photo) : null});
+  });
+  const base = progress.get(id), pend = pending.get(task.id+"|"+id), now = eff(id)?.note?.trim() || "";
+  // A note from before the log, or not in it for some other reason
+  if(base?.note?.trim() && !msgs.some(m=>m.note===base.note && m.tid===task.id) && !pend?._notes?.includes(base.note.trim()))
+    msgs.push({who:base.worker, day:(base.updated_at||"").slice(0,10), tid:task.id, note:base.note});
+  for(const t of pend?._notes||[]) msgs.push({who:me, wait:true, tid:task.id, note:t});
+  for(const ph of pend?._photos||[]){ const b = await photoGet(ph); if(b) msgs.push({who:me, wait:true, tid:task.id, photo:URL.createObjectURL(b)}); }
+  if(seq !== notesSeq) return;
+  // The current note: the newest message with that text in this task
+  const curAt = now ? msgs.map(m=>m.tid===task.id && m.note?.trim()===now).lastIndexOf(true) : -1;
+  const taskName = tid => tid===task.id ? "" : tasks.find(t=>t.id===tid)?.name || "en tidligere opgave";
+  L.innerHTML = (failed ? `<p class="muted">Ældre noter kan ikke hentes lige nu. Tjek forbindelsen.</p>` : "")
+    + (msgs.length ? msgs.map((m,i)=>`<div class="msg${norm(m.who)===norm(me) ? " mine" : ""}${m.wait ? " wait" : ""}">
+        <div class="by"><b>${esc(m.who || "Ukendt")}</b> · ${m.wait ? "ikke sendt endnu" : m.day ? sinceText(m.day) + (daysSince(m.day) > 1 ? ` (${esc(longDate(m.day))})` : "") : ""}${taskName(m.tid) ? ` · ${esc(taskName(m.tid))}` : ""}</div>
+        ${m.note ? `<div class="txt">${esc(m.note)}</div>` : ""}
+        ${m.photo ? `<img src="${esc(m.photo)}" alt="Billede">` : ""}
+        ${i===curAt ? `<div class="cur">📌 Står ved stedet nu <button class="btn ghost" data-off>✓ Ikke aktuel mere</button></div>` : ""}</div>`).join("")
+      : `<p class="muted">Ingen noter eller billeder her endnu. Skriv den første nedenfor.</p>`);
+  L.querySelectorAll("img").forEach(i=>i.onclick=()=>{ $("photoImg").src = i.src; $("photoView").hidden = false; });
+  L.querySelector("[data-off]")?.addEventListener("click", ()=>{ setStatus([id], null, ""); toast("Noten er taget af. Den står stadig her."); });
+  // Newest at the bottom, next to the box: scroll there, also once the photos have their size
+  const down = ()=>{ L.scrollTop = L.scrollHeight; };
+  requestAnimationFrame(down); L.querySelectorAll("img").forEach(i=>i.addEventListener("load", down, {once:true}));
+  if(first && !msgs.length) $("noteIn").focus();
+}
+let notesSeq = 0;
+function closeNotes(){ $("pNotes").hidden = true; $("noteIn").blur(); }
+$("btnNoteOpen").onclick = $("notePeek").onclick = ()=>{ $("noteIn").value = ""; showNotes(); };
+$("btnNotesClose").onclick = closeNotes;
+$("btnNotePhoto").onclick = ()=>$("btnPhoto").click();
+$("btnNote").onclick = ()=>{
+  const t = $("noteIn").value.trim(), ids = [...selSet].map(g=>g.getId());
+  if(!t){ $("noteIn").focus(); return toast("Skriv noten først"); }
+  setStatus(ids, null, t); $("noteIn").value = "";
+  toast(autoSend ? "Noten er gemt" : "Noten er lagt klar. Tryk Send", 3000);
 };
-$("btnNote").onclick = ()=>{ setStatus([...selSet].map(g=>g.getId()), null, $("note").value); toast("Note gemt"); };
 $("btnElClose").onclick = ()=>select(null);
 // Directions in Google Maps (opens the Maps app on phones). Goes to the marked element nearest you,
 // at the point of it closest to its middle, so long lines and odd shapes still get a spot on the element.
