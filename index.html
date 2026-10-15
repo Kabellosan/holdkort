@@ -44,6 +44,8 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0;color:var(--ink)}
 .flip .ic{font-size:19px;line-height:1}
 .flip .tx{font-size:11px;font-weight:600}
+.basemap #btnPin:not([hidden]){display:flex}
+#btnPin[aria-pressed="true"]{background:var(--moss);color:#fff;border-color:var(--moss)}
 .basemap .credit{font-size:10px;background:#ffffffcc;color:#333;border-radius:6px;padding:1px 5px}
 .basemap .credit a{color:inherit}
 /* Paler street map, so status and task colours stand out on it */
@@ -121,7 +123,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .hist{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:var(--r);background:var(--paper)}
 .hist .when{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .hist .go{align-self:flex-start}
-.hist img{width:100%;max-height:240px;object-fit:cover;border-radius:10px;cursor:zoom-in;background:var(--line)}
+.hist img{width:120px;height:120px;object-fit:cover;border-radius:10px;cursor:zoom-in;background:var(--line)} /* small; tap for full size */
 .photo-view{position:absolute;inset:0;background:#000e;display:flex;align-items:center;justify-content:center;z-index:40;padding:12px}
 .photo-view img{max-width:100%;max-height:100%;border-radius:8px}
 .photo-view .btn{position:absolute;top:calc(env(safe-area-inset-top,0px) + 12px);right:12px;background:var(--card)}
@@ -198,6 +200,8 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .msg .pic{position:relative;width:104px;height:104px}
 .msg .pic img{width:100%;height:100%;object-fit:cover;border-radius:10px;cursor:zoom-in;background:var(--line);display:block}
 .msg .pic .del{position:absolute;right:-6px;top:-6px;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--card);font-size:18px;display:flex;align-items:center;justify-content:center;padding:0;box-shadow:0 1px 4px #0003}
+.pinhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px;color:var(--ink2)}
+.pinhead .btn{min-height:44px}
 .ask .delimg{width:100%;max-height:200px;object-fit:contain;border-radius:10px;background:var(--line)}
 .msg .cur{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--ink2)}
 .msg .cur .btn{min-height:40px;font-size:14px}
@@ -275,6 +279,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 </div>
 <div class="basemap">
   <button class="flip" id="btnFlip"><span class="ic"></span><span class="tx"></span></button>
+  <button class="flip" id="btnPin" hidden aria-pressed="false"><span class="ic">📌</span><span class="tx">Pin</span></button>
   <div class="seg2" role="group" aria-label="Baggrundskort">
     <button data-b="photo" aria-pressed="true">🛰 Luftfoto</button>
     <button data-b="map" aria-pressed="false">🗺 Kort</button>
@@ -388,7 +393,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="row" data-keep>
       <button class="btn primary fill" id="btnNext">Næste ▸</button>
       <button class="btn" id="btnList">Liste</button>
-      <button class="btn" id="btnTaskPhotos" hidden>📷 <span id="taskPhotoN">Billeder</span></button>
+      <button class="btn" id="btnTaskPhotos" hidden>💬 <span id="taskPhotoN">Noter</span></button>
     </div>
   </div>
 
@@ -950,7 +955,12 @@ const clipShape = () => place?.shape || (over && overFilter?.shape) || null;
   });
   l.on("postrender", e=>{ if(clipShape()) e.context.restore(); });
 });
-const map = new ol.Map({target:"map", layers:[ortoLayer, osmLayer, filterLayer, areaLayer, overLayer, elLayer, labelLayer, editLayer, gpsLayer],
+// 📌 Pins in the open task: a spot anyone can put a note or photo on, also where the kommune has no element
+const pinSrc = new ol.source.Vector();
+const PIN_STYLE = new ol.style.Style({zIndex:50, text:new ol.style.Text({text:"📌", font:"30px sans-serif", offsetY:-14, stroke:new ol.style.Stroke({color:"#fff", width:3})})});
+const PIN_NEW = new ol.style.Style({zIndex:51, text:new ol.style.Text({text:"📌", font:"36px sans-serif", offsetY:-16, backgroundFill:new ol.style.Fill({color:"#ffffffcc"}), padding:[2,4,2,4]})});
+const pinLayer = new ol.layer.Vector({source:pinSrc, style:f=>f.get("draft") ? PIN_NEW : PIN_STYLE});
+const map = new ol.Map({target:"map", layers:[ortoLayer, osmLayer, filterLayer, areaLayer, overLayer, elLayer, labelLayer, editLayer, pinLayer, gpsLayer],
   view:new ol.View({projection:proj, center:START_CENTER, zoom:START_ZOOM, resolutions:RES, constrainResolution:true}),
   controls: ol.control.defaults.defaults({attribution:false, rotate:false})});
 const store = {get(k,d){try{const v=localStorage.getItem(k);return v ? (JSON.parse(v) ?? d) : d}catch(e){return d}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
@@ -1292,6 +1302,7 @@ if(sb){
         const k = r.worker + r.updated_at; remoteBatch[k] = (remoteBatch[k]||0) + 1; const n = remoteBatch[k];
         toast(`${isBoss() ? "Opdateret" : (r.worker||"Nogen")}: ${LABEL[r.status]}${n>1 ? ` · ${n} elementer` : f ? " · " + titleOf(f) : ""}`); }
     })
+    .on("postgres_changes",{event:"*",schema:"public",table:"pins"},p=>{ const r = p.new || p.old; if(task && r?.task_id===task.id) loadPins(task); })
     .on("postgres_changes",{event:"*",schema:"public",table:"tasks"},()=>{ if(!task) loadTasks().then(()=>{ if(over) overPaint(); if(place) placePaint(); }); })
     .subscribe();
 }
@@ -1635,7 +1646,8 @@ async function openTask(t){
   geo.setTracking(true);
   if(!t.spots) areaSrc.addFeature(new ol.Feature(shapeGeom(t))); // hand-picked spots have no area to outline
   $("btnPick").hidden = !canManage(t); $("btnEditArea").hidden = !canManage(t) || !!t.spots;
-  $("btnTaskPhotos").hidden = !sb || !logOk; taskMedia = new Map(); $("taskPhotoN").textContent = "Billeder";
+  $("btnTaskPhotos").hidden = !sb || !logOk; taskMedia = new Map(); $("taskPhotoN").textContent = "Noter";
+  pinMode(false); loadPins(t);
   if(!partsOk) checkParts().then(()=>{ if(task===t) refresh(); });
   $("workName").textContent = t.name; $("workCodes").textContent = packCodes(t.codes) + scopeOf(t);
   $("workCount").innerHTML = `<span class="spin"></span>`; $("bar").innerHTML = ""; $("dataAge").textContent = "";
@@ -1668,7 +1680,7 @@ async function openTask(t){
     refreshTimer = setTimeout(()=>{ if(task===t && navigator.onLine && !rushHour()) refreshElements(t, false); }, 15000 + Math.random()*180000);
 }
 $("btnRefresh").onclick = ()=>{ if(task) refreshElements(task, true); };
-$("btnBack").onclick = ()=>{ clearTimeout(refreshTimer); task=null; selected=null; selSet.clear(); elSrc.clear(); areaSrc.clear(); pane("pTasks"); loadTasks(); };
+$("btnBack").onclick = ()=>{ clearTimeout(refreshTimer); task=null; selected=null; selSet.clear(); elSrc.clear(); areaSrc.clear(); pinMode(false); pinSrc.clear(); pins = []; $("btnPin").hidden = true; pane("pTasks"); loadTasks(); };
 
 function refresh(){
   elLayer.changed();
@@ -2732,6 +2744,7 @@ $("askPhotoPick").onclick = ()=>{ $("askPhoto").hidden = true; $("photoIn").clic
 $("askPhotoNo").onclick = ()=>{ $("askPhoto").hidden = true; };
 $("photoIn").onchange = $("photoCam").onchange = async e=>{
   const file = e.target.files[0]; e.target.value = "";
+  if(noteCtx){ if(file) threadPhoto(file); return; }
   const ids = [...selSet].map(g=>g.getId()); if(!file || !ids.length) return;
   try{
     const id = uuid(); await photoPut(id, await shrink(file));
@@ -2771,17 +2784,17 @@ let taskMedia = new Map(); // element id -> number of sent photos
 const hasMedia = id => taskMedia.has(id) || !!(task && pending.get(task.id+"|"+id)?._photos?.length);
 async function loadTaskMedia(t){
   if(!sb) return;
-  const {data, error} = await sb.from("element_log").select("element_id").eq("task_id", t.id).not("photo", "is", null).limit(1000);
+  const {data, error} = await sb.from("element_log").select("element_id,photo").eq("task_id", t.id).or("photo.not.is.null,note.not.is.null").limit(1000);
   if(error || task !== t) return;
-  const m = new Map(); data.forEach(r=>m.set(r.element_id, (m.get(r.element_id)||0) + 1)); taskMedia = m;
-  const n = data.length; $("taskPhotoN").textContent = n ? `Billeder (${n})` : "Billeder";
+  const m = new Map(); data.forEach(r=>{ if(r.photo) m.set(r.element_id, (m.get(r.element_id)||0) + 1); }); taskMedia = m;
+  const n = data.length; $("taskPhotoN").textContent = n ? `Noter (${n})` : "Noter";
   refresh();
 }
 // Every photo and note in the open task, newest first, so nobody has to tap each element to find them
 async function showTaskPhotos(){
   if(!task || !sb) return;
   const t = task, L = $("histList");
-  $("histEyebrow").textContent = "Billeder og noter";
+  $("histEyebrow").textContent = "Noter og billeder i opgaven";
   $("histTitle").textContent = t.name;
   L.innerHTML = `<p class="muted"><span class="spin"></span> Henter …</p>`;
   $("pHist").hidden = false;
@@ -2791,18 +2804,26 @@ async function showTaskPhotos(){
   if(error){ L.innerHTML = `<p class="muted">Billederne kan ikke hentes lige nu. Tjek forbindelsen.</p>`; return; }
   const local = [];
   for(const r of pending.values()) if(r.task_id===t.id) for(const p of (r._photos||[])){ const b = await photoGet(p); if(b) local.push({id:r.element_id, url:URL.createObjectURL(b)}); }
-  const name = id => { const f = elSrc.getFeatureById(id); return f ? titleOf(f) : ""; };
-  const go = id => elSrc.getFeatureById(id) ? `<button class="btn go" data-go="${esc(id)}">Vis på kortet ›</button>` : "";
-  L.innerHTML = (local.length ? `<div class="hist"><div class="when"><b>Ikke sendt endnu</b></div>${local.map(x=>`
+  const name = id => { if(id===taskKey(t)) return "💬 Hele opgaven"; const pn = pinOf(id); if(pn) return "📌 " + pinTitle(pn);
+    const f = elSrc.getFeatureById(id); return f ? titleOf(f) : ""; };
+  const go = id => id===taskKey(t) || pinOf(id) ? `<button class="btn go" data-go="${esc(id)}">Åbn samtalen ›</button>`
+    : elSrc.getFeatureById(id) ? `<button class="btn go" data-go="${esc(id)}">Vis på kortet ›</button>` : "";
+  L.innerHTML = `<button class="btn primary" id="btnTaskThread">💬 Skriv eller tag billede til hele opgaven</button>`
+    + (pinsOk ? `<p class="muted" style="margin:0">Noget ved et bestemt sted uden element? Tryk 📌 Pin på kortet.</p>` : "")
+    + (local.length ? `<div class="hist"><div class="when"><b>Ikke sendt endnu</b></div>${local.map(x=>`
         ${name(x.id) ? `<div>${esc(name(x.id))}</div>` : ""}<img src="${x.url}" alt="Billede, ikke sendt">${go(x.id)}`).join("")}</div>` : "")
     + (data.length ? data.map(r=>`<div class="hist">
         <div class="when"><b>${esc(longDate(r.day))}</b><span class="muted">${sinceText(r.day)}</span></div>
         ${name(r.element_id) || (isBoss() && r.worker) ? `<div class="muted">${[esc(name(r.element_id)), isBoss() && r.worker ? esc(r.worker) : ""].filter(Boolean).join(" · ")}</div>` : ""}
         ${r.note ? `<div>${esc(r.note)}</div>` : ""}
         ${r.photo ? `<img src="${esc(photoUrl(r.photo))}" loading="lazy" alt="Billede fra ${esc(longDate(r.day))}">` : ""}${go(r.element_id)}</div>`).join("")
-      : (local.length ? "" : `<p class="muted">Ingen billeder eller noter i denne opgave endnu. Tryk på et sted på kortet og så på "📷 Billede" for at tage et.</p>`));
+      : (local.length ? "" : `<p class="muted">Ingen noter eller billeder i denne opgave endnu.</p>`));
+  $("btnTaskThread").onclick = ()=>{ $("pHist").hidden = true; openThread({key:taskKey(t), title:"Hele opgaven"}); };
   L.querySelectorAll("img").forEach(i=>i.onclick=()=>{ $("photoImg").src = i.src; $("photoView").hidden = false; });
-  L.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{ const f = elSrc.getFeatureById(b.dataset.go); $("pHist").hidden = true; if(f) select(f); });
+  L.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{ const id = b.dataset.go, pn = pinOf(id); $("pHist").hidden = true;
+    if(id===taskKey(t)) return openThread({key:id, title:"Hele opgaven"});
+    if(pn) return openPin(pn);
+    const f = elSrc.getFeatureById(id); if(f) select(f); });
 }
 $("btnTaskPhotos").onclick = showTaskPhotos;
 $("btnHistClose").onclick = ()=>{ $("pHist").hidden = true; };
@@ -3057,7 +3078,7 @@ function showEl(zoom){
   if(cur){ $("notePeekTxt").textContent = "📝 " + cur;
     const b0 = progress.get(f.getId()), by = pending.get(task.id+"|"+f.getId())?._notes?.includes(cur) || !b0 ? "Ikke sendt endnu" : [b0.worker, b0.updated_at ? ago(b0.updated_at) : ""].filter(Boolean).join(" · ");
     $("notePeekBy").textContent = (by ? by + " · " : "") + "Tryk for alle noter"; }
-  if(!$("pNotes").hidden) showNotes();
+  if(!$("pNotes").hidden && !noteCtx) showNotes();
   const unsent = fs.some(g=>pending.has(task.id+"|"+g.getId()));
   const latest = fs.map(g=>progress.get(g.getId())).filter(Boolean).sort((a,b)=>a.updated_at<b.updated_at?1:-1)[0];
   $("elMeta").textContent = unsent ? "Ikke sendt endnu"
@@ -3085,6 +3106,7 @@ $("reqs").addEventListener("toggle", ()=>{ store.set("reqsOpen", $("reqs").open)
 $("reqs").querySelector("summary").addEventListener("click", ()=>setTimeout(()=>{ if($("reqs").open) $("reqs").scrollIntoView({block:"nearest", behavior:"smooth"}); }, 0));
 map.on("singleclick", e=>{
   if(areaEd) return;
+  if(pinDrop && task){ dropPin(e.coordinate); return; }
   if(partEd){ partTap(e.coordinate); return; }
   if(pick?.spots){ spotTap(e); return; }
   if(pick){ // tapping a spot puts it in the task or takes it out
@@ -3113,6 +3135,8 @@ map.on("singleclick", e=>{
     return;
   }
   if(!task) return;
+  const pinHit = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===pinLayer, hitTolerance:16}).find(f=>f.get("pin"));
+  if(pinHit){ openPin(pinHit.get("pin")); return; }
   const hits = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:12});
   const open = !$("pEl").hidden && selSet.size;
   if(!hits.length){
@@ -3164,9 +3188,10 @@ document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !$("askBlock").
 // One element's notes and photos from every task, oldest first like a text conversation, each with who and which day.
 // The newest note is the element's current note (shown in the panel and the list); "Ikke aktuel mere" takes it off but keeps it here.
 async function showNotes(){
+  if(noteCtx) return showThread();
   const fs = [...selSet], n = fs.length, f = selected, L = $("notesList"), first = $("pNotes").hidden;
   if(!n || !task) return closeNotes();
-  $("pNotes").hidden = false;
+  $("pNotes").hidden = false; $("btnNote").textContent = "Gem noten";
   $("notesTitle").textContent = n>1 ? `${n} markerede steder` : titleOf(f);
   if(n>1){ L.innerHTML = `<p class="muted">Noten kommer på alle ${n} markerede steder.</p>`; if(first) $("noteIn").focus(); return; }
   const id = f.getId(), seq = ++notesSeq;
@@ -3178,15 +3203,7 @@ async function showNotes(){
     if(res.error) failed = true; else data = res.data.reverse();
   }
   if(seq !== notesSeq || $("pNotes").hidden) return;
-  // Before notes were logged one by one, a done line repeated the task's note: show each note once per task
-  const msgs = [], last = {};
-  data.forEach(r=>{
-    if(r.note && last[r.task_id]===r.note) r = {...r, note:null};
-    if(r.note) last[r.task_id] = r.note;
-    // a photo line may also carry a status change (before 2026-10-15): deleting the photo then only clears it
-    const pic = r.photo ? {url:photoUrl(r.photo), log:r.id, path:r.photo, day:r.day, who:r.worker, mixed: !!(r.status || r.done || r.part || r.note)} : null;
-    if(r.note || pic) msgs.push({who:r.worker, day:r.day, tid:r.task_id, note:r.note, pics: pic ? [pic] : []});
-  });
+  const msgs = toMsgs(data);
   const base = progress.get(id), pend = pending.get(task.id+"|"+id), now = eff(id)?.note?.trim() || "";
   // A note from before the log, or not in it for some other reason
   if(base?.note?.trim() && !msgs.some(m=>m.note===base.note && m.tid===task.id) && !pend?._notes?.includes(base.note.trim()))
@@ -3194,27 +3211,132 @@ async function showNotes(){
   for(const t of pend?._notes||[]) msgs.push({who:me, wait:true, tid:task.id, note:t, pics:[]});
   for(const ph of pend?._photos||[]){ const b = await photoGet(ph); if(b) msgs.push({who:me, wait:true, tid:task.id, pics:[{url:URL.createObjectURL(b), pid:ph}]}); }
   if(seq !== notesSeq) return;
-  // Photos in a row from the same person and day share one message, as small pictures side by side
-  for(let i = msgs.length-1; i>0; i--){ const a = msgs[i-1], b = msgs[i];
-    if(!b.note && b.pics.length && a.pics.length && !a.wait===!b.wait && a.who===b.who && a.day===b.day && a.tid===b.tid){ a.pics.push(...b.pics); msgs.splice(i, 1); } }
-  notePics = msgs.flatMap(m=>m.pics);
+  groupPics(msgs); // photos in a row from the same person and day share one message
   // The current note: the newest message with that text in this task
   const curAt = now ? msgs.map(m=>m.tid===task.id && m.note?.trim()===now).lastIndexOf(true) : -1;
-  const taskName = tid => tid===task.id ? "" : tasks.find(t=>t.id===tid)?.name || "en tidligere opgave";
-  L.innerHTML = (failed ? `<p class="muted">Ældre noter kan ikke hentes lige nu. Tjek forbindelsen.</p>` : "")
-    + (msgs.length ? msgs.map((m,i)=>`<div class="msg${norm(m.who)===norm(me) ? " mine" : ""}${m.wait ? " wait" : ""}">
+  L.innerHTML = (failed ? `<p class="muted">Ældre noter kan ikke hentes lige nu. Tjek forbindelsen.</p>` : "") + msgHtml(msgs, curAt);
+  wireMsgs(L, msgs);
+  L.querySelector("[data-off]")?.addEventListener("click", ()=>{ setStatus([id], null, ""); toast("Noten er taget af. Den står stadig her."); });
+  if(first && !msgs.length) $("noteIn").focus();
+}
+// The messages of a conversation, oldest first; curAt marks the element's current note
+const taskKey = t => "opgave:" + t.id;
+function msgHtml(msgs, curAt=-1){
+  const taskName = tid => tid===task?.id ? "" : tasks.find(t=>t.id===tid)?.name || "en tidligere opgave";
+  return msgs.length ? msgs.map((m,i)=>`<div class="msg${norm(m.who)===norm(me) ? " mine" : ""}${m.wait ? " wait" : ""}">
         <div class="by"><b>${esc(m.who || "Ukendt")}</b> · ${m.wait ? "ikke sendt endnu" : m.day ? sinceText(m.day) + (daysSince(m.day) > 1 ? ` (${esc(longDate(m.day))})` : "") : ""}${taskName(m.tid) ? ` · ${esc(taskName(m.tid))}` : ""}</div>
         ${m.note ? `<div class="txt">${esc(m.note)}</div>` : ""}
         ${m.pics.length ? `<div class="pics">${m.pics.map(p=>`<span class="pic"><img src="${esc(p.url)}" alt="Billede" data-i="${notePics.indexOf(p)}">${canDelPic(p) ? `<button class="del" data-del="${notePics.indexOf(p)}" aria-label="Slet billedet">🗑</button>` : ""}</span>`).join("")}</div>` : ""}
         ${i===curAt ? `<div class="cur">📌 Står ved stedet nu <button class="btn ghost" data-off>✓ Ikke aktuel mere</button></div>` : ""}</div>`).join("")
-      : `<p class="muted">Ingen noter eller billeder her endnu. Skriv den første nedenfor.</p>`);
-  L.querySelectorAll("img").forEach(i=>i.onclick=()=>{ $("photoImg").src = i.src; $("photoView").hidden = false; });
+      : `<p class="muted">Ingen noter eller billeder her endnu. Skriv den første nedenfor.</p>`;
+}
+function wireMsgs(L, msgs){
+  L.querySelectorAll(".pic img").forEach(i=>i.onclick=()=>{ $("photoImg").src = i.src; $("photoView").hidden = false; });
   L.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>askDelPic(notePics[+b.dataset.del]));
-  L.querySelector("[data-off]")?.addEventListener("click", ()=>{ setStatus([id], null, ""); toast("Noten er taget af. Den står stadig her."); });
   // Newest at the bottom, next to the box: scroll there, also once the photos have their size
   const down = ()=>{ L.scrollTop = L.scrollHeight; };
   requestAnimationFrame(down); L.querySelectorAll("img").forEach(i=>i.addEventListener("load", down, {once:true}));
+}
+// Log lines of one conversation (an element, a pin or the whole task) as messages; photos in a row share one
+function toMsgs(data){
+  const msgs = [], last = {};
+  data.forEach(r=>{
+    if(r.note && last[r.task_id]===r.note) r = {...r, note:null}; // old done lines repeated the task's note
+    if(r.note) last[r.task_id] = r.note;
+    const pic = r.photo ? {url:photoUrl(r.photo), log:r.id, path:r.photo, day:r.day, who:r.worker, mixed: !!(r.status || r.done || r.part || r.note)} : null;
+    if(r.note || pic) msgs.push({who:r.worker, day:r.day, tid:r.task_id, note:r.note, pics: pic ? [pic] : []});
+  });
+  return msgs;
+}
+function groupPics(msgs){
+  for(let i = msgs.length-1; i>0; i--){ const a = msgs[i-1], b = msgs[i];
+    if(!b.note && b.pics.length && a.pics.length && !a.wait===!b.wait && a.who===b.who && a.day===b.day && a.tid===b.tid){ a.pics.push(...b.pics); msgs.splice(i, 1); } }
+  notePics = msgs.flatMap(m=>m.pics);
+}
+
+// ================= PINS AND THE WHOLE TASK =================
+// A pin or the whole task has the same conversation screen as an element. These go straight to the team on "Send"
+// (they're messages, not marks), as element_log lines with element_id "pin:<id>" or "opgave:<task id>".
+let pins = [], pinsOk = false, noteCtx = null, pinDrop = false;
+const pinOf = id => id?.startsWith("pin:") ? pins.find(p=>"pin:"+p.id===id) : null;
+const pinTitle = p => p.title || "Pin";
+async function loadPins(t){
+  if(!sb){ $("btnPin").hidden = true; return; }
+  const {data, error} = await sb.from("pins").select("*").eq("task_id", t.id).is("closed", null).limit(500);
+  if(task !== t) return;
+  pinsOk = !error; $("btnPin").hidden = !pinsOk; // until supabase/pins.sql has been run
+  if(error) return;
+  pins = data;
+  pinSrc.getFeatures().filter(f=>!f.get("draft")).forEach(f=>pinSrc.removeFeature(f));
+  pinSrc.addFeatures(data.map(p=>{ const f = new ol.Feature(new ol.geom.Point([p.x, p.y])); f.set("pin", p); return f; }));
+}
+function pinMode(on){
+  pinDrop = on; $("btnPin").setAttribute("aria-pressed", String(on));
+  if(on) toast("Tryk på kortet, hvor pinnen skal stå. Tryk 📌 igen for at lade være.", 6000);
+}
+$("btnPin").onclick = ()=>{ if(!task) return; pinMode(!pinDrop); if(!pinDrop) $("toast").classList.remove("show"); };
+function openPin(p){ openThread({key:"pin:"+p.id, title:"📌 " + pinTitle(p), pin:p}); }
+function dropPin(xy){
+  pinMode(false); $("toast").classList.remove("show");
+  const f = new ol.Feature(new ol.geom.Point(xy)); f.set("draft", true); pinSrc.addFeature(f);
+  openThread({key:null, title:"📌 Ny pin", pin:{x:xy[0], y:xy[1], draft:true}, feat:f});
+}
+function openThread(ctx){ noteCtx = ctx; $("noteIn").value = ""; $("pNotes").hidden = true; showThread(); }
+async function showThread(){
+  const c = noteCtx, L = $("notesList"), first = $("pNotes").hidden; if(!c) return;
+  $("pNotes").hidden = false; $("notesTitle").textContent = c.title; $("btnNote").textContent = "Send";
+  const head = c.pin && !c.pin.draft ? `<div class="pinhead">📌 Sat af ${esc(c.pin.worker || "?")} ${sinceText(c.pin.day)}<button class="btn ghost" data-close>✓ Klaret, fjern pinnen</button></div>` : "";
+  if(!c.key){ L.innerHTML = `<p class="muted">Skriv hvad pinnen handler om, eller tag et billede. Holdet og koordinatoren kan se den på kortet, når du trykker Send.</p>`; $("noteIn").focus(); return; }
+  if(first) L.innerHTML = `<p class="muted"><span class="spin"></span> Henter …</p>`;
+  const seq = ++notesSeq;
+  const {data, error} = await sb.from("element_log").select("*").eq("element_id", c.key).order("day",{ascending:false}).order("id",{ascending:false}).limit(100);
+  if(seq !== notesSeq || noteCtx !== c) return;
+  const msgs = error ? [] : toMsgs(data.reverse()); groupPics(msgs);
+  L.innerHTML = head + (error ? `<p class="muted">Noterne kan ikke hentes lige nu. Tjek forbindelsen.</p>` : msgHtml(msgs));
+  wireMsgs(L, msgs);
+  L.querySelector("[data-close]")?.addEventListener("click", ()=>closePin(c.pin));
   if(first && !msgs.length) $("noteIn").focus();
+}
+// A new pin is only saved with its first note or photo
+async function ensurePin(c, first){
+  if(!c.pin?.draft) return true;
+  const {data, error} = await sb.from("pins").insert({task_id:task.id, x:c.pin.x, y:c.pin.y, worker:me, title: first ? first.slice(0, 60) : null}).select().single();
+  if(error){ console.error(error); return false; }
+  if(c.feat) pinSrc.removeFeature(c.feat);
+  c.pin = data; c.key = "pin:" + data.id; c.title = "📌 " + pinTitle(data); c.feat = null;
+  pins.push(data); const f = new ol.Feature(new ol.geom.Point([data.x, data.y])); f.set("pin", data); pinSrc.addFeature(f);
+  return true;
+}
+const threadLine = (c, extra) => ({element_id:c.key, code:null, task_id:task.id, day:today(), done:false, worker:me, status:null, reason:null, note:null, photo:null, ...extra});
+async function threadSend(text){
+  const c = noteCtx, btn = $("btnNote"); btn.disabled = true;
+  try{
+    if(!await ensurePin(c, text)) throw new Error("pin");
+    const {error} = await sb.from("element_log").insert(threadLine(c, {note:text}));
+    if(error) throw error;
+    $("noteIn").value = ""; toast("Sendt"); loadTaskMedia(task);
+  }catch(e){ console.error(e); toast("Kunne ikke sende. Tjek forbindelsen og prøv igen.", 4000); }
+  finally{ btn.disabled = false; }
+  if(noteCtx === c) showThread();
+}
+async function threadPhoto(file){
+  const c = noteCtx;
+  try{
+    toast("Sender billedet …", 8000);
+    const blob = await shrink(file), path = `${today()}/${uuid()}.jpg`;
+    if(!await ensurePin(c, null)) throw new Error("pin");
+    const up = await sb.storage.from("photos").upload(path, blob, {contentType:"image/jpeg"});
+    if(up.error) throw up.error;
+    const {error} = await sb.from("element_log").insert(threadLine(c, {photo:path}));
+    if(error) throw error;
+    toast("Billedet er sendt"); loadTaskMedia(task);
+  }catch(e){ console.error(e); toast("Billedet kunne ikke sendes. Tjek forbindelsen og prøv igen.", 4000); }
+  if(noteCtx === c) showThread();
+}
+async function closePin(p){
+  const {error} = await sb.from("pins").update({closed: today()}).eq("id", p.id);
+  if(error){ console.error(error); return toast("Pinnen kunne ikke fjernes. Tjek forbindelsen.", 4000); }
+  closeNotes(); loadPins(task); toast("Pinnen er fjernet fra kortet. Noterne står stadig under 💬 Noter.", 4000);
 }
 let notesSeq = 0, notePics = [], delPic = null;
 // Delete a photo: one not sent yet always; a sent one by whoever took it or a koordinator. The database decides the rest
@@ -3238,16 +3360,21 @@ $("askDelPicOk").onclick = async ()=>{
   if(error || !data?.length){ if(error) console.error(error);
     return toast(error ? "Billedet kunne ikke slettes. Tjek forbindelsen." : "Billedet kan ikke slettes herfra. Spørg koordinatoren.", 4000); }
   sb.storage.from("photos").remove([p.path]).then(({error})=>{ if(error) console.warn("photo file stays", error); });
-  if(task){ const n = (taskMedia.get(selected?.getId())||1) - 1; if(n > 0) taskMedia.set(selected.getId(), n); else taskMedia.delete(selected?.getId()); }
+  if(noteCtx) loadTaskMedia(task);
+  else if(task){ const n = (taskMedia.get(selected?.getId())||1) - 1; if(n > 0) taskMedia.set(selected.getId(), n); else taskMedia.delete(selected?.getId()); }
   toast("Billedet er slettet"); refresh(); showNotes();
 };
-function closeNotes(){ $("pNotes").hidden = true; $("noteIn").blur(); }
-$("btnNoteOpen").onclick = $("notePeek").onclick = ()=>{ $("noteIn").value = ""; showNotes(); };
+function closeNotes(){
+  if(noteCtx?.feat) pinSrc.removeFeature(noteCtx.feat); // a new pin with nothing sent isn't kept
+  noteCtx = null; $("pNotes").hidden = true; $("noteIn").blur();
+}
+$("btnNoteOpen").onclick = $("notePeek").onclick = ()=>{ noteCtx = null; $("noteIn").value = ""; showNotes(); };
 $("btnNotesClose").onclick = closeNotes;
 $("btnNotePhoto").onclick = ()=>$("btnPhoto").click();
 $("btnNote").onclick = ()=>{
   const t = $("noteIn").value.trim(), ids = [...selSet].map(g=>g.getId());
   if(!t){ $("noteIn").focus(); return toast("Skriv noten først"); }
+  if(noteCtx) return threadSend(t);
   setStatus(ids, null, t); $("noteIn").value = "";
   toast(autoSend ? "Noten er gemt" : "Noten er lagt klar. Tryk Send", 3000);
 };
