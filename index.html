@@ -221,6 +221,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .blockinfo{background:var(--paper);border-left:5px solid var(--blocked);border-radius:8px;padding:8px 12px;font-size:15px}
 .toast{position:absolute;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 64px);background:var(--moss);color:#fff;padding:10px 16px;border-radius:999px;font-size:15px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:88vw;text-align:center;z-index:20}
 .toast.show{opacity:1}
+/* A toast with a button (Fortryd) can be tapped; the button is big enough for a thumb */
+.toast.act{width:max-content;display:flex;align-items:center;gap:12px;padding:6px 6px 6px 16px;text-align:left}
+.toast.act.show{pointer-events:auto}
+.toast button{min-height:44px;padding:0 16px;border-radius:999px;border:0;background:#fff;color:var(--moss);font:inherit;font-weight:700;cursor:pointer;white-space:nowrap}
 .spin{display:inline-block;width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-3px}
 @keyframes sp{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.toast{transition:none}.spin{animation:none}}
@@ -289,7 +293,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   </div>
   <span class="credit" id="osmCredit" hidden>© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></span>
 </div>
-<div class="toast" id="toast" role="status"></div>
+<div class="toast" id="toast" role="status"><span id="toastTxt"></span><button id="toastAct" hidden></button></div>
 
 <div class="sheet" id="sheet">
   <button class="grip" id="grip" aria-label="Gør panelet mindre" aria-expanded="true"><i></i><span>▲ Vis mere</span></button>
@@ -1006,7 +1010,10 @@ const sheetPad = () => sheetH() + 20;
 // ================= HELPERS =================
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-function toast(t, ms=2600){const el=$("toast"); el.textContent=t; el.classList.add("show"); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove("show"),ms);}
+// act = {label, fn}: a button in the toast (e.g. Fortryd); it goes away with the toast
+function toast(t, ms=2600, act){const el=$("toast"), b=$("toastAct"); $("toastTxt").textContent=t;
+  b.hidden=!act; el.classList.toggle("act", !!act); b.onclick = act ? ()=>{ el.classList.remove("show"); b.onclick=null; act.fn(); } : null; if(act) b.textContent=act.label;
+  el.classList.add("show"); clearTimeout(toast.t); toast.t=setTimeout(()=>{ el.classList.remove("show"); b.onclick=null; },ms);}
 const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick","pPlace","pPart","pSpots"];
 const curPane = () => PANES.find(p=>!$(p).hidden);
 function pane(id){ if(id!==curPane()) fold(false); PANES.forEach(p=>$(p).hidden = p!==id);
@@ -1131,7 +1138,7 @@ const COLOR_STEP = {ic:"🎨", t:"Farverne på kortet", h:`<div class="gcol">
   ${dotC("var(--doing)")}<span><b>Gul</b> = i gang</span>
   ${dotC("var(--done)")}<span><b>Grøn</b> = færdig</span>
   ${dotC("var(--blocked)")}<span><b>Sort</b> = blokeret, fx en bil holder der</span></div>`};
-const MARK_STEP = {ic:"👆", t:"Marker et sted", h:`<p>Tryk på et sted på kortet. Tryk så <b>Færdig</b>, <b>I gang</b>, <b>Mangler</b> eller <b>🚧 Blokeret</b>.</p>
+const MARK_STEP = {ic:"👆", t:"Marker et sted", h:`<p>Tryk på et sted på kortet. Tryk så <b>Færdig</b>, <b>I gang</b>, <b>Mangler</b> eller <b>🚧 Blokeret</b>. Markeringen forsvinder af sig selv; trykkede du forkert, så tryk <b>↶ Fortryd</b>.</p>
   <p>Tryk på flere steder for at markere dem på én gang. <b>Næste ▸</b> viser det nærmeste sted, der mangler.</p>
   <p>Kun nået et stykke af en lang hæk eller sti? Tryk <b>📏 Stykke</b>, og tryk så, hvor du startede, og hvor du stoppede.</p>`};
 const SEND_STEP = {ic:"📤", t:"Husk at sende", h:`<p>Det, du markerer, bliver på telefonen, til du trykker <b>Send</b>. Så kan du vente, til du har forbindelse.</p>
@@ -1184,7 +1191,7 @@ const sb = (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase) ? supabase.cre
 $("syncdot").className = "dot " + (sb ? "on" : "off");
 $("who").title = sb ? "Forbundet til holdet · din profil" : "Kun på denne telefon · din profil";
 
-let tasks = [], task = null, progress = new Map(), selected = null;
+let tasks = [], task = null, progress = new Map(), selected = null, lastAt = null; // lastAt: where the last mark was set
 let selSet = new Set();
 // Outbox: marks stay on this phone until the worker presses Send (or turns on auto-send)
 let pending = new Map(store.get("pending", []).map(r=>[r.task_id+"|"+r.element_id, r]));
@@ -1226,7 +1233,8 @@ async function sendPending(){
   all.forEach(r=>(r._photos||[]).forEach(photoDel));
   pending.clear(); store.set("pending", []);
   renderOutbox(); refresh();
-  toast(`Sendt: ${rows.length} ${rows.length===1?"ændring":"ændringer"} ✓`);
+  // Sending on its own right after a mark: keep the Fortryd toast up instead of covering it
+  if(!($("toast").classList.contains("act") && $("toast").classList.contains("show"))) toast(`Sendt: ${rows.length} ${rows.length===1?"ændring":"ændringer"} ✓`);
 }
 $("btnSend").onclick = sendPending;
 $("btnLater").onclick = ()=>{ outboxLater = true; renderOutbox(); };
@@ -1660,7 +1668,7 @@ async function refreshElements(t, manual){
 }
 async function openTask(t){
   closeOverview();
-  task = t; selected = null; selSet.clear(); elSrc.clear(); areaSrc.clear(); clearTimeout(refreshTimer);
+  task = t; selected = null; lastAt = null; selSet.clear(); elSrc.clear(); areaSrc.clear(); clearTimeout(refreshTimer);
   taskAll = []; pick = null;
   geo.setTracking(true);
   if(!t.spots) areaSrc.addFeature(new ol.Feature(shapeGeom(t))); // hand-picked spots have no area to outline
@@ -3201,18 +3209,36 @@ $("askClearNo").onclick = closeAsk;
 $("askClear").onclick = e=>{ if(e.target===$("askClear")) closeAsk(); };
 $("btnClearSel").onclick = ()=>{ const n = selSet.size; select(null); if(n>1) toast("Markeringer fjernet"); };
 document.querySelectorAll(".status [data-s]").forEach(b=>b.onclick=()=>{
-  const ids = [...selSet].map(g=>g.getId());
   if(b.dataset.s==="blocked"){ askBlock(); return; } // asks why first
-  setStatus(ids, b.dataset.s);
-  if(b.dataset.s==="done") toast(ids.length>1 ? `${ids.length} færdige ✓ Tryk Næste` : "Færdig ✓ Tryk Næste for den nærmeste");
+  markAndClear(b.dataset.s);
 });
+// Setting a status is the end of that job: the marks clear and the panel closes, so the next tap starts fresh
+// (Captain, 2026-10-15). A toast says what was set, with Fortryd for a mis-tap: it puts the old status back and marks them again.
+function markAndClear(status, note, reason){
+  const fs = [...selSet], ids = fs.map(g=>g.getId()), t = task, key = id=>t.id+"|"+id;
+  const before = new Map(ids.map(id=>[id, {row:pending.get(key(id)), was:eff(id)}]));
+  setStatus(ids, status, note, reason);
+  lastAt = ol.extent.getCenter(fs[0].getGeometry().getExtent()); // without GPS, Næste starts from here
+  const after = new Map(ids.map(id=>[id, pending.get(key(id))]));
+  select(null);
+  const n = ids.length, what = status==="blocked" ? `🚧 ${n>1 ? n + " blokeret" : "Blokeret"}: ${reason}` : `${LABEL[status]}${status==="done" ? " ✓" : ""}${n>1 ? ` · ${n} steder` : ""}`;
+  toast(what, 6000, {label:"↶ Fortryd", fn:()=>{
+    if(task!==t) return;
+    if(ids.every(id=>pending.get(key(id))===after.get(id))){ // not sent yet: the outbox goes back to exactly what it was
+      ids.forEach(id=>{ const r = before.get(id).row; r ? pending.set(key(id), r) : pending.delete(key(id)); });
+      store.set("pending", [...pending.values()]); renderOutbox(); refresh();
+    } else ids.forEach(id=>{ const w = before.get(id).was || {status:"todo"}; setStatus([id], w.status||"todo", undefined, w.reason); }); // already sent: send the old status back
+    selSet = new Set(fs.filter(f=>elSrc.hasFeature(f))); selected = [...selSet][0] || null;
+    elLayer.changed(); if(selected) showEl(false); else pane("pWork");
+    toast("Fortrudt");
+  }});
+}
 function askBlock(){ $("blockNote").value = ""; $("askBlock").hidden = false; }
 function closeBlock(){ $("askBlock").hidden = true; }
 $("askBlock").querySelectorAll("[data-r]").forEach(b=>b.onclick=()=>{
-  const ids = [...selSet].map(g=>g.getId()), note = $("blockNote").value.trim();
+  const note = $("blockNote").value.trim();
   closeBlock();
-  setStatus(ids, "blocked", note || null, b.dataset.r); // no note typed keeps the one there is
-  toast(`${ids.length>1 ? ids.length + " blokeret" : "Blokeret"}: ${b.dataset.r}. Tryk Næste`, 3000);
+  markAndClear("blocked", note || null, b.dataset.r); // no note typed keeps the one there is
 });
 $("askBlockNo").onclick = closeBlock;
 $("askBlock").onclick = e=>{ if(e.target===$("askBlock")) closeBlock(); };
@@ -3477,7 +3503,7 @@ const geo = new ol.Geolocation({projection:proj, trackingOptions:{enableHighAccu
 geo.on("change:position", ()=>gpsFeat.setGeometry(new ol.geom.Point(geo.getPosition())));
 geo.on("error", ()=>toast("Ingen GPS. Tillad placering for siden i browseren."));
 // GPS starts when a task is opened, not on the login screen
-function here(){ return geo.getPosition() || (selected && ol.extent.getCenter(selected.getGeometry().getExtent())) || map.getView().getCenter(); }
+function here(){ return geo.getPosition() || (selected && ol.extent.getCenter(selected.getGeometry().getExtent())) || lastAt || map.getView().getCenter(); }
 function distTo(f, p){ const c = f.getGeometry().getClosestPoint(p); return Math.hypot(c[0]-p[0], c[1]-p[1]); }
 function next(){
   const p = here();
