@@ -115,6 +115,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .tended{font-size:14px;color:var(--ink2)}
 .sheet:has(#pOver:not([hidden])),.sheet:has(#pPlace:not([hidden])){max-height:68vh} /* the overviews have a legend and lists */
 #overMode button{min-height:38px}
+#overMode.three{grid-template-columns:1fr 1fr 1fr}
 .tended.warn{color:#8a5a00;font-weight:600}
 @media (prefers-color-scheme:dark){.tended.warn{color:var(--doing)}}
 .hist{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:var(--r);background:var(--paper)}
@@ -317,6 +318,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="row filt" id="overFilt" hidden><span class="grow">Kun i <b id="overFiltName"></b></span><button class="btn ghost" id="btnOverAll">✕ Hele kommunen</button></div>
     <div class="seg" id="overMode" role="group" aria-label="Farver">
       <button data-o="status">Status</button>
+      <button data-o="type" id="btnOverByType" hidden>Typer</button>
       <button data-o="age">Sidst passet</button>
     </div>
     <div class="bar" id="overBar"></div>
@@ -566,8 +568,11 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <button class="btn" id="btnPlaceFind">⌕ Se alt i en by eller på en vej</button>
     <input type="search" id="typeSearch" placeholder="Eller søg type: pur, fortov, løs belægning …" autocomplete="off">
   </header>
-  <div class="list" id="typeList"></div>
-  <footer><div class="muted">Viser alle elementer af typen i hele kommunen, og hvilke der er med i en opgave. Hentes fra kommunen højst én gang om dagen.</div></footer>
+  <div class="list">
+    <div class="packbox" id="typePackBox"><div class="section" style="margin:0">Pakker</div><div class="packs" id="typePacks"></div><div class="section" style="margin:0">Typer</div></div>
+    <div class="codes" id="typeList"></div>
+  </div>
+  <footer><div class="muted">Viser alle elementer af typen (eller pakken) i hele kommunen, og hvilke der er med i en opgave. Hentes fra kommunen højst én gang om dagen.</div></footer>
 </div>
 
 <!-- Tapping spots: which types the map shows, picked like in Ny opgave -->
@@ -835,6 +840,8 @@ function overStyle(f, res){
     const k = place.mode==="status" ? f.get("_s") || "none" : place.focus && f.get("elementkode")!==place.focus ? "off" : place.tcol?.[f.get("elementkode")] || "none";
     return shapeStyle(k, f===place.sel, far);
   }
+  // a package by type: each type its own colour, done ones fade and blocked keep 🚧, so progress still shows
+  if(over?.mode==="type") return shapeStyle(over.tcol?.[f.get("elementkode")] || "none", false, far, f.get("_s"));
   return shapeStyle((over?.mode==="age" ? f.get("_a") : f.get("_s")) || "none", false, far);
 }
 const overLayer = new ol.layer.Vector({source:overSrc, style:overStyle, renderBuffer:200});
@@ -1066,7 +1073,7 @@ const GUIDES = {
   boss: [
     {ic:"👋", t:"Velkommen, koordinator", h:`<p>Du laver opgaverne og fordeler dem. Holdet markerer på kortet, hvad de har lavet, så du kan følge med.</p>`},
     {ic:"➕", t:"Lav en opgave", h:`<p>Tryk <b>+ Ny opgave</b>. Vælg <b>Et helt område</b>: tegn det på kortet, og vælg typerne, fx al pur i Brande.</p><p>Eller vælg <b>Tryk på stederne</b>: vælg om kortet skal vise alt eller kun nogle typer eller pakker, og tryk så på de enkelte steder, der skal med. Med <b>📍 Eget punkt</b> sætter du et sted, kommunens kort ikke har.</p>`},
-    {ic:"▦", t:"Overblik", h:`<p><b>▦ Overblik</b> viser én type i hele kommunen, farvet efter hvor langt holdet er.</p><p><b>Lilla</b> er steder, der ikke er med i nogen opgave endnu.</p>`},
+    {ic:"▦", t:"Overblik", h:`<p><b>▦ Overblik</b> viser én type eller en hel pakke i hele kommunen, farvet efter hvor langt holdet er.</p><p><b>Lilla</b> er steder, der ikke er med i nogen opgave endnu.</p>`},
     {ic:"👥", t:"Holdet", h:`<p>Under <b>Holdet</b> ser du hver person og deres opgaver. Her kan du også tilføje eller fjerne folk.</p>`},
     COLOR_STEP,
     {ic:"📜", t:"Historik", h:`<p>Tryk på et sted og så <b>Historik</b> for at se, hvornår det sidst blev passet, og hvem der gjorde det.</p>`},
@@ -1321,6 +1328,8 @@ async function fetchSpots(spots){
 }
 // Every element of one type in the whole kommune (overview)
 const fetchKommune = code => fetchLayers([codeIn([code])], ()=>true);
+// The overview's name for what it shows: a package's name, or the type's
+const overName = o => o.pack || CODES[o.codes[0]] || o.codes[0];
 
 // ---- Task areas: a rectangle (extent) or a freehand polygon (area, GeoJSON geometry in EPSG:25832) ----
 const shapeGeom = s => s.area ? new ol.geom.Polygon(s.area.coordinates) : ol.geom.Polygon.fromExtent(s.extent);
@@ -1993,9 +2002,9 @@ async function delPack(p){
 }
 // Step 1: draw the area on the map. Step 2: pick types and people.
 let newHere = null; // types counted in the place the task was started from: {code: count}
-function beginNewTask(code, shape, here){
+function beginNewTask(code, shape, here){ // code: one type, a list of types (a package from the overview) or none
   newHere = here || null; newSpots = null;
-  picked = new Set(code ? [code] : []); $("codeSearch").value=""; $("taskTitle").value=""; delete $("taskTitle").dataset.touched; $("newPick").checked = false;
+  picked = new Set([].concat(code || [])); $("codeSearch").value=""; $("taskTitle").value=""; delete $("taskTitle").dataset.touched; $("newPick").checked = false;
   assignees = new Set();
   startArea({shape:shape||null, peek:isBoss(), done:s=>{ newShape = s; showNewPanel(); }});
 }
@@ -2158,7 +2167,7 @@ function areaChanged(){
     else if(over && overSrc.getFeatures().length){
       const sh = prepShape(s), inside = overSrc.getFeaturesInExtent(s.extent).filter(f=>inShape(f.getGeometry(), sh));
       const free = inside.filter(f=>f.get("_s")==="none").length;
-      txt += ` · ${inside.length} ${(CODES[over.code]||over.code).toLowerCase()}, ${free} ikke i en opgave`;
+      txt += ` · ${inside.length} ${over.pack ? "steder" : overName(over).toLowerCase()}, ${free} ikke i en opgave`;
     }
     $("areaSize").textContent = txt;
   }, 100);
@@ -2225,10 +2234,16 @@ async function saveArea(t, s){
   toast("Området er gemt"); openTask(t);
 }
 
-// ================= OVERVIEW: ONE TYPE IN THE WHOLE KOMMUNE =================
-let over = null; // {code, t: timer}
+// ================= OVERVIEW: ONE TYPE (OR ONE PACKAGE) IN THE WHOLE KOMMUNE =================
+let over = null; // {codes, pack: the package's name or null, mode, tcol, t: timer}
 function renderTypes(){
   const q = $("typeSearch").value.trim().toLowerCase();
+  // Packages first, as chips like in Ny opgave; hidden while searching so the hits come first
+  const ps = packs.filter(p=>p.codes.length);
+  $("typePackBox").hidden = !!q || !ps.length;
+  $("typePacks").innerHTML = ps.map(p=>`<button data-p="${esc(p.id)}">📦 ${esc(p.name)} <span class="muted">· ${p.codes.length} ${p.codes.length===1 ? "type" : "typer"}</span></button>`).join("");
+  $("typePacks").querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{
+    const p = packs.find(x=>x.id===b.dataset.p); $("pType").hidden = true; openOverview(p.codes, p.name); });
   const used = {}; tasks.forEach(t=>(t.codes||[]).forEach(c=>used[c]=(used[c]||0)+1));
   const list = Object.entries(CODES).filter(([k,v])=>typeHit(k, v, q))
     .sort((a,b)=>(used[b[0]]||0)-(used[a[0]]||0));
@@ -2244,38 +2259,49 @@ function closeOverview(){
   closePlace();
   if(!over) return;
   clearTimeout(over.t); clearTimeout(over.refresh); over = null; overSrc.clear(); areaSrc.clear(); filterSrc.clear();
+  areaLayer.setVisible(true); labelLayer.setVisible(true);
 }
-async function openOverview(code){
+// codes: one type, or a package's types (pack = its name). Each type is fetched and stored on its own (type:<code>),
+// so a package shares its data with the single types, and a big package is fetched one type at a time.
+async function openOverview(codes, pack){
   closeOverview();
-  const o = over = {code, mode: store.get("overMode","status")};
-  const name = CODES[code] || code;
-  $("overCode").textContent = code;
+  codes = [...new Set([].concat(codes))];
+  let mode = store.get("overMode","status"); if(mode==="type" && codes.length < 2) mode = "status";
+  const o = over = {codes, pack: codes.length > 1 ? pack || null : null, mode};
+  const name = overName(o);
+  $("overCode").textContent = codes.length > 1 ? `${codes.length} typer` : codes[0];
+  $("btnOverByType").hidden = codes.length < 2;
+  $("overMode").classList.toggle("three", codes.length > 1);
   $("overBar").innerHTML = ""; $("overLegend").innerHTML = ""; $("overTasks").innerHTML = "";
   overHead(); pane("pOver");
-  const cached = await elCacheGet("type:"+code);
-  let feats;
-  if(cached){ feats = fmt.readFeatures(cached.geojson); overAge(cached.saved); }
-  else {
-    $("overAge").innerHTML = `<span class="spin"></span> Henter fra kommunen …`;
-    try{ feats = await downloadType(code); overAge(Date.now()); }
+  const cached = await Promise.all(codes.map(c=>elCacheGet("type:"+c)));
+  const feats = [], missing = codes.filter((c,i)=>!cached[i]);
+  cached.forEach(c=>{ if(c) feats.push(...fmt.readFeatures(c.geojson)); });
+  for(let i = 0; i < missing.length; i++){
+    if(over!==o) return;
+    $("overAge").innerHTML = `<span class="spin"></span> Henter fra kommunen …${missing.length > 1 ? ` (${i+1} af ${missing.length} typer)` : ""}`;
+    try{ feats.push(...await downloadType(missing[i])); }
     catch(e){ console.error(e); if(over===o) $("overAge").textContent = "Kunne ikke hente fra kommunen. Prøv igen senere."; return; }
   }
   if(over!==o) return;
+  const saved = cached.filter(Boolean).map(c=>c.saved);
+  overAge(missing.length ? Math.min(Date.now(), ...saved) : Math.min(...saved));
   overSrc.addFeatures(feats);
   await overPaint();
   if(over!==o) return;
+  const seen = "seenType:" + codes.join("+");
   if(!feats.length) toast(`Kommunen har ingen ${name.toLowerCase()} registreret`, 4000);
   else if(overFilter) overFit();
-  else if(!store.get("seenType:"+code, false)){ map.getView().fit(overSrc.getExtent(), {padding:[70,16,sheetPad(),16], duration:300}); store.set("seenType:"+code, true); }
+  else if(!store.get(seen, false)){ map.getView().fit(overSrc.getExtent(), {padding:[70,16,sheetPad(),16], duration:300}); store.set(seen, true); }
   // Same rules as tasks: at most once a day, spread out, never in the morning rush
-  if(cached && Date.now() - cached.saved > DAY && !rushHour())
+  if(saved.some(t=>Date.now() - t > DAY) && !rushHour())
     o.refresh = setTimeout(()=>{ if(over===o && navigator.onLine && !rushHour()) refreshType(o, false); }, 15000 + Math.random()*180000);
 }
 // "Only Brande": the overview counts and shows only what lies in one town or along one street. Kept when switching type.
 let overFilter = null; // {name, shape:{extent, area}, prep}
 function overHead(){
   if(!over) return;
-  const name = CODES[over.code] || over.code, f = overFilter;
+  const name = overName(over), f = overFilter;
   $("overName").textContent = f ? `${name} i ${f.name}` : `${name} i hele kommunen`;
   $("btnOverNew").textContent = `+ Ny opgave med ${name.toLowerCase()}${f ? " i " + f.name : ""}`;
   $("btnOverFind").hidden = !!f; $("overFilt").hidden = !f;
@@ -2293,12 +2319,16 @@ $("btnOverFind").onclick = ()=>openFind((s, it)=>{
 $("btnOverAll").onclick = ()=>{ overFilter = null; overHead(); overPaint(); };
 async function downloadType(code){ const fs = await fetchKommune(code); await elCachePut("type:"+code, fs); return fs; }
 function overAge(saved){ $("overAge").textContent = `Kortdata hentet ${ago(new Date(saved).toISOString())} · gemt på telefonen`; }
+// A package is refreshed type by type; if one type fails, the map keeps what it had (a type already saved stays new)
 async function refreshType(o, manual){
   if(manual) $("overAge").innerHTML = `<span class="spin"></span> Henter fra kommunen …`;
   try{
-    const fs = await downloadType(o.code); if(over!==o) return;
+    const fs = [];
+    for(const c of o.codes){ fs.push(...await downloadType(c)); if(over!==o) return; }
     overSrc.clear(); overSrc.addFeatures(fs); await overPaint(); overAge(Date.now()); if(manual) toast("Kortdata opdateret");
-  }catch(e){ console.error(e); if(manual && over===o){ toast("Kunne ikke hente fra kommunen. Prøv igen senere.", 4000); const c = await elCacheGet("type:"+o.code); if(c) overAge(c.saved); else $("overAge").textContent = ""; } }
+  }catch(e){ console.error(e); if(manual && over===o){ toast("Kunne ikke hente fra kommunen. Prøv igen senere.", 4000);
+    const cs = (await Promise.all(o.codes.map(c=>elCacheGet("type:"+c)))).filter(Boolean);
+    if(cs.length) overAge(Math.min(...cs.map(c=>c.saved))); else $("overAge").textContent = ""; } }
 }
 $("btnOverRefresh").onclick = ()=>{ if(over) refreshType(over, true); };
 // Status per element: from the tasks that cover it (done beats in progress beats todo); "none" if no task covers it
@@ -2321,34 +2351,44 @@ async function progressFor(ids){
 async function overPaint(){
   const o = over; if(!o) return;
   // Oldest first, so each task keeps its colour while the list of tasks stays the same
-  const tl = tasks.filter(t=>(t.codes||[]).includes(o.code) && (!overFilter || ol.extent.intersects(t.extent, overFilter.shape.extent))).sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
+  const want = new Set(o.codes);
+  const tl = tasks.filter(t=>(t.codes||[]).some(c=>want.has(c)) && (!overFilter || ol.extent.intersects(t.extent, overFilter.shape.extent))).sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
   const col = new Map(tl.map((t,i)=>[t.id, TASK_COLORS[i % TASK_COLORS.length]]));
   if(o.focus && !col.has(o.focus)) o.focus = null;
-  const [prog, ages] = await Promise.all([progressFor(tl.map(t=>t.id)), o.mode==="age" ? tendedForCode(o.code) : null]);
+  const [prog, ages] = await Promise.all([progressFor(tl.map(t=>t.id)), o.mode==="age" ? tendedForCode(o.codes) : null]);
   if(over!==o) return;
   areaSrc.clear();
   tl.forEach(t=>{ if(t.spots) return; const f = new ol.Feature(shapeGeom(t)); f.setProperties({label:t.name, tid:t.id, color:col.get(t.id)}); areaSrc.addFeature(f); });
-  const shapes = tl.map(t=>({t, s:prepShape(t), pk: t.elements ? new Set(t.elements) : null})), RANK = {todo:0, doing:1, blocked:2, done:3};
-  const per = new Map(tl.map(t=>[t.id, {done:0, blocked:0, total:0}])), c = {none:0, todo:0, doing:0, blocked:0, done:0};
+  const shapes = tl.map(t=>({t, s:prepShape(t), cs:new Set(t.codes), pk: t.elements ? new Set(t.elements) : null})), RANK = {todo:0, doing:1, blocked:2, done:3};
+  const per = new Map(tl.map(t=>[t.id, {done:0, blocked:0, total:0}])), c = {none:0, todo:0, doing:0, blocked:0, done:0}, types = {};
   const flt = overFilter?.prep;
   overSrc.getFeatures().forEach(f=>{
-    const g = f.getGeometry(); let best = null; const in_ = [];
+    const g = f.getGeometry(), code = f.get("elementkode"); let best = null; const in_ = [];
     const out = !!flt && !inShape(g, flt); f.set("_out", out, true);
     if(out){ f.set("_s", null, true); return; }
-    for(const {t,s,pk} of shapes){
-      if(!inShape(g, s) || (pk && !pk.has(f.getId()))) continue;
+    for(const {t,s,cs,pk} of shapes){
+      if(!cs.has(code) || !inShape(g, s) || (pk && !pk.has(f.getId()))) continue; // a hedge task doesn't count the pur in its area
       const st = prog.get(t.id+"|"+f.getId()) || "todo", p = per.get(t.id);
       p.total++; if(st==="done") p.done++; if(st==="blocked") p.blocked++;
       in_.push([t.id, st]);
       if(best===null || RANK[st] > RANK[best]) best = st;
     }
     f.set("_s", best || "none", true); f.set("_t", in_, true); c[best || "none"]++;
+    const ty = types[code] ||= {n:0, done:0}; ty.n++; if(best==="done") ty.done++;
     if(ages){ const d = ages.get(f.getId()) || null, k = ageKey(d); f.set("_d", d, true); f.set("_a", k, true); c[k] = (c[k]||0) + 1; }
   });
+  // Type colours in the package's own order, so a type keeps its colour when the map is narrowed to a town
+  o.tcol = Object.fromEntries(o.codes.map((k,i)=>[k, "ty" + (i % TYPE_COLORS.length)]));
+  areaLayer.setVisible(o.mode!=="type"); labelLayer.setVisible(o.mode!=="type"); // task outlines belong with the status colours
   overLayer.changed();
   document.querySelectorAll("#overMode [data-o]").forEach(b=>b.classList.toggle("on", b.dataset.o===(o.mode||"status")));
-  const n = overSrc.getFeatures().filter(f=>!f.get("_out")).length, name = (CODES[o.code]||o.code).toLowerCase();
-  if(ages){
+  const n = overSrc.getFeatures().filter(f=>!f.get("_out")).length, name = overName(o).toLowerCase();
+  if(o.mode==="type"){
+    const tys = o.codes.filter(k=>types[k]);
+    $("overBar").innerHTML = n ? tys.map(k=>`<i style="width:${types[k].n/n*100}%;background:${COLORS[o.tcol[k]]}"></i>`).join("") : "";
+    $("overLegend").innerHTML = tys.map(k=>`<span><i style="background:${COLORS[o.tcol[k]]}"></i>${esc(CODES[k]||k)} <b class="num">${types[k].done}/${types[k].n}</b></span>`).join("")
+      + (tys.length ? `<span class="muted">tal = færdige / alle · blege er færdige</span>` : "");
+  } else if(ages){
     $("overBar").innerHTML = n ? AGES.map(a=>`<i style="width:${(c[a.k]||0)/n*100}%;background:${a.c}"></i>`).join("") : "";
     $("overLegend").innerHTML = AGES.map(a=>`<span><i style="background:${a.c}"></i><b class="num">${c[a.k]||0}</b> ${a.l}</span>`).join("");
   } else {
@@ -2385,7 +2425,7 @@ $("btnOverBack").onclick = ()=>{
   if(overFilter){ openPlace(overFilter.drawn ? null : overFilter.name, overFilter.shape, overFilter.fromArea); return; }
   closeOverview(); pane("pTasks"); loadTasks();
 };
-$("btnOverNew").onclick = ()=>{ if(over) beginNewTask(over.code, overFilter ? {...overFilter.shape, place:overFilter.drawn ? null : overFilter.name} : null); };
+$("btnOverNew").onclick = ()=>{ if(over) beginNewTask(over.codes, overFilter ? {...overFilter.shape, place:overFilter.drawn ? null : overFilter.name} : null); };
 
 // ================= ONE PLACE: EVERY TYPE IN A TOWN OR ALONG A STREET =================
 // "What is there on Odinsgade?": all elements in the place (any type), counted per type, and the tasks that cover them.
@@ -2532,10 +2572,10 @@ async function loadLastTended(ids){
   }
   return m;
 }
-async function tendedForCode(code){ // the whole kommune, for the overview
+async function tendedForCode(codes){ // the whole kommune, for the overview (one type or a package's types)
   const m = new Map(); if(!sb) return m;
   for(let i=0;; i+=1000){
-    const {data, error} = await sb.from("last_tended").select("element_id,last_day").eq("code", code).range(i, i+999);
+    const {data, error} = await sb.from("last_tended").select("element_id,last_day").in("code", codes).range(i, i+999);
     if(error) break;
     data.forEach(r=>{ if(!(m.get(r.element_id) > r.last_day)) m.set(r.element_id, r.last_day); });
     if(data.length < 1000) break;
