@@ -208,7 +208,8 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .msg .cur{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--ink2)}
 .msg .cur .btn{min-height:40px;font-size:14px}
 .msg.wait{border:2px dashed var(--line)}
-#noteIn{font:inherit;font-size:17px;width:100%;min-height:76px;padding:12px;border-radius:var(--r);border:1px solid var(--line);background:var(--paper);color:var(--ink);resize:vertical;box-sizing:border-box}
+.msg .ednote{align-self:flex-end;min-height:40px;padding:4px 12px;font-size:14px}
+#noteIn,#editNoteIn{font:inherit;font-size:17px;width:100%;min-height:76px;padding:12px;border-radius:var(--r);border:1px solid var(--line);background:var(--paper);color:var(--ink);resize:vertical;box-sizing:border-box}
 #multiHint{font-size:14px}
 .ask{position:absolute;inset:0;background:#0007;display:flex;align-items:center;justify-content:center;padding:18px;z-index:30}
 .ask>div{background:var(--card);border-radius:20px;padding:20px;max-width:360px;width:100%;display:flex;flex-direction:column;gap:12px;box-shadow:0 10px 40px #0005}
@@ -501,6 +502,16 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 </div>
 
 <!-- Billede: open the camera straight away, or pick a saved photo -->
+<!-- Change or delete a note -->
+<div class="ask" id="askNote" hidden role="dialog" aria-modal="true" aria-labelledby="askNoteQ">
+  <div>
+    <h2 id="askNoteQ">Ret noten</h2>
+    <textarea id="editNoteIn" rows="3"></textarea>
+    <button class="btn primary" id="askNoteSave">Gem ændringen</button>
+    <button class="btn danger" id="askNoteDel">🗑 Slet noten</button>
+    <button class="btn" id="askNoteNo">Annullér</button>
+  </div>
+</div>
 <!-- Delete a photo, after seeing which one -->
 <div class="ask" id="askDelPic" hidden role="dialog" aria-modal="true" aria-labelledby="askDelPicQ">
   <div>
@@ -3227,9 +3238,9 @@ async function showNotes(){
   const msgs = toMsgs(data);
   const base = progress.get(id), pend = pending.get(task.id+"|"+id), now = eff(id)?.note?.trim() || "";
   // A note from before the log, or not in it for some other reason
-  if(base?.note?.trim() && !msgs.some(m=>m.note===base.note && m.tid===task.id) && !pend?._notes?.includes(base.note.trim()))
+  if(base?.note?.trim() && !msgs.some(m=>m.note===base.note && m.tid===task.id) && !pend?._notes?.includes(base.note.trim()) && (!pend || pend.note===base.note))
     msgs.push({who:base.worker, day:(base.updated_at||"").slice(0,10), tid:task.id, note:base.note, pics:[]});
-  for(const t of pend?._notes||[]) msgs.push({who:me, wait:true, tid:task.id, note:t, pics:[]});
+  (pend?._notes||[]).forEach((t,i)=>msgs.push({who:me, wait:true, tid:task.id, note:t, pics:[], pidx:i}));
   for(const ph of pend?._photos||[]){ const b = await photoGet(ph); if(b) msgs.push({who:me, wait:true, tid:task.id, pics:[{url:URL.createObjectURL(b), pid:ph}]}); }
   if(seq !== notesSeq) return;
   groupPics(msgs); // photos in a row from the same person and day share one message
@@ -3246,7 +3257,8 @@ function msgHtml(msgs, curAt=-1){
   const taskName = tid => tid===task?.id ? "" : tasks.find(t=>t.id===tid)?.name || "en tidligere opgave";
   return msgs.length ? msgs.map((m,i)=>`<div class="msg${norm(m.who)===norm(me) ? " mine" : ""}${m.wait ? " wait" : ""}">
         <div class="by"><b>${esc(m.who || "Ukendt")}</b> · ${m.wait ? "ikke sendt endnu" : m.day ? sinceText(m.day) + (daysSince(m.day) > 1 ? ` (${esc(longDate(m.day))})` : "") : ""}${taskName(m.tid) ? ` · ${esc(taskName(m.tid))}` : ""}</div>
-        ${m.note ? `<div class="txt">${esc(m.note)}</div>` : ""}
+        ${m.note ? `<div class="txt">${esc(m.note)}${m.edited ? ` <span class="muted" style="font-size:13px">(rettet)</span>` : ""}</div>` : ""}
+        ${m.note && (canEditNote(m) || canDelNote(m)) ? `<button class="btn ghost ednote" data-ed="${i}">${canEditNote(m) ? "✏️ Ret" : "🗑 Slet"}</button>` : ""}
         ${m.pics.length ? `<div class="pics">${m.pics.map(p=>`<span class="pic"><img src="${esc(p.url)}" alt="Billede" data-i="${notePics.indexOf(p)}">${canDelPic(p) ? `<button class="del" data-del="${notePics.indexOf(p)}" aria-label="Slet billedet">🗑</button>` : ""}</span>`).join("")}</div>` : ""}
         ${i===curAt ? `<div class="cur">📌 Står ved stedet nu <button class="btn ghost" data-off>✓ Ikke aktuel mere</button></div>` : ""}</div>`).join("")
       : `<p class="muted">Ingen noter eller billeder her endnu. Skriv den første nedenfor.</p>`;
@@ -3254,6 +3266,7 @@ function msgHtml(msgs, curAt=-1){
 function wireMsgs(L, msgs){
   L.querySelectorAll(".pic img").forEach(i=>i.onclick=()=>{ $("photoImg").src = i.src; $("photoView").hidden = false; });
   L.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>askDelPic(notePics[+b.dataset.del]));
+  L.querySelectorAll("[data-ed]").forEach(b=>b.onclick=()=>askEditNote(msgs[+b.dataset.ed]));
   // Newest at the bottom, next to the box: scroll there, also once the photos have their size
   const down = ()=>{ L.scrollTop = L.scrollHeight; };
   requestAnimationFrame(down); L.querySelectorAll("img").forEach(i=>i.addEventListener("load", down, {once:true}));
@@ -3265,7 +3278,9 @@ function toMsgs(data){
     if(r.note && last[r.task_id]===r.note) r = {...r, note:null}; // old done lines repeated the task's note
     if(r.note) last[r.task_id] = r.note;
     const pic = r.photo ? {url:photoUrl(r.photo), log:r.id, path:r.photo, day:r.day, who:r.worker, mixed: !!(r.status || r.done || r.part || r.note)} : null;
-    if(r.note || pic) msgs.push({who:r.worker, day:r.day, tid:r.task_id, note:r.note, pics: pic ? [pic] : []});
+    // nlog: the note's log line, so it can be changed; a line that also holds a status or a photo only loses its note
+    if(r.note || pic) msgs.push({who:r.worker, day:r.day, tid:r.task_id, note:r.note, edited:!!r.edited, pics: pic ? [pic] : [],
+      ...(r.note ? {nlog:r.id, nmixed: !!(r.status || r.done || r.part || r.photo)} : {})});
   });
   return msgs;
 }
@@ -3285,7 +3300,7 @@ async function loadPins(t){
   if(!sb){ $("btnPin").hidden = true; return; }
   const {data, error} = await sb.from("pins").select("*").eq("task_id", t.id).is("closed", null).limit(500);
   if(task !== t) return;
-  pinsOk = !error; $("btnPin").hidden = !pinsOk; // until supabase/pins.sql has been run
+  pinsOk = !error; $("btnPin").hidden = !pinsOk; // until supabase/notes_photos_pins.sql has been run
   if(error) return;
   pins = data;
   pinSrc.getFeatures().filter(f=>!f.get("draft")).forEach(f=>pinSrc.removeFeature(f));
@@ -3359,9 +3374,55 @@ async function closePin(p){
   if(error){ console.error(error); return toast("Pinnen kunne ikke fjernes. Tjek forbindelsen.", 4000); }
   closeNotes(); loadPins(task); toast("Pinnen er fjernet fra kortet. Noterne står stadig under 💬 Noter.", 4000);
 }
-let notesSeq = 0, notePics = [], delPic = null;
+let notesSeq = 0, notePics = [], delPic = null, edNote = null;
+// Notes: your own you can change or delete the day you wrote them and the next (any time before Send);
+// a koordinator can delete anyone's. The database checks the same (supabase/notes_photos_pins.sql).
+const canEditNote = m => m.wait || (!!sb && m.nlog != null && norm(m.who)===norm(me) && m.day >= dayBefore());
+const canDelNote = m => canEditNote(m) || (!!sb && m.nlog != null && isBoss());
+function askEditNote(m){
+  edNote = m; const ed = canEditNote(m);
+  $("askNoteQ").textContent = ed ? "Ret noten" : "Slet noten?";
+  $("editNoteIn").value = m.note; $("editNoteIn").readOnly = !ed;
+  $("askNoteSave").hidden = !ed; $("askNoteDel").textContent = "🗑 Slet noten"; $("askNoteDel").dataset.sure = "";
+  $("askNote").hidden = false; if(ed) $("editNoteIn").focus();
+}
+function closeEditNote(){ $("askNote").hidden = true; edNote = null; }
+$("askNoteNo").onclick = closeEditNote;
+$("askNote").onclick = e=>{ if(e.target===$("askNote")) closeEditNote(); };
+$("askNoteSave").onclick = ()=>{ const t = $("editNoteIn").value.trim(); if(!t) return toast("Noten er tom. Tryk Slet noten, hvis den skal væk."); changeNote(edNote, t); };
+$("askNoteDel").onclick = ()=>{ // second tap deletes, so a slip of the finger doesn't
+  if(!$("askNoteDel").dataset.sure){ $("askNoteDel").dataset.sure = "1"; $("askNoteDel").textContent = edNote?.wait ? "Ja, slet noten" : "Ja, slet noten for alle"; return; }
+  changeNote(edNote, null);
+};
+// text null = delete
+async function changeNote(m, text){
+  closeEditNote(); if(!m) return;
+  const id = noteCtx ? null : selected?.getId();
+  if(m.wait){ // not sent yet: change it in the outbox
+    const key = task.id+"|"+id, r = pending.get(key); if(!r?._notes) return;
+    const wasCur = (r.note||"").trim()===r._notes[m.pidx];
+    if(text) r._notes[m.pidx] = text; else r._notes.splice(m.pidx, 1);
+    const b = progress.get(id) || {status:"todo", note:""};
+    if(wasCur) r.note = text || (r._notes.at(-1) ?? b.note ?? "");
+    if(!r._photos?.length && !r._notes.length && r.status===b.status && r.note===(b.note||"") && r.reason===(b.reason||null) && partsKey(r.parts)===partsKey(b.parts)) pending.delete(key);
+    store.set("pending", [...pending.values()]); renderOutbox(); refresh();
+    toast(text ? "Noten er rettet" : "Noten er slettet"); return showNotes();
+  }
+  const q = text ? {note:text, edited:true} : {note:null};
+  const run = body => text || m.nmixed ? sb.from("element_log").update(body).eq("id", m.nlog).select("id") : sb.from("element_log").delete().eq("id", m.nlog).select("id");
+  let {data, error} = await run(q);
+  if(error && /edited/.test(error.message||"")) ({data, error} = await run({note:text})); // before the SQL file: no "(rettet)"
+  if(error || !data?.length){ if(error) console.error(error);
+    return toast(error ? "Noten kunne ikke ændres. Tjek forbindelsen." : "Noten kan ikke ændres herfra. Spørg koordinatoren.", 4000); }
+  // The element's current note follows along, without a new line in the log
+  if(id && m.tid===task.id && (eff(id)?.note||"").trim()===m.note.trim()){
+    setStatus([id], null, text || "");
+    const r = pending.get(task.id+"|"+id); if(r?._notes?.at(-1)===text){ r._notes.pop(); store.set("pending", [...pending.values()]); }
+  }
+  toast(text ? "Noten er rettet" : "Noten er slettet"); refresh(); showNotes();
+}
 // Delete a photo: one not sent yet always; a sent one by whoever took it or a koordinator. The database decides the rest
-// (anyone the day it was taken or the next; a koordinator any time, once supabase/photo_delete.sql has been run).
+// (anyone the day it was taken or the next; a koordinator any time, once supabase/notes_photos_pins.sql has been run).
 const dayBefore = () => { const b = new Date(Date.now() - 864e5); return `${b.getFullYear()}-${String(b.getMonth()+1).padStart(2,"0")}-${String(b.getDate()).padStart(2,"0")}`; };
 const canDelPic = p => p.pid || (sb && (isBoss() || (norm(p.who)===norm(me) && p.day >= dayBefore())));
 function askDelPic(p){ delPic = p; $("delPicImg").src = p.url; $("askDelPic").hidden = false; }
