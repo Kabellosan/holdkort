@@ -1163,7 +1163,6 @@ $("guideNext").onclick = ()=>{ if(guideAt===guideSteps().length-1) closeGuide();
 $("guideBack").onclick = ()=>{ if(guideAt>0){ guideAt--; renderGuide(); } };
 $("guideSkip").onclick = closeGuide;
 $("guide").onclick = e=>{ if(e.target===$("guide")) closeGuide(); };
-document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !$("guide").hidden) closeGuide(); });
 $("btnHelp").onclick = showGuide;
 $("btnProfGuide").onclick = ()=>{ $("pProfile").hidden = true; showGuide(); };
 // First time this role is used on this phone: show it once
@@ -3189,7 +3188,6 @@ function closeAsk(){ $("askClear").hidden = true; }
 $("askClearYes").onclick = ()=>{ closeAsk(); select(null); toast("Markeringer fjernet"); };
 $("askClearNo").onclick = closeAsk;
 $("askClear").onclick = e=>{ if(e.target===$("askClear")) closeAsk(); };
-document.addEventListener("keydown", e=>{ if(e.key!=="Escape") return; if(!$("photoView").hidden) $("photoView").hidden = true; else if(!$("askClear").hidden) closeAsk(); });
 $("btnClearSel").onclick = ()=>{ const n = selSet.size; select(null); if(n>1) toast("Markeringer fjernet"); };
 document.querySelectorAll(".status [data-s]").forEach(b=>b.onclick=()=>{
   const ids = [...selSet].map(g=>g.getId());
@@ -3207,7 +3205,6 @@ $("askBlock").querySelectorAll("[data-r]").forEach(b=>b.onclick=()=>{
 });
 $("askBlockNo").onclick = closeBlock;
 $("askBlock").onclick = e=>{ if(e.target===$("askBlock")) closeBlock(); };
-document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !$("askBlock").hidden) closeBlock(); });
 // ================= NOTER OG BILLEDER =================
 // One element's notes and photos from every task, oldest first like a text conversation, each with who and which day.
 // The newest note is the element's current note (shown in the panel and the list); "Ikke aktuel mere" takes it off but keeps it here.
@@ -3815,6 +3812,47 @@ if(user && sb) sb.auth.getSession().then(({data, error})=>{
 loadTasks();
 // Try to send leftovers when the connection comes back, but only if the worker chose auto-send
 window.addEventListener("online", ()=>{ if(autoSend) sendPending(); });
+
+// ================= BACK BUTTON =================
+// Android's back button (and the browser's) closes the top popup, panel or step, like in an app,
+// instead of leaving the site. While anything is open, one extra history entry sits on top;
+// back pops it, we press that layer's own close button (so "Stop uden at gemme?" etc. still ask),
+// and put the entry back if something is still open. On the task list back leaves as usual.
+// Top first: the photo, the guide, the questions, the full-screen panels (later in the page = on top), then the sheet.
+const BACK = [["photoView","btnPhotoClose"], ["guide",closeGuide],
+  ...[...document.querySelectorAll(".ask")].reverse().map(a=>[a.id, a.querySelector("[id$=No]")]),
+  ["pPerson","btnPersonNo","btnPersonCancel"], ["pProfile","btnProfClose"], ["pLogin"],
+  ["pFind","btnFindClose"], ["pSearch","btnSearchClose"], ["pNotes","btnNotesClose"], ["pHist","btnHistClose"],
+  ["pShow","btnShowClose"], ["pType","btnTypeClose"], ["pPack","btnPackClose"], ["pNew","btnNewCancel"],
+  [()=>pinDrop, "btnPin"],
+  ["pEl","btnElClose"], ["pList","btnListClose"], ["pPart","btnPartCancel"], ["pPick","btnPickCancel"],
+  ["pSpots","btnSpotsCancel"], ["pArea","btnAreaCancel"], ["pPlace","btnPlaceBack"], ["pOver","btnOverBack"], ["pWork","btnBack"]];
+const backTop = () => BACK.find(([w]) => typeof w==="function" ? w() : $(w) && !$(w).hidden);
+function backClose(){
+  const l = backTop(); if(!l) return false;
+  for(const c of l.slice(1)){ // the first close button that's on screen
+    if(typeof c==="function"){ c(); return true; }
+    const b = typeof c==="string" ? $(c) : c;
+    if(b && !b.hidden){ b.click(); return true; }
+  }
+  return false; // the login screen: nothing to go back to
+}
+let backOn = !!history.state?.holdkort, backSkip = 0;
+function backSync(){
+  if(backSkip) return;
+  const l = backTop(), open = !!l && l[0]!=="pLogin";
+  if(open && !backOn){ history.pushState({holdkort:1}, ""); backOn = true; }
+  else if(!open && backOn){ backSkip++; backOn = false; history.back(); } // closed with a button: drop the extra entry
+}
+window.addEventListener("popstate", e=>{
+  if(backSkip){ backSkip--; backSync(); return; }
+  backOn = !!e.state?.holdkort;
+  if(!backOn) backClose();
+  setTimeout(backSync); // still something open (or a "Stop uden at gemme?" question): back works again
+});
+new MutationObserver(()=>backSync()).observe(document.body, {subtree:true, attributes:true, attributeFilter:["hidden","aria-pressed"]});
+document.addEventListener("keydown", e=>{ if(e.key==="Escape") backClose(); }); // on computers
+backSync();
 </script>
 </body>
 </html>
