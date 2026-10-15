@@ -2783,15 +2783,29 @@ $("askPhotoCam").onclick = ()=>{ $("askPhoto").hidden = true; $("photoCam").clic
 $("askPhotoPick").onclick = ()=>{ $("askPhoto").hidden = true; $("photoIn").click(); };
 $("askPhotoNo").onclick = ()=>{ $("askPhoto").hidden = true; };
 $("photoIn").onchange = $("photoCam").onchange = async e=>{
-  const file = e.target.files[0]; e.target.value = "";
-  if(noteCtx){ if(file) threadPhoto(file); return; }
+  const file = e.target.files[0], cam = e.target.id === "photoCam"; e.target.value = "";
+  if(noteCtx){ if(file) threadPhoto(file, cam); return; }
   const ids = [...selSet].map(g=>g.getId()); if(!file || !ids.length) return;
   try{
     const id = uuid(); await photoPut(id, await shrink(file));
     setStatus(ids, null, null, undefined, id); // also redraws Noter og billeder if it's open
-    toast(autoSend ? "Billede tilføjet" : "Billedet er lagt klar. Tryk Send", 3000);
+    toast(autoSend ? "Billede tilføjet" : "Billedet er lagt klar. Tryk Send", cam ? 8000 : 3000, cam && keepAct(file));
   }catch(err){ console.error(err); toast("Billedet kunne ikke gemmes. Prøv igen.", 4000); }
 };
+// A web page can't put a camera photo in the phone's gallery by itself, so the toast offers it:
+// iPhones get the share sheet ("Gem billede" puts it in Fotos), other phones download it (it shows under Downloads in the gallery).
+// The original is kept, full size; it never leaves the phone this way.
+const keepAct = file => ({label:"💾 Gem på telefonen", fn: async ()=>{
+  const f = new File([file], `holdkort-${today()}-${Date.now().toString(36)}.jpg`, {type: file.type || "image/jpeg"});
+  if(/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent))){
+    try{ if(navigator.canShare?.({files:[f]})){ await navigator.share({files:[f]}); return; } }
+    catch(err){ if(err.name === "AbortError") return; console.error(err); }
+  }
+  const a = document.createElement("a"), u = URL.createObjectURL(f);
+  a.href = u; a.download = f.name; document.body.append(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(u), 60000);
+  toast("Billedet er gemt på telefonen", 3000);
+}});
 // Older lines have only "done"; newer ones carry the status they were set to
 const histPill = r => { const st = r.status || (r.done ? "done" : null); if(!st) return "";
   return `<span class="pill ${st}">${st==="blocked" ? "🚧 " : ""}${LABEL[st]}${st==="blocked" && r.reason ? ": " + esc(r.reason) : ""}</span>`; };
@@ -3381,7 +3395,7 @@ async function threadSend(text){
   finally{ btn.disabled = false; }
   if(noteCtx === c) showThread();
 }
-async function threadPhoto(file){
+async function threadPhoto(file, cam){
   const c = noteCtx;
   try{
     toast("Sender billedet …", 8000);
@@ -3391,7 +3405,7 @@ async function threadPhoto(file){
     if(up.error) throw up.error;
     const {error} = await sb.from("element_log").insert(threadLine(c, {photo:path}));
     if(error) throw error;
-    toast("Billedet er sendt"); loadTaskMedia(task);
+    toast("Billedet er sendt", cam ? 8000 : 2600, cam && keepAct(file)); loadTaskMedia(task);
   }catch(e){ console.error(e); toast("Billedet kunne ikke sendes. Tjek forbindelsen og prøv igen.", 4000); }
   if(noteCtx === c) showThread();
 }
