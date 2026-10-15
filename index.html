@@ -437,6 +437,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     </div>
     <div class="row" id="noteRow" hidden><input type="text" id="note" placeholder="Note til holdet"><button class="btn" id="btnNote">Gem</button></div>
     <input type="file" id="photoIn" accept="image/*" hidden>
+    <input type="file" id="photoCam" accept="image/*" capture="environment" hidden>
     <div class="row selrow"><div class="grow"><div class="tended" id="elTended"></div><div class="muted" id="multiHint">Tryk på flere for at markere dem.</div></div><button class="btn clear" id="btnClearSel">✕ Ryd markerede</button></div>
     <details class="reqs" id="reqs"><summary>📋 Krav og sikkerhed</summary><div class="rbody" id="reqsBody"></div></details>
   </div>
@@ -471,6 +472,16 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <button class="btn" id="askNewArea">▭ Et helt område</button>
     <div class="muted" style="margin-top:-6px">Alt af nogle typer inden for et område, fx al pur i Brande.</div>
     <button class="btn ghost" id="askNewNo">Annullér</button>
+  </div>
+</div>
+
+<!-- Billede: open the camera straight away, or pick a saved photo -->
+<div class="ask" id="askPhoto" hidden role="dialog" aria-modal="true" aria-labelledby="askPhotoQ">
+  <div>
+    <h2 id="askPhotoQ">Billede</h2>
+    <button class="btn primary" id="askPhotoCam">📷 Tag billede</button>
+    <button class="btn" id="askPhotoPick">🖼️ Vælg fra galleri</button>
+    <button class="btn ghost" id="askPhotoNo">Annullér</button>
   </div>
 </div>
 
@@ -2667,8 +2678,15 @@ async function uploadPhotos(rows){
   }
   return paths;
 }
-$("btnPhoto").onclick = ()=>$("photoIn").click();
-$("photoIn").onchange = async e=>{
+// Phones ask camera or gallery; a computer has no camera to open, so it goes straight to the file picker
+$("btnPhoto").onclick = ()=>{
+  if(!matchMedia("(pointer:coarse)").matches) return $("photoIn").click();
+  $("askPhoto").hidden = false; $("askPhotoCam").focus();
+};
+$("askPhotoCam").onclick = ()=>{ $("askPhoto").hidden = true; $("photoCam").click(); };
+$("askPhotoPick").onclick = ()=>{ $("askPhoto").hidden = true; $("photoIn").click(); };
+$("askPhotoNo").onclick = ()=>{ $("askPhoto").hidden = true; };
+$("photoIn").onchange = $("photoCam").onchange = async e=>{
   const file = e.target.files[0]; e.target.value = "";
   const ids = [...selSet].map(g=>g.getId()); if(!file || !ids.length) return;
   try{
