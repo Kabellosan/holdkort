@@ -184,6 +184,8 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .tools{display:flex;gap:6px}
 .tools .btn{flex:1 1 0;min-width:0;flex-direction:column;gap:2px;padding:6px 2px;min-height:64px;font-size:13px}
 .tools .btn span{font-size:22px;line-height:1}
+.tools .btn{position:relative}
+.tools .cnt{position:absolute;top:2px;right:2px;font-size:11px;line-height:1;padding:2px 4px;border-radius:8px;background:var(--moss2);color:#fff}
 .tools .btn.on{border-color:var(--moss2);background:var(--paper)}
 #multiHint{font-size:14px}
 .ask{position:absolute;inset:0;background:#0007;display:flex;align-items:center;justify-content:center;padding:18px;z-index:30}
@@ -433,7 +435,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button class="btn" id="btnNoteOpen" aria-expanded="false"><span>📝</span>Note</button>
       <button class="btn" id="btnPhoto"><span>📷</span>Billede</button>
       <button class="btn" id="btnRoute"><span>🧭</span>Vis vej</button>
-      <button class="btn" id="btnHist"><span>📜</span>Historik</button>
+      <button class="btn" id="btnHist"><span>📜</span>Historik<b class="cnt" id="histN" hidden></b></button>
     </div>
     <div class="row" id="noteRow" hidden><input type="text" id="note" placeholder="Note til holdet"><button class="btn" id="btnNote">Gem</button></div>
     <input type="file" id="photoIn" accept="image/*" hidden>
@@ -783,13 +785,13 @@ function elStyle(f, res){
   const st = statusOf(f.getId()), k = byTypeNow() ? tcol[f.get("elementkode")] || "none" : st;
   const s = shapeStyle(k, selSet.has(f), res > 3.2, k===st ? null : st);
   const p = partStyle(f); // a long element partly done gets its done stretch drawn green on top
-  return hasMedia(f.getId()) || p || pin.length ? [...s, ...(p||[]), ...(hasMedia(f.getId()) ? [CAMERA] : []), ...pin] : s;
+  const m = mediaMark(f.getId());
+  return m || p || pin.length ? [...s, ...(p||[]), ...(m ? [badgeStyle(m)] : []), ...pin] : s;
 }
 // While tapping spots: everything the kommune has here, drawn thin and grey so the aerial photo still shows
 const SPOT_OFF = [new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffaa", width:3.5}), image:new ol.style.Circle({radius:7, fill:new ol.style.Fill({color:"#ffffffaa"})})}),
   new ol.style.Style({stroke:new ol.style.Stroke({color:"#5f6368", width:1.5}), fill:new ol.style.Fill({color:"#9aa0a633"}),
     image:new ol.style.Circle({radius:5, fill:new ol.style.Fill({color:"#9aa0a6"}), stroke:new ol.style.Stroke({color:"#5f6368", width:1.5})})})];
-// 📷 beside elements that have a photo in the open task, so the boss can see where to look
 const centerPoint = f => { const g = f.getGeometry(), t = g.getType();
   if(t==="Point") return g;
   if(t==="Polygon") return g.getInteriorPoint();
@@ -797,8 +799,13 @@ const centerPoint = f => { const g = f.getGeometry(), t = g.getType();
   return new ol.geom.Point(g.getClosestPoint(ol.extent.getCenter(g.getExtent()))); };
 // A spot set by hand on the map (not in the kommune's data)
 const OWN_PIN = new ol.style.Style({zIndex:41, text:new ol.style.Text({text:"📍", font:"22px sans-serif", offsetY:-18})});
-const CAMERA = new ol.style.Style({geometry:centerPoint, zIndex:40,
-  text:new ol.style.Text({text:"📷", font:"20px sans-serif", offsetX:18, offsetY:-14, backgroundFill:new ol.style.Fill({color:"#ffffffdd"}), padding:[2,3,0,3]})});
+// 📝 / 📷 beside elements with a note or a photo, so everyone can see where there's something to read or look at
+const badgeCache = {};
+const badgeStyle = t => badgeCache[t] ||= new ol.style.Style({geometry:centerPoint, zIndex:40,
+  text:new ol.style.Text({text:t, font:"20px sans-serif", offsetY:-22, backgroundFill:new ol.style.Fill({color:"#ffffffdd"}), padding:[2,3,0,3]})});
+const badgeText = (note, photo) => (note ? "📝" : "") + (photo ? "📷" : "");
+// In the open task: its current note (sent or waiting) and its photos
+const mediaMark = id => badgeText(!!eff(id)?.note?.trim(), hasMedia(id));
 function shapeStyle(s, sel, far, st){ // st: the status, when s is a type colour
   const key = s + sel + (far ? "far" : "near") + (st || "");
   if(!styleCache[key]){
@@ -838,11 +845,13 @@ function overStyle(f, res){
   const far = res > 3.2;
   if(place){
     const k = place.mode==="status" ? f.get("_s") || "none" : place.focus && f.get("elementkode")!==place.focus ? "off" : place.tcol?.[f.get("elementkode")] || "none";
-    return shapeStyle(k, f===place.sel, far);
+    const s = shapeStyle(k, f===place.sel, far);
+    return f.get("_m") ? [...s, badgeStyle(f.get("_m"))] : s;
   }
   // a package by type: each type its own colour, done ones fade and blocked keep 🚧, so progress still shows
-  if(over?.mode==="type") return shapeStyle(over.tcol?.[f.get("elementkode")] || "none", false, far, f.get("_s"));
-  return shapeStyle((over?.mode==="age" ? f.get("_a") : f.get("_s")) || "none", false, far);
+  const s = over?.mode==="type" ? shapeStyle(over.tcol?.[f.get("elementkode")] || "none", false, far, f.get("_s"))
+    : shapeStyle((over?.mode==="age" ? f.get("_a") : f.get("_s")) || "none", false, far);
+  return f.get("_m") ? [...s, badgeStyle(f.get("_m"))] : s;
 }
 const overLayer = new ol.layer.Vector({source:overSrc, style:overStyle, renderBuffer:200});
 const areaSrc = new ol.source.Vector();
@@ -2332,20 +2341,28 @@ async function refreshType(o, manual){
 }
 $("btnOverRefresh").onclick = ()=>{ if(over) refreshType(over, true); };
 // Status per element: from the tasks that cover it (done beats in progress beats todo); "none" if no task covers it
+// m.noted / m.photos: "task|element" keys with a note or a photo (sent or waiting), for the 📝 / 📷 marks
 async function progressFor(ids){
-  const m = new Map(); if(!ids.length) return m;
+  const m = new Map(); m.noted = new Set(); m.photos = new Set(); if(!ids.length) return m;
   let fromDb = false;
   if(sb){
     fromDb = true;
     for(let i=0;;i+=1000){
-      const {data,error} = await sb.from("progress").select("task_id,element_id,status").in("task_id",ids).range(i, i+999);
+      const {data,error} = await sb.from("progress").select("task_id,element_id,status,note").in("task_id",ids).range(i, i+999);
       if(error){ fromDb = false; break; }
-      data.forEach(r=>m.set(r.task_id+"|"+r.element_id, r.status));
+      data.forEach(r=>{ m.set(r.task_id+"|"+r.element_id, r.status); if(r.note?.trim()) m.noted.add(r.task_id+"|"+r.element_id); });
       if(data.length < 1000) break;
     }
   }
-  if(!fromDb) ids.forEach(id=>store.get("prog:"+id,[]).forEach(r=>m.set(id+"|"+r.element_id, r.status)));
-  pending.forEach(r=>{ if(ids.includes(r.task_id)) m.set(r.task_id+"|"+r.element_id, r.status); });
+  if(!fromDb) ids.forEach(id=>store.get("prog:"+id,[]).forEach(r=>{ m.set(id+"|"+r.element_id, r.status); if(r.note?.trim()) m.noted.add(id+"|"+r.element_id); }));
+  pending.forEach(r=>{ if(!ids.includes(r.task_id)) return; const k = r.task_id+"|"+r.element_id;
+    m.set(k, r.status); if(r.note?.trim()) m.noted.add(k); else m.noted.delete(k); if(r._photos?.length) m.photos.add(k); });
+  if(sb && logOk) for(let i=0;; i+=1000){
+    const {data,error} = await sb.from("element_log").select("task_id,element_id").in("task_id",ids).not("photo","is",null).range(i, i+999);
+    if(error) break;
+    data.forEach(r=>m.photos.add(r.task_id+"|"+r.element_id));
+    if(data.length < 1000) break;
+  }
   return m;
 }
 async function overPaint(){
@@ -2365,15 +2382,17 @@ async function overPaint(){
   overSrc.getFeatures().forEach(f=>{
     const g = f.getGeometry(), code = f.get("elementkode"); let best = null; const in_ = [];
     const out = !!flt && !inShape(g, flt); f.set("_out", out, true);
-    if(out){ f.set("_s", null, true); return; }
+    if(out){ f.set("_s", null, true); f.set("_m", "", true); return; }
+    let note = false, photo = false;
     for(const {t,s,cs,pk} of shapes){
       if(!cs.has(code) || !inShape(g, s) || (pk && !pk.has(f.getId()))) continue; // a hedge task doesn't count the pur in its area
-      const st = prog.get(t.id+"|"+f.getId()) || "todo", p = per.get(t.id);
+      const key = t.id+"|"+f.getId(), st = prog.get(key) || "todo", p = per.get(t.id);
+      note ||= prog.noted.has(key); photo ||= prog.photos.has(key);
       p.total++; if(st==="done") p.done++; if(st==="blocked") p.blocked++;
       in_.push([t.id, st]);
       if(best===null || RANK[st] > RANK[best]) best = st;
     }
-    f.set("_s", best || "none", true); f.set("_t", in_, true); c[best || "none"]++;
+    f.set("_s", best || "none", true); f.set("_t", in_, true); f.set("_m", badgeText(note, photo), true); c[best || "none"]++;
     const ty = types[code] ||= {n:0, done:0}; ty.n++; if(best==="done") ty.done++;
     if(ages){ const d = ages.get(f.getId()) || null, k = ageKey(d); f.set("_d", d, true); f.set("_a", k, true); c[k] = (c[k]||0) + 1; }
   });
@@ -2484,15 +2503,16 @@ async function placePaint(){
   const shapes = cand.map(t=>({t, s:prepShape(t), cs:new Set(t.codes), pk: t.elements ? new Set(t.elements) : null})), RANK = {todo:0, doing:1, blocked:2, done:3};
   const per = new Map(cand.map(t=>[t.id, {done:0, blocked:0, total:0}])), c = {none:0, todo:0, doing:0, blocked:0, done:0}, types = {};
   feats.forEach(f=>{
-    const g = f.getGeometry(), code = f.get("elementkode"); let best = null; const in_ = [];
+    const g = f.getGeometry(), code = f.get("elementkode"); let best = null, note = false, photo = false; const in_ = [];
     for(const {t,s,cs,pk} of shapes){
       if(!cs.has(code) || (pk && !pk.has(f.getId())) || !inShape(g, s)) continue;
-      const st = prog.get(t.id+"|"+f.getId()) || "todo", q = per.get(t.id);
+      const key = t.id+"|"+f.getId(), st = prog.get(key) || "todo", q = per.get(t.id);
+      note ||= prog.noted.has(key); photo ||= prog.photos.has(key);
       q.total++; if(st==="done") q.done++; if(st==="blocked") q.blocked++;
       in_.push([t.id, st]);
       if(best===null || RANK[st] > RANK[best]) best = st;
     }
-    f.set("_s", best || "none", true); f.set("_t", in_, true); c[best || "none"]++;
+    f.set("_s", best || "none", true); f.set("_t", in_, true); f.set("_m", badgeText(note, photo), true); c[best || "none"]++;
     const ty = types[code] ||= {n:0, inTask:0, done:0}; ty.n++; if(best) ty.inTask++; if(best==="done") ty.done++;
   });
   const tys = Object.entries(types).sort((a,b)=>b[1].n - a[1].n);
@@ -2621,6 +2641,8 @@ async function writeLog(rows, paths){
 function showTended(fs){
   const el = $("elTended"), ids = fs.map(g=>g.getId());
   $("btnHist").hidden = fs.length !== 1 || !sb || !logOk;
+  const pics = fs.length===1 ? (taskMedia.get(ids[0])||0) + (pending.get(task?.id+"|"+ids[0])?._photos?.length||0) : 0;
+  $("histN").hidden = !pics; $("histN").textContent = pics ? `📷 ${pics}` : ""; // photos are in Historik
   $("btnPhoto").hidden = !sb || !logOk;
   if(!sb || !logOk){ el.textContent = ""; el.classList.remove("warn"); return; }
   if(fs.length===1){
@@ -3035,7 +3057,8 @@ map.on("singleclick", e=>{
     if(f){
       const by = {}; (f.get("_t")||[]).forEach(([id,st])=>{ const t = tasks.find(x=>x.id===id); if(t) (by[st] ||= []).push(t.name); });
       const parts = ["done","doing","blocked","todo"].filter(s=>by[s]).map(s=>`${LABEL[s]} i ${by[s].join(", ")}`);
-      toast(`${titleOf(f)}${subOf(f) ? " · " + subOf(f) : ""} · ${parts.length ? parts.join(" · ") : "ikke i en opgave"}`, 5000);
+      if(f.get("_m") && sb && logOk) showHistory(f); // a note or photo: show it right away (the history names the tasks)
+      else toast(`${titleOf(f)}${subOf(f) ? " · " + subOf(f) : ""} · ${parts.length ? parts.join(" · ") : "ikke i en opgave"}`, 5000);
     }
     return;
   }
@@ -3045,7 +3068,8 @@ map.on("singleclick", e=>{
       const by = {}; (f.get("_t")||[]).forEach(([id,st])=>{ const t = tasks.find(x=>x.id===id); if(t) (by[st] ||= []).push(t.name); });
       const parts = ["done","doing","blocked","todo"].filter(s=>by[s]).map(s=>`${LABEL[s]} i ${by[s].join(", ")}`), n = Object.values(by).flat().length;
       const last = f.get("_d"), age = over.mode==="age" ? ` · ${last ? "sidst passet " + sinceText(last) : "ikke registreret passet"}` : "";
-      toast(`${titleOf(f)}${subOf(f) ? " · " + subOf(f) : ""}${age} · ${parts.length ? parts.join(" · ") : "ikke i en opgave"}`, 4000 + 1500*Math.max(0, n-1)); }
+      if(f.get("_m") && sb && logOk) showHistory(f); // a note or photo: show it right away (the history names the tasks)
+      else toast(`${titleOf(f)}${subOf(f) ? " · " + subOf(f) : ""}${age} · ${parts.length ? parts.join(" · ") : "ikke i en opgave"}`, 4000 + 1500*Math.max(0, n-1)); }
     return;
   }
   if(!task) return;
