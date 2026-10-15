@@ -194,7 +194,11 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .msg .by{font-size:13px;color:var(--ink2)}
 .msg .by b{color:var(--ink);font-size:14px}
 .msg .txt{font-size:17px;white-space:pre-wrap;overflow-wrap:anywhere}
-.msg img{width:100%;max-height:240px;object-fit:cover;border-radius:10px;cursor:zoom-in;background:var(--line)}
+.msg .pics{display:flex;flex-wrap:wrap;gap:8px}
+.msg .pic{position:relative;width:104px;height:104px}
+.msg .pic img{width:100%;height:100%;object-fit:cover;border-radius:10px;cursor:zoom-in;background:var(--line);display:block}
+.msg .pic .del{position:absolute;right:-6px;top:-6px;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--card);font-size:18px;display:flex;align-items:center;justify-content:center;padding:0;box-shadow:0 1px 4px #0003}
+.ask .delimg{width:100%;max-height:200px;object-fit:contain;border-radius:10px;background:var(--line)}
 .msg .cur{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--ink2)}
 .msg .cur .btn{min-height:40px;font-size:14px}
 .msg.wait{border:2px dashed var(--line)}
@@ -490,6 +494,16 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 </div>
 
 <!-- Billede: open the camera straight away, or pick a saved photo -->
+<!-- Delete a photo, after seeing which one -->
+<div class="ask" id="askDelPic" hidden role="dialog" aria-modal="true" aria-labelledby="askDelPicQ">
+  <div>
+    <h2 id="askDelPicQ">Slet billedet?</h2>
+    <img class="delimg" id="delPicImg" alt="Billedet, der slettes">
+    <p class="muted" style="margin:0">Det forsvinder for alle og kan ikke hentes tilbage.</p>
+    <button class="btn danger" id="askDelPicOk">🗑 Slet billedet</button>
+    <button class="btn" id="askDelPicNo">Nej, behold det</button>
+  </div>
+</div>
 <div class="ask" id="askPhoto" hidden role="dialog" aria-modal="true" aria-labelledby="askPhotoQ">
   <div>
     <h2 id="askPhotoQ">Billede</h2>
@@ -2637,8 +2651,9 @@ async function writeLog(rows, paths){
     const line = {element_id:r.element_id, code:r._code, task_id:r.task_id, day, done, worker: r.worker||null, status: changed ? r.status : null,
       reason: changed && r.status==="blocked" ? r.reason||null : null, note: r._notes ? null : (done || noted) && r.note ? r.note : null, photo:null};
     if(part) line.part = part;
-    if(!photos.length){ if(changed || done || part || !r._notes) add.push(line); } // nothing but notes: they get their own lines below
-    else photos.forEach((p,i)=>add.push(i===0 ? {...line, photo:p} : {...line, done:false, status:null, reason:null, note:null, photo:p, ...(part ? {part:null} : {})}));
+    if(changed || done || part || (!r._notes && noted)) add.push(line); // notes (with _notes) and photos get lines of their own below
+    // A photo line holds only the photo, so deleting it later can't take a status change with it
+    photos.forEach(p=>add.push({element_id:r.element_id, code:r._code, task_id:r.task_id, day, done:false, worker: r.worker||null, status:null, reason:null, note:null, photo:p}));
     each.forEach(n=>add.push({element_id:r.element_id, code:r._code, task_id:r.task_id, day, done:false, worker: r.worker||null, status:null, reason:null, note:n, photo:null}));
     if(done) lastTended.set(r.element_id, day);
   });
@@ -3158,7 +3173,7 @@ async function showNotes(){
   if(first) L.innerHTML = `<p class="muted"><span class="spin"></span> Henter …</p>`;
   let data = [], failed = false;
   if(sb && logOk){
-    const res = await sb.from("element_log").select("id,task_id,day,worker,note,photo").eq("element_id", id).or("note.not.is.null,photo.not.is.null")
+    const res = await sb.from("element_log").select("*").eq("element_id", id).or("note.not.is.null,photo.not.is.null")
       .order("day",{ascending:false}).order("id",{ascending:false}).limit(100);
     if(res.error) failed = true; else data = res.data.reverse();
   }
@@ -3168,15 +3183,21 @@ async function showNotes(){
   data.forEach(r=>{
     if(r.note && last[r.task_id]===r.note) r = {...r, note:null};
     if(r.note) last[r.task_id] = r.note;
-    if(r.note || r.photo) msgs.push({who:r.worker, day:r.day, tid:r.task_id, note:r.note, photo: r.photo ? photoUrl(r.photo) : null});
+    // a photo line may also carry a status change (before 2026-10-15): deleting the photo then only clears it
+    const pic = r.photo ? {url:photoUrl(r.photo), log:r.id, path:r.photo, day:r.day, who:r.worker, mixed: !!(r.status || r.done || r.part || r.note)} : null;
+    if(r.note || pic) msgs.push({who:r.worker, day:r.day, tid:r.task_id, note:r.note, pics: pic ? [pic] : []});
   });
   const base = progress.get(id), pend = pending.get(task.id+"|"+id), now = eff(id)?.note?.trim() || "";
   // A note from before the log, or not in it for some other reason
   if(base?.note?.trim() && !msgs.some(m=>m.note===base.note && m.tid===task.id) && !pend?._notes?.includes(base.note.trim()))
-    msgs.push({who:base.worker, day:(base.updated_at||"").slice(0,10), tid:task.id, note:base.note});
-  for(const t of pend?._notes||[]) msgs.push({who:me, wait:true, tid:task.id, note:t});
-  for(const ph of pend?._photos||[]){ const b = await photoGet(ph); if(b) msgs.push({who:me, wait:true, tid:task.id, photo:URL.createObjectURL(b)}); }
+    msgs.push({who:base.worker, day:(base.updated_at||"").slice(0,10), tid:task.id, note:base.note, pics:[]});
+  for(const t of pend?._notes||[]) msgs.push({who:me, wait:true, tid:task.id, note:t, pics:[]});
+  for(const ph of pend?._photos||[]){ const b = await photoGet(ph); if(b) msgs.push({who:me, wait:true, tid:task.id, pics:[{url:URL.createObjectURL(b), pid:ph}]}); }
   if(seq !== notesSeq) return;
+  // Photos in a row from the same person and day share one message, as small pictures side by side
+  for(let i = msgs.length-1; i>0; i--){ const a = msgs[i-1], b = msgs[i];
+    if(!b.note && b.pics.length && a.pics.length && !a.wait===!b.wait && a.who===b.who && a.day===b.day && a.tid===b.tid){ a.pics.push(...b.pics); msgs.splice(i, 1); } }
+  notePics = msgs.flatMap(m=>m.pics);
   // The current note: the newest message with that text in this task
   const curAt = now ? msgs.map(m=>m.tid===task.id && m.note?.trim()===now).lastIndexOf(true) : -1;
   const taskName = tid => tid===task.id ? "" : tasks.find(t=>t.id===tid)?.name || "en tidligere opgave";
@@ -3184,17 +3205,42 @@ async function showNotes(){
     + (msgs.length ? msgs.map((m,i)=>`<div class="msg${norm(m.who)===norm(me) ? " mine" : ""}${m.wait ? " wait" : ""}">
         <div class="by"><b>${esc(m.who || "Ukendt")}</b> · ${m.wait ? "ikke sendt endnu" : m.day ? sinceText(m.day) + (daysSince(m.day) > 1 ? ` (${esc(longDate(m.day))})` : "") : ""}${taskName(m.tid) ? ` · ${esc(taskName(m.tid))}` : ""}</div>
         ${m.note ? `<div class="txt">${esc(m.note)}</div>` : ""}
-        ${m.photo ? `<img src="${esc(m.photo)}" alt="Billede">` : ""}
+        ${m.pics.length ? `<div class="pics">${m.pics.map(p=>`<span class="pic"><img src="${esc(p.url)}" alt="Billede" data-i="${notePics.indexOf(p)}">${canDelPic(p) ? `<button class="del" data-del="${notePics.indexOf(p)}" aria-label="Slet billedet">🗑</button>` : ""}</span>`).join("")}</div>` : ""}
         ${i===curAt ? `<div class="cur">📌 Står ved stedet nu <button class="btn ghost" data-off>✓ Ikke aktuel mere</button></div>` : ""}</div>`).join("")
       : `<p class="muted">Ingen noter eller billeder her endnu. Skriv den første nedenfor.</p>`);
   L.querySelectorAll("img").forEach(i=>i.onclick=()=>{ $("photoImg").src = i.src; $("photoView").hidden = false; });
+  L.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>askDelPic(notePics[+b.dataset.del]));
   L.querySelector("[data-off]")?.addEventListener("click", ()=>{ setStatus([id], null, ""); toast("Noten er taget af. Den står stadig her."); });
   // Newest at the bottom, next to the box: scroll there, also once the photos have their size
   const down = ()=>{ L.scrollTop = L.scrollHeight; };
   requestAnimationFrame(down); L.querySelectorAll("img").forEach(i=>i.addEventListener("load", down, {once:true}));
   if(first && !msgs.length) $("noteIn").focus();
 }
-let notesSeq = 0;
+let notesSeq = 0, notePics = [], delPic = null;
+// Delete a photo: one not sent yet always; a sent one by whoever took it or a koordinator. The database decides the rest
+// (anyone the day it was taken or the next; a koordinator any time, once supabase/photo_delete.sql has been run).
+const dayBefore = () => { const b = new Date(Date.now() - 864e5); return `${b.getFullYear()}-${String(b.getMonth()+1).padStart(2,"0")}-${String(b.getDate()).padStart(2,"0")}`; };
+const canDelPic = p => p.pid || (sb && (isBoss() || (norm(p.who)===norm(me) && p.day >= dayBefore())));
+function askDelPic(p){ delPic = p; $("delPicImg").src = p.url; $("askDelPic").hidden = false; }
+$("askDelPicNo").onclick = ()=>{ $("askDelPic").hidden = true; delPic = null; };
+$("askDelPicOk").onclick = async ()=>{
+  const p = delPic; $("askDelPic").hidden = true; delPic = null; if(!p) return;
+  if(p.pid){ // still on the phone: take it out of the outbox
+    const id = selected?.getId(), key = task.id+"|"+id, r = pending.get(key); await photoDel(p.pid);
+    if(r){ r._photos = (r._photos||[]).filter(x=>x!==p.pid); const b = progress.get(id) || {status:"todo", note:""};
+      if(!r._photos.length && !r._notes?.length && r.status===b.status && r.note===(b.note||"") && r.reason===(b.reason||null) && partsKey(r.parts)===partsKey(b.parts)) pending.delete(key);
+      store.set("pending", [...pending.values()]); renderOutbox(); }
+    toast("Billedet er slettet"); refresh(); return showNotes();
+  }
+  // A line that is only the photo goes; one that also holds a status keeps it and loses the photo
+  const q = p.mixed ? sb.from("element_log").update({photo:null}).eq("id", p.log).select("id") : sb.from("element_log").delete().eq("id", p.log).select("id");
+  const {data, error} = await q;
+  if(error || !data?.length){ if(error) console.error(error);
+    return toast(error ? "Billedet kunne ikke slettes. Tjek forbindelsen." : "Billedet kan ikke slettes herfra. Spørg koordinatoren.", 4000); }
+  sb.storage.from("photos").remove([p.path]).then(({error})=>{ if(error) console.warn("photo file stays", error); });
+  if(task){ const n = (taskMedia.get(selected?.getId())||1) - 1; if(n > 0) taskMedia.set(selected.getId(), n); else taskMedia.delete(selected?.getId()); }
+  toast("Billedet er slettet"); refresh(); showNotes();
+};
 function closeNotes(){ $("pNotes").hidden = true; $("noteIn").blur(); }
 $("btnNoteOpen").onclick = $("notePeek").onclick = ()=>{ $("noteIn").value = ""; showNotes(); };
 $("btnNotesClose").onclick = closeNotes;
