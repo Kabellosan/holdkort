@@ -159,6 +159,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .packs button{border-radius:999px;border:2px solid var(--line);background:var(--card);padding:8px 14px;min-height:44px;font-size:15px}
 .packs button.on{border-color:var(--moss2);background:var(--moss);color:#fff}
 .packs button.edit{border-style:dashed;color:var(--ink2)}
+.packs button.part{border-color:var(--moss2);border-style:dashed;color:var(--moss2);font-weight:600}
+.packs button.open{box-shadow:0 0 0 3px var(--moss2) inset}
+.packopen{flex-basis:100%;display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:var(--r);border:2px solid var(--moss2);background:var(--card)}
+.packopen .row .btn{flex:1}
 .pack{display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:var(--r);background:var(--paper)}
 .pack h3{margin:0;font-size:17px}
 .pack .s{font-size:14px;color:var(--ink2)}
@@ -1052,7 +1056,41 @@ function packNames(codes){
   const left = new Set(codes), names = [];
   [...packs].sort((a,b)=>b.codes.length-a.codes.length).forEach(p=>{
     if(p.codes.length > 1 && p.codes.every(c=>left.has(c))){ names.push(p.name); p.codes.forEach(c=>left.delete(c)); } });
+  // a package with one or two of its types taken out: "Fast belægning uden kantsten"
+  [...packs].sort((a,b)=>b.codes.length-a.codes.length).forEach(p=>{
+    const has = p.codes.filter(c=>left.has(c)), out = p.codes.filter(c=>!left.has(c) && !codes.includes(c));
+    if(p.codes.length >= 4 && out.length && out.length <= 2 && has.length + out.length === p.codes.length){
+      names.push(`${p.name} uden ${out.map(c=>{ const n = CODES[c]||c; return n[0].toLowerCase() + n.slice(1); }).join(" og ")}`);
+      has.forEach(c=>left.delete(c));
+    }
+  });
   return [...names, ...[...left].map(c=>CODES[c]||c)];
+}
+// Shown with 📦 in the chosen row: a whole package, or one with types taken out
+const isPackName = n => packs.some(p=>n===p.name || n.startsWith(p.name + " uden "));
+// Package chips; the open one shows its types below it, ticked, so single types can be taken out ("Fast belægning · 5 af 8")
+// st.open: id of the open package. Tapping a package that isn't in yet puts all of it in and opens it.
+function packChips(el, set, st, changed, extra = ""){
+  const n = p => p.codes.filter(c=>set.has(c)).length;
+  el.innerHTML = packs.map(p=>{
+    const k = n(p), all = p.codes.length, open = st.open===p.id;
+    const chip = `<button data-k="${esc(p.id)}" class="${k && k===all ? "on" : k ? "part" : ""}${open ? " open" : ""}" aria-expanded="${open}">📦 ${esc(p.name)}${k && k<all ? ` · ${k} af ${all}` : ""} ${open ? "▴" : k ? "▾" : ""}</button>`;
+    if(!open) return chip;
+    return chip + `<div class="packopen"><div class="muted">Tag flueben af ved det, der ikke skal med</div>`
+      + p.codes.map(c=>`<label class="code-item ${set.has(c)?"on":""}"><input type="checkbox" value="${esc(c)}" ${set.has(c)?"checked":""}><span class="grow">${esc(CODES[c]||c)}</span><span class="code">${esc(c)}</span></label>`).join("")
+      + `<div class="row"><button class="btn ghost" data-all="${k ? 0 : 1}">${k ? "Fjern hele pakken" : "Tag hele pakken med"}</button><button class="btn" data-shut="1">Færdig</button></div></div>`;
+  }).join("") + extra;
+  el.querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{
+    const p = packs.find(x=>x.id===b.dataset.k);
+    if(st.open===p.id) st.open = null;
+    else { if(!n(p)) p.codes.forEach(c=>set.add(c)); st.open = p.id; }
+    changed();
+  });
+  const box = el.querySelector(".packopen"); if(!box) return;
+  const p = packs.find(x=>x.id===st.open);
+  box.querySelectorAll("input").forEach(i=>i.onchange=()=>{ i.checked ? set.add(i.value) : set.delete(i.value); changed(); });
+  box.querySelector("[data-all]").onclick = e=>{ p.codes.forEach(c=>e.currentTarget.dataset.all==="1" ? set.add(c) : set.delete(c)); if(e.currentTarget.dataset.all==="0") st.open = null; changed(); };
+  box.querySelector("[data-shut]").onclick = ()=>{ st.open = null; changed(); };
 }
 // Task lists: a long list of types is shortened to its packages, or a count
 const packCodes = codes => codes.length <= 3 ? codeNames(codes) : packNames(codes).join(" + ");
@@ -1901,13 +1939,13 @@ function pickLegend(el){
 // A type left out of what the map shows is hidden and can't be tapped; spots already in the task always show
 const spotHidden = f => !!(pick?.show && !pick.ids.has(f.getId()) && f.get("_own")==null && !pick.show.has(f.get("elementkode")));
 // The choice is made like the types in Ny opgave (packages and a search); the last one is ticked in advance next time
-let showSet = new Set(), showThen = null; // showThen(Set | null): what to do with the choice
+let showSet = new Set(), showThen = null, showOpen = {open:null}; // showThen(Set | null): what to do with the choice
 function askShow(then){ showThen = then; $("askShow").hidden = false; $("askShowAll").focus(); }
 $("askShowAll").onclick = ()=>{ $("askShow").hidden = true; showThen(null); };
 $("askShowSome").onclick = ()=>{ $("askShow").hidden = true; openShow(); };
 $("askShowNo").onclick = ()=>{ $("askShow").hidden = true; };
 function openShow(){
-  showSet = new Set(pick?.show || store.get("spotShow", []).filter(c=>CODES[c]));
+  showSet = new Set(pick?.show || store.get("spotShow", []).filter(c=>CODES[c])); showOpen.open = null;
   $("showSearch").value = ""; renderShow(); $("pShow").hidden = false;
   loadPacks().then(()=>{ if(!$("pShow").hidden) renderShow(); });
 }
@@ -1918,13 +1956,9 @@ function renderShow(){
   renderShowFoot();
 }
 function renderShowFoot(){
-  const on = p => p.codes.length > 0 && p.codes.every(c=>showSet.has(c)), n = showSet.size;
-  $("showPacks").innerHTML = packs.map(p=>`<button data-k="${esc(p.id)}" class="${on(p)?"on":""}">📦 ${esc(p.name)}</button>`).join("");
-  $("showPacks").querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{
-    const p = packs.find(x=>x.id===b.dataset.k), was = on(p);
-    p.codes.forEach(c=>was ? showSet.delete(c) : showSet.add(c)); renderShow();
-  });
-  $("showChosen").innerHTML = packNames([...showSet]).map(n=>`<span>${esc(packs.some(p=>p.name===n) ? "📦 " + n : n)}</span>`).join("")
+  const n = showSet.size;
+  packChips($("showPacks"), showSet, showOpen, renderShow);
+  $("showChosen").innerHTML = packNames([...showSet]).map(n=>`<span>${esc(isPackName(n) ? "📦 " + n : n)}</span>`).join("")
     || `<span class="muted" style="background:none;color:var(--ink2);padding:0">Tryk på en pakke eller sæt flueben ved typerne</span>`;
   $("btnShowOk").textContent = n ? `Vis ${n===1 ? "1 type" : n + " typer"} på kortet` : "Vis på kortet";
 }
@@ -2000,7 +2034,7 @@ const sameCodes = (a, b) => a.length===b.size && a.every(c=>b.has(c));
 function renderChosen(){
   if(newSpots) return; // a task of tapped spots gets its types from the spots
   // whole packages show as one chip, so a big package doesn't push the type list off the screen
-  const chips = packNames([...picked]).map(n=>packs.some(p=>p.name===n) ? `📦 ${n}` : n);
+  const chips = packNames([...picked]).map(n=>isPackName(n) ? `📦 ${n}` : n);
   $("chosen").innerHTML = (chips.map(n=>`<span>${esc(n)}</span>`).join("") || `<span class="muted" style="background:none;color:var(--ink2);padding:0">Ingen typer valgt</span>`)
     + (isBoss() && picked.size > 1 && !packs.some(p=>sameCodes(p.codes, picked)) ? `<button class="btn ghost" id="btnSavePack" style="min-height:36px;padding:4px 10px">📦 Gem som pakke</button>` : "");
   if($("btnSavePack")) $("btnSavePack").onclick = ()=>packEdit({name:"", codes:[...picked]}, true);
@@ -2021,15 +2055,10 @@ function spotsTitle(){
   const streets = [...new Set(sp.map(s=>s.street).filter(Boolean))];
   return `${names.length ? names.join(" + ") + ", " : ""}${n} ${n===1 ? "sted" : "steder"}${streets.length && streets.length <= 2 ? " på " + streets.join(", ") : ""}`;
 }
-const packOn = p => p.codes.length > 0 && p.codes.every(c=>picked.has(c));
+const newOpen = {open:null}; // the package opened in Ny opgave
 function renderPacks(){
-  $("packList").innerHTML = packs.map(p=>`<button data-k="${esc(p.id)}" class="${packOn(p)?"on":""}">📦 ${esc(p.name)}</button>`).join("")
-    + (isBoss() ? `<button class="edit" id="btnPacks">${packs.length ? "✎ Ret pakker" : "+ Ny pakke"}</button>` : "");
-  $("packList").querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{
-    const p = packs.find(x=>x.id===b.dataset.k), on = packOn(p);
-    p.codes.forEach(c=>on ? picked.delete(c) : picked.add(c));
-    renderCodes(); renderChosen();
-  });
+  packChips($("packList"), picked, newOpen, ()=>{ renderCodes(); renderChosen(); },
+    isBoss() ? `<button class="edit" id="btnPacks">${packs.length ? "✎ Ret pakker" : "+ Ny pakke"}</button>` : "");
   if($("btnPacks")) $("btnPacks").onclick = ()=>packs.length ? packList() : packEdit({name:"", codes:[]}, true);
 }
 function packList(){
@@ -2099,7 +2128,7 @@ function beginNewTask(code, shape, here){ // code: one type, a list of types (a 
   startArea({shape:shape||null, peek:isBoss(), done:s=>{ newShape = s; showNewPanel(); }});
 }
 function showNewPanel(){
-  const sp = !!newSpots;
+  const sp = !!newSpots; newOpen.open = null;
   ["packBox","codeSearch","newPickRow"].forEach(id=>$(id).hidden = sp); $("spotsHead").hidden = !sp;
   $("btnNewArea").textContent = sp ? "Ret steder" : "Ret område";
   if(sp){
