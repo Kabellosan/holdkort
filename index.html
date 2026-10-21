@@ -811,9 +811,22 @@ const FOLDERS = {
 const FOLDER_OF = Object.fromEntries(Object.entries(FOLDERS).flatMap(([name, ks])=>ks.map(k=>[k, name])));
 // A type's group: the kommune map's folder, else its code family (BI, UD)
 const groupOf = k => FOLDER_OF[k] || GROUPS[k.replace(/\d.*$/,"")] || "";
-const typeHit = (k, v, q) => !q || k.toLowerCase().includes(q) || v.toLowerCase().includes(q) || groupOf(k).toLowerCase().includes(q);
-// Shown under a type when the search matched its group but not its own name.
-const groupNote = (k, v, q) => q && !v.toLowerCase().includes(q) && !k.toLowerCase().includes(q) && groupOf(k) ? `<span class="muted"> · ${esc(groupOf(k).toLowerCase())}</span>` : "";
+// Lines from the old kommune map's "Tilbudslisten, Grøn" (the tender price list) that are one of our types, so a search
+// for the number or the old wording finds it. Captain's list, 2026-10-21. Only lines that clearly are one type;
+// "16.3a ukrudt" is work (weeding) on some surface, not a type, so it isn't here.
+const OLD = {
+ LB2a:["12.2 grusstier","grustier"], LB2c:["12.3a anden løs belægning"], BY1:["13.2 trapper og ramper"]
+};
+// "16.3 a", "16,3a" and "16.3a" all match
+const squash = s => s.toLowerCase().replace(/,/g, ".").replace(/\s+/g, "");
+const oldHit = (k, q) => q && (OLD[k]||[]).find(o=>squash(o).includes(squash(q)));
+const typeHit = (k, v, q) => !q || k.toLowerCase().includes(q) || v.toLowerCase().includes(q) || groupOf(k).toLowerCase().includes(q) || !!oldHit(k, q);
+// Shown under a type when the search matched its group or an old price-list line but not its own name.
+const groupNote = (k, v, q) => {
+  if(!q || v.toLowerCase().includes(q) || k.toLowerCase().includes(q)) return "";
+  const g = groupOf(k).toLowerCase().includes(q) ? groupOf(k).toLowerCase() : (OLD[k]||[])[0] && oldHit(k, q) ? "gamle kort: " + OLD[k][0] : "";
+  return g ? `<span class="muted"> · ${esc(g)}</span>` : "";
+};
 
 // "Krav og sikkerhed" shown folded under each element, per type code.
 // done = when the element counts as Færdig; safety = what to watch out for. One line per bullet.
