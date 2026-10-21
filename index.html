@@ -832,7 +832,7 @@ const groupOf = k => FOLDER_OF[k] || GROUPS[k.replace(/\d.*$/,"")] || "";
 // The old kommune map's "Tilbudslisten, Grøn" (the tender price list; Captain's screenshots, 2026-10-21): each line is
 // a number, the work (text cut off on the old map is finished where it was plain) and our types it covers, so a search for
 // "16.3a", "ukrudt" or "grusstier" finds the types. Lines covering several types (16.1a, 16.3a) are our best reading of the
-// name; 16.3a's FB1c is from Captain comparing the layers on the old map (2026-10-21).
+// name; 16.3a's FB1c and FB1j are from Captain comparing the layers on the old map (2026-10-21).
 const TILBUD = [
  ["2.1 a","Brugsplæner. Tilstandskrav",["GR2"]], ["2.2 a","Græsflader. Tilstandskrav",["GR3"]],
  ["2.3 a_b","Fælledgræs. Slåning, tilstandskrav",["GR4"]], ["2.4 a_b","Naturgræs. Slåning, tilstandskrav",["GR7"]],
@@ -867,7 +867,7 @@ const TILBUD = [
  ["16.1 a","Fejning. Stier, torve, pladser",["FB1a","FB1b"]],
  ["16.2 a","Skraldespande. Tømning",["UD1"]], ["16.2 b","Skraldespande. Tømning",["UD1"]], ["16.2 c","Skraldespande. Tømning",["UD1"]],
  ["16.2 d","Skraldespande med sortering",["UD1a"]], ["16.2 e","Skraldespande. Tømning",["UD1"]],
- ["16.3 a","Ukrudtsbekæmpelse. Stier, torve, pladser",["FB1a","FB1b","FB1c"]], ["16.3 b","Kantsten og svingsten. Ukrudtsbekæmpelse",["FB3a","FB3b"]],
+ ["16.3 a","Ukrudtsbekæmpelse. Stier, torve, pladser",["FB1a","FB1b","FB1c","FB1j"]], ["16.3 b","Kantsten og svingsten. Ukrudtsbekæmpelse",["FB3a","FB3b"]],
  ["16.4 a_e","Tørklosetter. Indvendig rengøring",["UD55a"]], ["16.4 b_c","Toiletter. Indvendig rengøring",["UD55a"]],
  ["16.4 d_f","Toiletbygninger. Udvendig rengøring",["UD55a"]]
 ].map(([n, t, c])=>{
