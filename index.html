@@ -157,6 +157,9 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .panel .list{flex:1;overflow-y:auto;padding:10px 18px;display:flex;flex-direction:column;gap:6px;-webkit-overflow-scrolling:touch}
 .panel footer{padding:12px 18px calc(env(safe-area-inset-bottom,0px) + 14px);border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px;background:var(--card)}
 .tblrow{width:100%;text-align:left;font:inherit;color:inherit}
+.packs button.tblline{flex-basis:100%;display:flex;gap:10px;align-items:baseline;text-align:left;border-radius:var(--r);line-height:1.3;padding:10px 14px}
+.packs button.tblline b{flex:none;min-width:4.2em}
+.packs button.tblline.on .muted{color:#fff}
 .code-item{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:var(--r);background:var(--paper);min-height:54px;cursor:pointer;border:2px solid transparent}
 .code-item.on{border-color:var(--moss2)}
 .code-item input{width:22px;height:22px;accent-color:var(--moss);flex:none}
@@ -648,10 +651,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <!-- Packages scroll with the types, so a long row of packages can't squeeze the type list off a phone screen -->
   <div class="list">
     <div class="packbox" id="packBox">
-      <div class="section" style="margin:0" id="packHead">Pakker</div>
+      <div class="section" style="margin:0" id="newTblHead">Tilbudslisten <span class="muted" style="text-transform:none;font-weight:400">· som på det gamle kort</span></div>
+      <div class="packs tbls" id="newTblList"></div>
+      <div class="section" id="packHead">Pakker</div>
       <div class="packs" id="packList"></div>
-      <div class="section" id="newTblHead">Tilbudslisten <span class="muted" style="text-transform:none;font-weight:400">· som på det gamle kort</span></div>
-      <div class="packs" id="newTblList"></div>
       <div class="section" id="typesHead">Typer</div>
     </div>
     <div class="codes" id="codeList"></div>
@@ -687,8 +690,8 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <input type="search" id="typeSearch" placeholder="Eller søg type: pur, fortov, løs belægning …" autocomplete="off">
   </header>
   <div class="list">
-    <div class="packbox" id="typePackBox"><div class="section" style="margin:0">Pakker</div><div class="packs" id="typePacks"></div>
-      <div class="section" style="margin:0">Tilbudslisten <span class="muted" style="text-transform:none;font-weight:400">· som på det gamle kort</span></div><div class="packs" id="typeTbl"></div>
+    <div class="packbox" id="typePackBox"><div class="section" style="margin:0">Tilbudslisten <span class="muted" style="text-transform:none;font-weight:400">· som på det gamle kort</span></div><div class="packs tbls" id="typeTbl"></div>
+      <div class="section" style="margin:0">Pakker</div><div class="packs" id="typePacks"></div>
       <div class="section" style="margin:0">Typer</div></div>
     <div class="codes" id="typeList"></div>
   </div>
@@ -2519,6 +2522,8 @@ function spotsTitle(){
 }
 const newOpen = {open:null}; // the package opened in Ny opgave
 let newTbl = null, tblAll = false; // the tilbudsliste line picked in Ny opgave; tblAll: its chips unfolded
+// A line as on the old map: its number and its name ("16.3 a  Ukrudtsbekæmpelse. Stier, torve og pladser …")
+const tblBtn = (l, k, on, note) => `<button data-${k}="${esc(l.name)}" class="tblline${on ? " on" : ""}"><b>${esc(tblLabel(l))}</b><span class="grow">${esc(l.t)}${note ? ` <span class="muted">· ${esc(note)}</span>` : ""}</span></button>`;
 function renderTblChips(){
   const el = $("newTblList"); if(!el) return;
   const sp = !!newSpots; $("newTblHead").hidden = el.hidden = sp; if(sp) return;
@@ -2526,11 +2531,11 @@ function renderTblChips(){
     $("btnTblGet").onclick = async ()=>{ $("btnTblGet").textContent = "Henter …"; try{ await tblLoad(); tblAll = true; }catch(e){ toast("Kunne ikke hente tilbudslisten fra kommunen. Prøv igen om lidt.", 4000); } renderTblChips(); };
     return; }
   if(!TBL.list.length){ el.innerHTML = `<span class="muted">Ingen tilbudsliste i kommunens kort</span>`; return; }
-  const chip = l => `<button data-tb="${esc(l.name)}" class="${newTbl?.name===l.name ? "on" : ""}" title="${esc(l.t)}">📋 ${esc(tblLabel(l))}${tblSaved?.has(l.name) ? " ✓" : ""}</button>`;
+  const chip = l => tblBtn(l, "tb", newTbl?.name===l.name, tblSaved?.has(l.name) ? "✓ gemt" : "");
   const sv = newTbl && tblSaved?.get(newTbl.name);
   const save = newTbl && isBoss() ? `<div class="muted" style="flex-basis:100%">${sv ? `Gemt for hele kommunen ${esc(tblDate(sv))} (${sv.n} steder), så opgaven laves med det samme.` : "Hentes fra kortet for området, når du trykker Opret."}</div>
     <button class="edit" id="btnTblSave">${sv ? "⟳ Hent hele linjen igen" : "📥 Gem hele linjen for kommunen"}</button>` : "";
-  el.innerHTML = newTbl && !tblAll ? chip(newTbl) + `<span class="muted">${esc(newTbl.t)}</span> <button class="edit" id="btnTblMore">Skift ▾</button>` + save
+  el.innerHTML = newTbl && !tblAll ? chip(newTbl) + `<button class="edit" id="btnTblMore">Skift ▾</button>` + save
     : tblAll ? TBL.list.map(chip).join("") + `<button class="edit" id="btnTblMore">Skjul ▴</button>`
     : `<button class="edit" id="btnTblMore">📋 Vælg en linje (${TBL.list.length}) ▾</button>`;
   $("btnTblMore").onclick = ()=>{ tblAll = !tblAll; renderTblChips(); };
@@ -2893,7 +2898,7 @@ function typeTblChips(){
     return; }
   if(!tblSaved){ loadTblSaved().then(typeTblChips); }
   const saved = TBL.list.filter(l=>tblSaved?.has(l.name)), shown = typeTblAll ? TBL.list : saved;
-  el.innerHTML = shown.map(l=>`<button data-tl="${esc(l.name)}" title="${esc(l.t)}">📋 ${esc(tblLabel(l))}${tblSaved?.has(l.name) ? ` <span class="muted">· ${tblSaved.get(l.name).n}</span>` : ""}</button>`).join("")
+  el.innerHTML = shown.map(l=>tblBtn(l, "tl", false, tblSaved?.has(l.name) ? `${tblSaved.get(l.name).n} steder` : "")).join("")
     + `<button class="edit" id="btnTypeTblMore">${typeTblAll ? "Skjul ▴" : saved.length ? "Flere linjer ▾" : `📋 Vælg en linje (${TBL.list.length}) ▾`}</button>`;
   $("btnTypeTblMore").onclick = ()=>{ typeTblAll = !typeTblAll; typeTblChips(); };
   el.querySelectorAll("[data-tl]").forEach(b=>b.onclick=async ()=>{
