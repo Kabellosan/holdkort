@@ -1181,7 +1181,8 @@ let packs = store.get("packs", []); // saved groups of types, see PACKAGES
 // granit, as the kommune's tilbudsliste layer; Captain 2026-10-21: "16.3a should work exactly like the old map").
 // It applies when the whole package is chosen, unless a package without a rule that has the same types is chosen too
 // (all of Fast belægning means every fortov). Tasks keep the result in tasks.surface, {code: [surfaces]}.
-const surfOf = f => String(f.get("belaegningstype") || "").trim();
+// Areas carry their belægning in attribut_1/attribut_2 (the plads at Hanningvej shows "asfalt" there), roads in belaegningstype
+const surfOf = f => ["belaegningstype", "attribut_1", "attribut_2"].map(k=>f.get(k)).filter(Boolean).join(" ").trim();
 function surfaceFor(set){
   const m = {}, full = p => p.codes.length && p.codes.every(c=>set.has(c));
   packs.filter(p=>p.surface?.length && full(p)).forEach(p=>Object.entries(packSurf(p)).forEach(([c, v])=>{ m[c] = v; }));
