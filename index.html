@@ -395,6 +395,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <div class="grow"><div class="eyebrow" id="workCodes"></div><h2 id="workName"></h2></div>
       <div style="text-align:right"><div class="big num" id="workCount">–</div><div class="muted">færdige</div></div>
     </div>
+    <div class="row"><span class="grow" id="workWho"></span><button class="btn ghost" id="btnWho" hidden>Ret hvem</button></div>
     <div class="bar" id="bar"></div>
     <div class="seg" id="workMode" role="group" aria-label="Farver" hidden>
       <button data-o="status">Status</button>
@@ -529,6 +530,16 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <p class="muted" style="margin:0">Det forsvinder for alle og kan ikke hentes tilbage.</p>
     <button class="btn danger" id="askDelPicOk">🗑 Slet billedet</button>
     <button class="btn" id="askDelPicNo">Nej, behold det</button>
+  </div>
+</div>
+<!-- A koordinator changes who an existing task is for -->
+<div class="ask" id="askWho" hidden role="dialog" aria-modal="true" aria-labelledby="askWhoQ">
+  <div>
+    <h2 id="askWhoQ">Hvem skal lave opgaven?</h2>
+    <div class="people" id="whoList"></div>
+    <p class="muted" style="margin:0">Tryk på et navn for at tage det med eller fjerne det. "Alle" er hele holdet, men ikke hjælpere: de ser kun opgaver med deres eget navn.</p>
+    <button class="btn primary" id="askWhoOk">Gem</button>
+    <button class="btn" id="askWhoNo">Annullér</button>
   </div>
 </div>
 <div class="ask" id="askPhoto" hidden role="dialog" aria-modal="true" aria-labelledby="askPhotoQ">
@@ -1717,6 +1728,7 @@ async function openTask(t){
   $("btnTaskPhotos").hidden = !sb || !logOk; taskMedia = new Map(); $("taskPhotoN").textContent = "Noter";
   pinMode(false); loadPins(t);
   if(!partsOk) checkParts().then(()=>{ if(task===t) refresh(); });
+  showWho(t);
   $("workName").textContent = t.name; $("workCodes").textContent = packCodes(t.codes) + scopeOf(t);
   $("workCount").innerHTML = `<span class="spin"></span>`; $("bar").innerHTML = ""; $("dataAge").textContent = "";
   workLegend([]);
@@ -2007,15 +2019,43 @@ async function loadPeople(){
   if(sb){ const data = await loadPeopleRows(); if(data) people = data.filter(p=>p.role==="crew" && !p.removed).map(p=>cleanName(p.name)); }
   else people = [...new Set(tasks.flatMap(t=>t.assignees||[]))];
 }
-function renderAssign(){
-  $("assignList").innerHTML = `<button data-p="" class="${assignees.size?"":"on"}">Alle</button>` +
-    people.map(n=>`<button data-p="${esc(n)}" class="${assignees.has(n)?"on":""}">${esc(n)}</button>`).join("") +
+const renderAssign = ()=>peopleChips($("assignList"), assignees);
+// Name chips: "Alle", the team and "+ Navn"; set holds the chosen names (empty = Alle)
+function peopleChips(el, set){
+  const again = ()=>peopleChips(el, set);
+  const names = [...people, ...[...set].filter(n=>!people.some(p=>norm(p)===norm(n)))]; // names on the task but no longer on the team
+  el.innerHTML = `<button data-p="" class="${set.size?"":"on"}">Alle</button>` +
+    names.map(n=>`<button data-p="${esc(n)}" class="${set.has(n)?"on":""}">${esc(n)}</button>`).join("") +
     `<button data-add="1">+ Navn</button>`;
-  $("assignList").querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{
-    const n = b.dataset.p; if(!n) assignees.clear(); else assignees.has(n) ? assignees.delete(n) : assignees.add(n); renderAssign(); });
-  $("assignList").querySelector("[data-add]").onclick = ()=>{
-    let n = cleanName(window.prompt("Navn på medarbejder:")); if(n){ n = people.find(p=>norm(p)===norm(n)) || n; if(!people.includes(n)) people.push(n); assignees.add(n); renderAssign(); } };
+  el.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{
+    const n = b.dataset.p; if(!n) set.clear(); else set.has(n) ? set.delete(n) : set.add(n); again(); });
+  el.querySelector("[data-add]").onclick = ()=>{
+    let n = cleanName(window.prompt("Navn på medarbejder:")); if(n){ n = people.find(p=>norm(p)===norm(n)) || n; if(!people.includes(n)) people.push(n); set.add(n); again(); } };
 }
+// A koordinator changes who an open task is for
+let whoSet = null;
+function showWho(t){
+  $("workWho").textContent = "👥 " + whoFor(t);
+  $("btnWho").hidden = !isBoss();
+}
+$("btnWho").onclick = ()=>{
+  whoSet = new Set((task.assignees||[]).map(cleanName));
+  peopleChips($("whoList"), whoSet); $("askWho").hidden = false; $("askWhoOk").focus();
+  loadPeople().then(()=>{ if(!$("askWho").hidden) peopleChips($("whoList"), whoSet); });
+};
+$("askWhoNo").onclick = ()=>{ $("askWho").hidden = true; };
+$("askWhoOk").onclick = async ()=>{
+  const t = task, list = [...whoSet];
+  if(sb){
+    $("askWhoOk").disabled = true;
+    const {error} = await sb.from("tasks").update({assignees:list}).eq("id", t.id);
+    $("askWhoOk").disabled = false;
+    if(error){ toast("Det blev ikke gemt: " + error.message, 4000); return; }
+  }
+  t.assignees = list; store.set("tasks", tasks);
+  $("askWho").hidden = true; if(task === t) showWho(t);
+  toast(list.length ? "Opgaven er nu til " + list.join(", ") : "Opgaven er nu til alle");
+};
 // A checklist of every type; set holds the ticked codes
 function codeChecks(el, q, set, changed, here){
   q = q.trim().toLowerCase();
