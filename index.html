@@ -51,10 +51,6 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
 #btnFlaw[hidden]{display:none}
 #btnFlaw[aria-pressed="true"]{background:#b45309;color:#fff;border-color:#b45309}
 /* ⚠️ Kortfejl tab */
-/* Pick by surface (belægning): the tilbudsliste picks some types only with beton or granit */
-.surf{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}
-.surf button{border-radius:999px;border:2px solid var(--line);background:var(--card);padding:6px 12px;min-height:40px;font-size:15px}
-.surf button.on{border-color:var(--moss2);background:var(--moss);color:#fff}
 .frow{display:flex;gap:8px;align-items:stretch;border-top:1px solid var(--line);padding:10px 0}
 .frow .fgo{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;font-size:15px;color:var(--ink);line-height:1.35}
 .frow .btn{align-self:center}
@@ -438,7 +434,6 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="muted" id="pickHint">Tryk på de steder, holdet skal tage. Tryk igen for at fjerne et sted. Blå er med, grå er ikke.</div>
     <div class="legend" id="pickLegend" hidden></div>
     <div class="row tblrow"><span class="grow" id="pickTbl">📋 Tilbudsliste: <span class="muted">ingen</span></span><button class="btn" data-tbl>Vis</button></div>
-    <div class="surf" id="pickSurf" hidden></div>
     <div class="row" data-keep><span class="grow"><b class="num" id="pickCount">0</b> <span class="muted" id="pickOf"></span></span><button class="btn" id="btnPickAll">Hele området</button></div>
     <div class="row" data-keep>
       <button class="btn" id="btnPickCancel">Annullér</button>
@@ -452,7 +447,6 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="muted" id="spotsHint"></div>
     <div class="row"><span class="grow" id="spotsShow"></span><button class="btn" id="btnSpotsShow">Skift</button></div>
     <div class="legend" id="spotsLegend" hidden></div>
-    <div class="surf" id="spotsSurf" hidden></div>
     <div class="row tblrow"><span class="grow" id="spotsTbl">📋 Tilbudsliste: <span class="muted">ingen</span></span><button class="btn" data-tbl>Vis</button></div>
     <div class="row" data-keep>
       <span class="grow"><b class="num" id="spotsCount">0</b> <span class="muted" id="spotsOf">steder valgt</span></span>
@@ -1183,6 +1177,19 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toStrin
 // "Pur (HA3)": the plain name with the kommune's code, so crew and the GIS data use the same words
 const typeName = c => !c ? "Eget punkt" : CODES[c] ? `${CODES[c]} (${c})` : c;
 let packs = store.get("packs", []); // saved groups of types, see PACKAGES
+// A package may only take elements with some belægning (packages.surface, e.g. "16.3a" = the paved types in beton or
+// granit, as the kommune's tilbudsliste layer; Captain 2026-10-21: "16.3a should work exactly like the old map").
+// It applies when the whole package is chosen, unless a package without a rule that has the same types is chosen too
+// (all of Fast belægning means every fortov). Tasks keep the result in tasks.surface, {code: [surfaces]}.
+const surfOf = f => String(f.get("belaegningstype") || "").trim();
+function surfaceFor(set){
+  const m = {}, full = p => p.codes.length && p.codes.every(c=>set.has(c));
+  packs.filter(p=>p.surface?.length && full(p)).forEach(p=>p.codes.forEach(c=>{ m[c] = p.surface; }));
+  packs.filter(p=>!p.surface?.length && full(p)).forEach(p=>p.codes.forEach(c=>delete m[c]));
+  return Object.keys(m).length ? m : null;
+}
+const surfOk = (m, f) => { const s = m?.[f.get("elementkode")]; if(!s) return true; const v = surfOf(f).toLowerCase(); return s.some(a=>v.includes(String(a).toLowerCase())); };
+const surfText = m => m ? "kun " + [...new Set(Object.values(m).flat())].join(" og ") : "";
 // Types named by the packages they fill (biggest first), then any other types: "Fast belægning + Pur"
 function packNames(codes){
   const left = new Set(codes), names = [];
@@ -1206,7 +1213,7 @@ function packChips(el, set, st, changed, extra = ""){
   const n = p => p.codes.filter(c=>set.has(c)).length;
   el.innerHTML = packs.map(p=>{
     const k = n(p), all = p.codes.length, open = st.open===p.id;
-    const chip = `<button data-k="${esc(p.id)}" class="${k && k===all ? "on" : k ? "part" : ""}${open ? " open" : ""}" aria-expanded="${open}">📦 ${esc(p.name)}${k && k<all ? ` · ${k} af ${all}` : ""} ${open ? "▴" : k ? "▾" : ""}</button>`;
+    const chip = `<button data-k="${esc(p.id)}" class="${k && k===all ? "on" : k ? "part" : ""}${open ? " open" : ""}" aria-expanded="${open}">📦 ${esc(p.name)}${p.surface?.length ? ` · ${esc(p.surface.join("/"))}` : ""}${k && k<all ? ` · ${k} af ${all}` : ""} ${open ? "▴" : k ? "▾" : ""}</button>`;
     if(!open) return chip;
     return chip + `<div class="packopen"><div class="muted">Tag flueben af ved det, der ikke skal med</div>`
       + p.codes.map(c=>`<label class="code-item ${set.has(c)?"on":""}"><input type="checkbox" value="${esc(c)}" ${set.has(c)?"checked":""}><span class="grow">${esc(CODES[c]||c)}</span><span class="code">${esc(c)}</span></label>`).join("")
@@ -1438,6 +1445,7 @@ const AREA_FALLBACK = "Databasen kan ikke gemme frie former endnu. Området er g
 async function saveTask(t){
   if(sb){
     let {error} = await sb.from("tasks").insert(t);
+    if(t.surface && /surface/.test(error?.message||"")){ toast("Databasen er ikke klar til pakker med belægning endnu (supabase/surface.sql mangler).", 6000); return false; }
     if(t.spots && /spots/.test(error?.message||"")){ toast("Databasen er ikke klar til opgaver med udvalgte steder endnu (supabase/spots.sql mangler).", 6000); return false; }
     if(noAreaCol(error)){ if(t.area) toast(AREA_FALLBACK, 5000); delete t.area; ({error} = await sb.from("tasks").insert(t)); }
     if(error){ toast(/row-level security/.test(error.message||"") ? "Opgaven blev ikke gemt: du kan kun lave opgaver til dig selv." : "Opgaven blev ikke gemt: " + error.message, 5000); return false; }
@@ -1669,7 +1677,7 @@ const norm = n => cleanName(n).toLowerCase();
 // A helper (Hjælper) doesn't get the tasks for everyone, only the ones with their own name
 const forMe = t => (!t.assignees?.length && !isHelper()) || !!t.assignees?.some(a=>norm(a)===norm(me));
 const whoFor = t => !t.assignees?.length ? "Alle" : t.assignees.join(", ");
-const scopeOf = t => t.elements ? ` · ${t.elements.length} udvalgte ${t.elements.length===1?"sted":"steder"}` : "";
+const scopeOf = t => (t.surface ? ` · ${surfText(t.surface)}` : "") + (t.elements ? ` · ${t.elements.length} udvalgte ${t.elements.length===1?"sted":"steder"}` : "");
 // Bosses can switch between the task list and "Holdet": who is on which task
 let bossView = store.get("bossView","tasks"), crew = [], peopleRows = [];
 // Everyone in people; someone a boss took off the team has a "removed" day (the row stays so history keeps the name)
@@ -1825,7 +1833,7 @@ function showDataAge(saved){
 let taskAll = [], pick = null; // pick: {t, ids} while a boss picks spots
 const onlyPicked = (t, fs) => { if(!t.elements) return fs; const ids = new Set(t.elements); return fs.filter(f=>ids.has(f.getId())); };
 function swapElements(fs){
-  taskAll = fs;
+  taskAll = fs = fs.filter(f=>surfOk(task?.surface, f));
   if(pick?.spots) return;
   if(pick){ elSrc.clear(); elSrc.addFeatures(fs); pickCount(); return; }
   fs = onlyPicked(task, fs);
@@ -1871,7 +1879,7 @@ async function openTask(t){
     catch(e){ console.error(e); toast("Kunne ikke hente elementer fra kommunen. Prøv igen om lidt.", 5000); $("workCount").textContent="–"; return; }
   }
   if(task !== t) return;
-  taskAll = feats; feats = onlyPicked(t, feats);
+  taskAll = feats = feats.filter(f=>surfOk(t.surface, f)); feats = onlyPicked(t, feats);
   elSrc.addFeatures(feats);
   refresh();
   loadLastTended(feats.map(f=>f.getId())).then(m=>{ if(task===t){ lastTended = m; refresh(); } });
@@ -1928,7 +1936,6 @@ function pickCount(){
   $("pickCount").textContent = pick.ids.size;
   $("pickOf").textContent = `valgt af ${taskAll.length} i området`;
   pickLegend($("pickLegend"));
-  surfRow($("pickSurf"), taskAll, "Vælg efter belægning:");
   $("pickHint").textContent = "Tryk på de steder, holdet skal tage. Tryk igen for at fjerne et sted. " + (pick.tcol?.size ? "Farvet er med, grå er ikke." : "Blå er med, grå er ikke.");
   elLayer.changed();
 }
@@ -1995,8 +2002,6 @@ function spotsCount(){
   $("btnSpotsOwn").textContent = p.own ? "✕ Intet punkt" : "📍 Eget punkt";
   $("btnSpotsOwn").classList.toggle("on", p.own);
   pickLegend($("spotsLegend"));
-  const view = map.getView().calculateExtent(map.getSize());
-  surfRow($("spotsSurf"), elSrc.getFeatures().filter(f=>f.get("elementkode") && !spotHidden(f) && f.getGeometry().intersectsExtent(view)), "Vælg alt på skærmen med:");
   $("spotsShow").innerHTML = p.show ? `Viser kun: <b>${esc(shortCodes([...p.show]))}</b>` : `Viser: <b>alt</b>`;
   const v = map.getView().calculateExtent(map.getSize());
   $("spotsHint").innerHTML = p.own ? "<b>Tryk på kortet, hvor punktet skal være.</b>"
@@ -2063,26 +2068,6 @@ function spotToggle(f){
   p.ids.add(id);
   return `${titleOf(f)} er med`;
 }
-// Pick by surface (Captain 2026-10-21: tilbudsliste 16.3 a is the paved types with beton or granit, a fortov in asphalt
-// isn't in it): one chip per belaegningstype among the elements (the whole area in Vælg steder, what's on the screen in
-// Tryk på stederne); a tap takes them all, or takes them all out again when they're all in
-const surfOf = f => String(f.get("belaegningstype") || "").trim();
-function surfRow(el, fs, label){
-  const by = new Map();
-  fs.forEach(f=>{ const v = surfOf(f); if(!v || /^ukendt/i.test(v)) return; const k = v.toLowerCase(); if(!by.has(k)) by.set(k, {v, fs:[]}); by.get(k).fs.push(f); });
-  el.hidden = !by.size; if(!by.size){ el.innerHTML = ""; return; }
-  const groups = [...by.values()].sort((a,b)=>b.fs.length - a.fs.length);
-  const allIn = g => g.fs.every(f=>pick.ids.has(f.getId()));
-  el.innerHTML = `<span class="muted">${label}</span>` + groups.map((g, i)=>`<button data-s="${i}" class="${allIn(g) ? "on" : ""}">${esc(g.v[0].toUpperCase() + g.v.slice(1))} <b class="num">${g.fs.length}</b></button>`).join("");
-  el.querySelectorAll("[data-s]").forEach(b=>b.onclick=()=>{
-    const g = groups[+b.dataset.s], out = allIn(g);
-    g.fs.forEach(f=>{ const on = pick.ids.has(f.getId());
-      if(pick.spots){ if(on===out) spotToggle(f); }
-      else if(out) pick.ids.delete(f.getId()); else pick.ids.add(f.getId()); });
-    toast(`${g.fs.length} med ${g.v.toLowerCase()} ${out ? "er taget ud" : "er med"}`);
-    pick.spots ? spotsCount() : pickCount();
-  });
-}
 // Several things under the finger (a hedge on a lawn beside a path, Captain 2026-10-21): the tap takes the smallest,
 // and the toast offers "Vælg ▾" with all of them, so the others can be reached too without an extra step every time
 function underFinger(e, keep=()=>true){
@@ -2127,7 +2112,8 @@ function pickLegend(el){
   el.hidden = !p.tcol?.size;
 }
 // A type left out of what the map shows is hidden and can't be tapped; spots already in the task always show
-const spotHidden = f => !!(pick?.show && !pick.ids.has(f.getId()) && f.get("_own")==null && !pick.show.has(f.get("elementkode")));
+const spotSurf = p => p.show && (p._sm?.s===p.show ? p._sm.m : (p._sm = {s:p.show, m:surfaceFor(p.show)}).m);
+const spotHidden = f => !!(pick?.show && !pick.ids.has(f.getId()) && f.get("_own")==null && (!pick.show.has(f.get("elementkode")) || !surfOk(spotSurf(pick), f)));
 // The choice is made like the types in Ny opgave (packages and a search); the last one is ticked in advance next time
 let showSet = new Set(), showThen = null, showOpen = {open:null}; // showThen(Set | null): what to do with the choice
 function askShow(then){ showThen = then; $("askShow").hidden = false; $("askShowAll").focus(); }
@@ -2464,6 +2450,7 @@ $("btnCreate").onclick = async ()=>{
   if(!picked.size){ toast("Vælg mindst én type"); return; }
   const t = {id:uuid(), name:$("taskTitle").value.trim() || autoTitle(), codes:[...picked],
     extent:newShape.extent, area:newShape.area, assignees:isBoss() ? [...assignees] : [me], created_by:me, created_at:new Date().toISOString(), archived:false};
+  const sm = surfaceFor(picked); if(sm) t.surface = sm; // e.g. "16.3a": only beton and granit
   if(await saveTask(t)){ t.made_by_crew = !isBoss(); $("pNew").hidden = true; await openTask(t); if($("newPick").checked) startPick(t, true); }
 };
 
@@ -2695,7 +2682,8 @@ async function openOverview(codes, pack){
   if(over!==o) return;
   const saved = cached.filter(Boolean).map(c=>c.saved);
   overAge(missing.length ? Math.min(Date.now(), ...saved) : Math.min(...saved));
-  overSrc.addFeatures(feats); overNewLabel();
+  const sm = surfaceFor(new Set(codes)); // "16.3a": only beton and granit, as the kommune's layer
+  overSrc.addFeatures(sm ? feats.filter(f=>surfOk(sm, f)) : feats); overNewLabel();
   await overPaint();
   if(over!==o) return;
   const seen = "seenType:" + codes.join("+");
@@ -2776,7 +2764,7 @@ async function overPaint(){
   if(over!==o) return;
   areaSrc.clear();
   tl.forEach(t=>{ if(t.spots) return; const f = new ol.Feature(shapeGeom(t)); f.setProperties({label:t.name, tid:t.id, color:col.get(t.id)}); areaSrc.addFeature(f); });
-  const shapes = tl.map(t=>({t, s:prepShape(t), cs:new Set(t.codes), pk: t.elements ? new Set(t.elements) : null})), RANK = {todo:0, doing:1, blocked:2, done:3};
+  const shapes = tl.map(t=>({t, s:prepShape(t), cs:new Set(t.codes), pk: t.elements ? new Set(t.elements) : null, sf:t.surface})), RANK = {todo:0, doing:1, blocked:2, done:3};
   const per = new Map(tl.map(t=>[t.id, {done:0, blocked:0, total:0}])), c = {none:0, todo:0, doing:0, blocked:0, done:0}, types = {};
   const flt = overFilter?.prep;
   overSrc.getFeatures().forEach(f=>{
@@ -2784,8 +2772,8 @@ async function overPaint(){
     const out = !!flt && !inShape(g, flt); f.set("_out", out, true);
     if(out){ f.set("_s", null, true); f.set("_m", "", true); return; }
     let note = false, photo = false;
-    for(const {t,s,cs,pk} of shapes){
-      if(!cs.has(code) || !inShape(g, s) || (pk && !pk.has(f.getId()))) continue; // a hedge task doesn't count the pur in its area
+    for(const {t,s,cs,pk,sf} of shapes){
+      if(!cs.has(code) || !inShape(g, s) || (pk && !pk.has(f.getId())) || !surfOk(sf, f)) continue; // a hedge task doesn't count the pur in its area
       const key = t.id+"|"+f.getId(), st = prog.get(key) || "todo", p = per.get(t.id);
       note ||= prog.noted.has(key); photo ||= prog.photos.has(key);
       p.total++; if(st==="done") p.done++; if(st==="blocked") p.blocked++;
@@ -2924,12 +2912,12 @@ async function placePaint(){
     .sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
   const prog = await progressFor(cand.map(t=>t.id));
   if(place!==p) return;
-  const shapes = cand.map(t=>({t, s:prepShape(t), cs:new Set(t.codes), pk: t.elements ? new Set(t.elements) : null})), RANK = {todo:0, doing:1, blocked:2, done:3};
+  const shapes = cand.map(t=>({t, s:prepShape(t), cs:new Set(t.codes), pk: t.elements ? new Set(t.elements) : null, sf:t.surface})), RANK = {todo:0, doing:1, blocked:2, done:3};
   const per = new Map(cand.map(t=>[t.id, {done:0, blocked:0, total:0}])), c = {none:0, todo:0, doing:0, blocked:0, done:0}, types = {};
   feats.forEach(f=>{
     const g = f.getGeometry(), code = f.get("elementkode"); let best = null, note = false, photo = false; const in_ = [];
-    for(const {t,s,cs,pk} of shapes){
-      if(!cs.has(code) || (pk && !pk.has(f.getId())) || !inShape(g, s)) continue;
+    for(const {t,s,cs,pk,sf} of shapes){
+      if(!cs.has(code) || (pk && !pk.has(f.getId())) || !surfOk(sf, f) || !inShape(g, s)) continue;
       const key = t.id+"|"+f.getId(), st = prog.get(key) || "todo", q = per.get(t.id);
       note ||= prog.noted.has(key); photo ||= prog.photos.has(key);
       q.total++; if(st==="done") q.done++; if(st==="blocked") q.blocked++;
