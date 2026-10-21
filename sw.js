@@ -18,7 +18,9 @@ self.addEventListener("fetch", e => {
       const cache = await caches.open(TILE_CACHE);
       const hit = await cache.match(e.request.url);
       const stamp = await caches.open("tile-dates").then(c => c.match(e.request.url)).then(r => r ? r.text() : null);
-      const fresh = stamp && (Date.now() - Number(stamp)) < MAX_AGE_DAYS * 864e5;
+      // The aerial photo keeps 180 days; other layers (the tilbudsliste lines) can change, so a week
+      const days = /ortofoto/i.test(url.searchParams.get("LAYERS") || "") ? MAX_AGE_DAYS : 7;
+      const fresh = stamp && (Date.now() - Number(stamp)) < days * 864e5;
       if (hit && fresh) return hit;
       try {
         const res = await fetch(e.request.url, { mode: "no-cors" });
