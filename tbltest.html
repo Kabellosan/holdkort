@@ -28,24 +28,22 @@ const say = (t, c) => { const p = document.createElement("p"); p.className = c |
   const [x, y] = proj4("EPSG:4326", "EPSG:25832", [9.403, 55.968]).map(Math.round); // Nørre Snede
   const bbox = [x-1000, y-700, x+1000, y+700], W = 1600, H = 1120;
   const url = `${WMS}?SERVICENAME=${SVC}&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=${encodeURIComponent(name)}&STYLES=&SRS=EPSG:25832&BBOX=${bbox.join(",")}&WIDTH=${W}&HEIGHT=${H}&FORMAT=image/png&TRANSPARENT=true`;
-  // Round 3 (2026-10-21): "request=getmap" in small letters could be read, the same request in capitals could not.
-  // Is it the spelling or the size? And can the vector formats be had the same way (they would give the lines)?
+  // Round 4 (2026-10-21): small letters work at every size; svg gives the lines and application/json a UTFGrid.
+  // What is inside? A UTFGrid's "keys"/"data" may carry the kommune's element ids.
   const L = encodeURIComponent(name), lo = (w, h, f) => `${WMS}?servicename=${SVC}&service=WMS&version=1.1.1&request=getmap&layers=${L}&styles=&srs=EPSG:25832&bbox=${bbox.join(",")}&width=${w}&height=${h}&format=${encodeURIComponent(f)}&transparent=true`;
-  const tries = [["små, 400 px", lo(400, 280, "image/png")], ["små, 1600 px", lo(1600, 1120, "image/png")], ["små, 2048 px", lo(2048, 1434, "image/png")],
-    ["STORE, 400 px", lo(400, 280, "image/png").replace("request=getmap", "REQUEST=GetMap")],
-    ["svg", lo(1600, 1120, "image/svg+xml")], ["kml", lo(1600, 1120, "application/vnd.google-earth.kml+xml")], ["kml kort", lo(1600, 1120, "kml")],
-    ["geojson", lo(1600, 1120, "application/json")]];
-  for(const [t, u] of tries){
-    try{
-      const r = await fetch(u), b = await r.blob();
-      let px = "";
-      if(/^image\/(png|gif)/.test(b.type)){ const bmp = await createImageBitmap(b), c = document.createElement("canvas"); c.width = bmp.width; c.height = bmp.height;
-        const g = c.getContext("2d"); g.drawImage(bmp, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0;
-        for(let i = 3; i < d.length; i += 4) if(d[i] > 0) n++; px = ` · ${n} farvede punkter`; }
-      say(`${t}: læst ✓ HTTP ${r.status}, ${b.type}, ${Math.round(b.size/1024)} kB${px} · ${(await b.slice(0, 100).text()).replace(/[^\x20-\x7e]/g, "·")}`, "ok");
-    }catch(e){ say(`${t}: blokeret (${e.message})`, "bad"); }
-  }
-  say("Send et skærmbillede af det hele til Claude.");
+  const show = (t, x) => { say(t, "ok"); const pre = document.createElement("pre"); pre.style.cssText = "white-space:pre-wrap;word-break:break-all;font-size:12px;background:#f4f4f4;padding:6px"; pre.textContent = x; out.append(pre); };
+  try{
+    const j = await (await fetch(lo(400, 280, "application/json"))).text();
+    let o = null; try{ o = JSON.parse(j); }catch(e){}
+    if(o){ show(`UTFGrid: ${o.keys?.length ?? "?"} nøgler. Felter: ${Object.keys(o).join(", ")}`,
+      "keys: " + JSON.stringify((o.keys || []).slice(0, 15)) + "\n\ndata: " + JSON.stringify(o.data || null).slice(0, 1200)); }
+    else show("UTFGrid (ikke JSON):", j.slice(0, 600) + " … " + j.slice(-600));
+  }catch(e){ say("UTFGrid: " + e.message, "bad"); }
+  try{
+    const v = await (await fetch(lo(400, 280, "image/svg+xml"))).text();
+    show(`SVG: ${v.length} tegn, ${(v.match(/<path|<polyline|<polygon/g) || []).length} streger`, v.slice(0, 1200));
+  }catch(e){ say("SVG: " + e.message, "bad"); }
+  say("Send skærmbilleder af det hele til Claude.");
 })();
 </script>
 </body></html>
