@@ -1184,12 +1184,20 @@ let packs = store.get("packs", []); // saved groups of types, see PACKAGES
 const surfOf = f => String(f.get("belaegningstype") || "").trim();
 function surfaceFor(set){
   const m = {}, full = p => p.codes.length && p.codes.every(c=>set.has(c));
-  packs.filter(p=>p.surface?.length && full(p)).forEach(p=>p.codes.forEach(c=>{ m[c] = p.surface; }));
+  packs.filter(p=>p.surface?.length && full(p)).forEach(p=>Object.entries(packSurf(p)).forEach(([c, v])=>{ m[c] = v; }));
   packs.filter(p=>!p.surface?.length && full(p)).forEach(p=>p.codes.forEach(c=>delete m[c]));
   return Object.keys(m).length ? m : null;
 }
+// packages.surface: "beton" applies to every type in the package, "FB2a:beton" only to that type
+// (16.3a: only the fortove must be beton or granit; Captain's Nørre Snede test, 2026-10-21)
+function packSurf(p){
+  const m = {};
+  (p.surface || []).forEach(e=>{ const i = String(e).indexOf(":"), cs = i < 0 ? p.codes : [e.slice(0, i)], v = i < 0 ? e : e.slice(i+1);
+    cs.filter(c=>p.codes.includes(c)).forEach(c=>{ (m[c] ||= []).includes(v) || m[c].push(v); }); });
+  return m;
+}
 const surfOk = (m, f) => { const s = m?.[f.get("elementkode")]; if(!s) return true; const v = surfOf(f).toLowerCase(); return s.some(a=>v.includes(String(a).toLowerCase())); };
-const surfText = m => m ? "kun " + [...new Set(Object.values(m).flat())].join(" og ") : "";
+const surfText = m => m ? Object.entries(m).map(([c, v])=>`${(CODES[c] || c).toLowerCase()} kun i ${v.join(" og ")}`).join(", ") : "";
 // Types named by the packages they fill (biggest first), then any other types: "Fast belægning + Pur"
 function packNames(codes){
   const left = new Set(codes), names = [];
@@ -1213,7 +1221,7 @@ function packChips(el, set, st, changed, extra = ""){
   const n = p => p.codes.filter(c=>set.has(c)).length;
   el.innerHTML = packs.map(p=>{
     const k = n(p), all = p.codes.length, open = st.open===p.id;
-    const chip = `<button data-k="${esc(p.id)}" class="${k && k===all ? "on" : k ? "part" : ""}${open ? " open" : ""}" aria-expanded="${open}">📦 ${esc(p.name)}${p.surface?.length ? ` · ${esc(p.surface.join("/"))}` : ""}${k && k<all ? ` · ${k} af ${all}` : ""} ${open ? "▴" : k ? "▾" : ""}</button>`;
+    const chip = `<button data-k="${esc(p.id)}" class="${k && k===all ? "on" : k ? "part" : ""}${open ? " open" : ""}" aria-expanded="${open}">📦 ${esc(p.name)}${p.surface?.length ? ` · ${esc(surfText(packSurf(p)))}` : ""}${k && k<all ? ` · ${k} af ${all}` : ""} ${open ? "▴" : k ? "▾" : ""}</button>`;
     if(!open) return chip;
     return chip + `<div class="packopen"><div class="muted">Tag flueben af ved det, der ikke skal med</div>`
       + p.codes.map(c=>`<label class="code-item ${set.has(c)?"on":""}"><input type="checkbox" value="${esc(c)}" ${set.has(c)?"checked":""}><span class="grow">${esc(CODES[c]||c)}</span><span class="code">${esc(c)}</span></label>`).join("")
