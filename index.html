@@ -156,6 +156,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .panel header{padding:calc(env(safe-area-inset-top,0px) + 14px) 18px 12px;display:flex;flex-direction:column;gap:12px;border-bottom:1px solid var(--line)}
 .panel .list{flex:1;overflow-y:auto;padding:10px 18px;display:flex;flex-direction:column;gap:6px;-webkit-overflow-scrolling:touch}
 .panel footer{padding:12px 18px calc(env(safe-area-inset-bottom,0px) + 14px);border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px;background:var(--card)}
+.tblrow{width:100%;text-align:left;font:inherit;color:inherit}
 .code-item{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:var(--r);background:var(--paper);min-height:54px;cursor:pointer;border:2px solid transparent}
 .code-item.on{border-color:var(--moss2)}
 .code-item input{width:22px;height:22px;accent-color:var(--moss);flex:none}
@@ -649,6 +650,8 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="packbox" id="packBox">
       <div class="section" style="margin:0" id="packHead">Pakker</div>
       <div class="packs" id="packList"></div>
+      <div class="section" id="newTblHead">Tilbudslisten <span class="muted" style="text-transform:none;font-weight:400">· som på det gamle kort</span></div>
+      <div class="packs" id="newTblList"></div>
       <div class="section" id="typesHead">Typer</div>
     </div>
     <div class="codes" id="codeList"></div>
@@ -2221,6 +2224,95 @@ async function tblLoad(force){
   if(list.length) store.set("tblCaps", {at:Date.now(), list});
   return TBL.list = list;
 }
+// ---- A tilbudsliste line as a task, exactly as the old map draws it (2026-10-21, Captain: "all the tilbudspakker
+// should match the old map one to one"). The layers are pictures only, but the kommune's WMS also answers as SVG, whose
+// paths are the drawn shapes with decimals. The task takes the kommune elements under those shapes, stored as its
+// hand-picked elements (tasks.elements), so phones need nothing new. Ask in small letters with no-store: a tile the
+// overlay loaded as a plain <img> is cached without CORS, and reusing it makes the read fail.
+const tblKey = l => l.num + l.ls.join("");
+const tblLabel = l => `${l.num} ${l.ls.join(",")}`.trim();
+async function tblSvg(l, ext){
+  const w = ext[2]-ext[0], h = ext[3]-ext[1], W = Math.round(w >= h ? 2048 : 2048*w/h), H = Math.round(w >= h ? 2048*h/w : 2048);
+  const url = `${WMS_URL}?servicename=${WMS_SERVICE}&service=WMS&version=1.1.1&request=getmap&layers=${encodeURIComponent(l.name)}&styles=&srs=EPSG:25832`
+    + `&bbox=${ext.map(Math.round).join(",")}&width=${W}&height=${H}&format=image%2Fsvg%2Bxml&transparent=true`;
+  const r = await fetch(url, {cache:"no-store", signal:AbortSignal.timeout?.(30000)});
+  if(!r.ok) throw new Error("HTTP " + r.status);
+  return svgShapes(await r.text(), ext.map(Math.round));
+}
+// SVG paths → filled rings (areas) and stroked lines in EPSG:25832. A polygon's outline comes as a stroke path with the
+// same points as its fill; those are left out of the lines, so a kantsten on a fortov's edge isn't taken for a line.
+function svgShapes(xml, ext){
+  const doc = new DOMParser().parseFromString(xml, "image/svg+xml"), svg = doc.documentElement;
+  const vb = (svg.getAttribute("viewBox") || "").split(/[\s,]+/).map(Number);
+  const VW = vb[2] || parseFloat(svg.getAttribute("width")), VH = vb[3] || parseFloat(svg.getAttribute("height"));
+  const kx = (ext[2]-ext[0])/VW, ky = (ext[3]-ext[1])/VH, at = (x, y) => [ext[0] + x*kx, ext[3] - y*ky];
+  const fills = [], strokes = [], fillD = new Set();
+  const subs = d => { const out = []; let cur = null;
+    for(const [, c, a] of d.matchAll(/([MLCZ])([^MLCZ]*)/gi)){
+      const n = (a.match(/-?\d*\.?\d+(?:e-?\d+)?/gi) || []).map(Number);
+      if(/m/i.test(c)){ cur = []; out.push(cur); }
+      if(/z/i.test(c)){ if(cur?.length) cur.push(cur[0]); continue; }
+      const step = /c/i.test(c) ? 6 : 2; // a curve: keep its end point
+      for(let i = 0; i + step <= n.length; i += step) cur?.push(at(n[i+step-2], n[i+step-1]));
+    }
+    return out.filter(p=>p.length); };
+  const key = ([x, y]) => Math.round(x*20) + "," + Math.round(y*20); // 5 cm
+  const paths = [...doc.getElementsByTagName("path")].filter(p=>!p.closest("mask,defs,clipPath"));
+  paths.forEach(p=>{ const st = p.getAttribute("style") || "", d = p.getAttribute("d") || "";
+    if(!/fill:\s*none/.test(st) && /fill:/.test(st)){ const rs = subs(d); fills.push(rs); rs.flat().forEach(c=>fillD.add(key(c))); } });
+  paths.forEach(p=>{ const st = p.getAttribute("style") || "", d = p.getAttribute("d") || "";
+    if(!/fill:\s*none/.test(st)) return;
+    const sw = parseFloat((st.match(/stroke-width:\s*([\d.]+)/) || [])[1] || 1);
+    subs(d).filter(l=>l.filter(c=>fillD.has(key(c))).length < 0.8*l.length) // an area's outline isn't a line
+      .forEach(l=>strokes.push({l, tol: sw/2*kx + 0.75})); });
+  return {fills, strokes};
+}
+// Inside one SVG fill (its rings even-odd, as drawn), or close to a drawn line
+function inFill(rings, [x, y]){
+  let ins = false;
+  for(const r of rings) for(let i = 0, j = r.length-1; i < r.length; j = i++){
+    const [xi, yi] = r[i], [xj, yj] = r[j];
+    if((yi > y) !== (yj > y) && x < (xj-xi)*(y-yi)/(yj-yi) + xi) ins = !ins;
+  }
+  return ins;
+}
+function nearLine(l, [x, y], tol){
+  for(let i = 1; i < l.length; i++){
+    const [ax, ay] = l[i-1], [bx, by] = l[i], dx = bx-ax, dy = by-ay, len = dx*dx + dy*dy;
+    const t = len ? Math.max(0, Math.min(1, ((x-ax)*dx + (y-ay)*dy)/len)) : 0;
+    if(Math.hypot(ax + t*dx - x, ay + t*dy - y) <= tol) return true;
+  }
+  return false;
+}
+// One point that lies on the element: inside an area, halfway along a line
+function onPoint(g){
+  switch(g.getType()){
+    case "Point": return g.getCoordinates();
+    case "MultiPoint": return g.getCoordinates()[0];
+    case "LineString": return g.getCoordinateAt(0.5);
+    case "MultiLineString": return g.getLineString(0).getCoordinateAt(0.5);
+    case "Polygon": return g.getInteriorPoint().getCoordinates().slice(0, 2);
+    case "MultiPolygon": return g.getInteriorPoints().getCoordinates()[0].slice(0, 2);
+  }
+  return null;
+}
+function tblHits(sh, f){
+  const g = f.getGeometry(), c = g && onPoint(g); if(!c) return false;
+  const area = /Polygon/.test(g.getType()), line = /LineString/.test(g.getType());
+  return (!line && sh.fills.some(r=>inFill(r, c))) || (!area && sh.strokes.some(s=>nearLine(s.l, c, s.tol)));
+}
+// Every kommune element in the area that the line draws; all layers, since the line's types aren't known for sure
+async function tblElements(l, shape){
+  const sh = await tblSvg(l, ol.extent.buffer(shape.extent, 100));
+  const pts = [...sh.fills.flat(2), ...sh.strokes.flatMap(s=>s.l)];
+  if(!pts.length) return {sh, all:[], hit:[]};
+  const box = ol.extent.getIntersection(ol.extent.boundingExtent(pts), ol.extent.buffer(shape.extent, 1));
+  if(ol.extent.isEmpty(box)) return {sh, all:[], hit:[]};
+  const prep = prepShape(shape), b = ol.extent.buffer(box, 2).map(Math.round);
+  const all = await fetchLayers([`BBOX(wkb_geometry,${b.join(",")})`], g=>inShape(g, prep));
+  return {sh, all, hit: all.filter(f=>tblHits(sh, f))};
+}
+
 // The overlay shows only on the panes it helps with; the choice is kept while switching between them
 function showTbl(){
   if(!TBL) return;
@@ -2320,19 +2412,32 @@ function codeChecks(el, q, set, changed, here){
   });
 }
 function renderCodes(){
-  codeChecks($("codeList"), $("codeSearch").value, picked, renderChosen, newHere);
+  codeChecks($("codeList"), $("codeSearch").value, picked, ()=>{ if(newTbl && picked.size){ newTbl = null; renderTblChips(); } renderChosen(); }, newHere);
   $("packBox").hidden = !!$("codeSearch").value.trim(); // while searching, the hits come first
+  // "16.3a" also offers the whole line as on the old map
+  const q = $("codeSearch").value.toLowerCase().replace(/[\s_]/g, "").replace(",", ".");
+  const ls = /^\d+\.\d/.test(q) && TBL.list ? TBL.list.filter(l=>tblKey(l).startsWith(q)).slice(0, 4) : [];
+  if(ls.length && !newSpots){
+    $("codeList").insertAdjacentHTML("afterbegin", ls.map(l=>`<button class="code-item tblrow ${newTbl?.name===l.name ? "on" : ""}" data-tb="${esc(l.name)}"><span class="grow">📋 <b>${esc(tblLabel(l))}</b> som på det gamle kort<br><span class="muted">${esc(l.t)}</span></span></button>`).join(""));
+    $("codeList").querySelectorAll("[data-tb]").forEach(b=>b.onclick=()=>pickTbl(TBL.list.find(l=>l.name===b.dataset.tb)));
+  }
 }
 const sameCodes = (a, b) => a.length===b.size && a.every(c=>b.has(c));
 function renderChosen(){
   if(newSpots) return; // a task of tapped spots gets its types from the spots
+  $("newPickRow").hidden = !!newTbl;
+  if(newTbl){
+    $("chosen").innerHTML = `<span>📋 ${esc(tblLabel(newTbl))} · som på det gamle kort</span>`;
+    if(!$("taskTitle").dataset.touched) $("taskTitle").value = autoTitle();
+    renderPacks(); renderTblChips(); return;
+  }
   // whole packages show as one chip, so a big package doesn't push the type list off the screen
   const chips = packNames([...picked]).map(n=>isPackName(n) ? `📦 ${n}` : n);
   $("chosen").innerHTML = (chips.map(n=>`<span>${esc(n)}</span>`).join("") || `<span class="muted" style="background:none;color:var(--ink2);padding:0">Ingen typer valgt</span>`)
     + (isBoss() && picked.size > 1 && !packs.some(p=>sameCodes(p.codes, picked)) ? `<button class="btn ghost" id="btnSavePack" style="min-height:36px;padding:4px 10px">📦 Gem som pakke</button>` : "");
   if($("btnSavePack")) $("btnSavePack").onclick = ()=>packEdit({name:"", codes:[...picked]}, true);
   if(!$("taskTitle").dataset.touched) $("taskTitle").value = autoTitle();
-  renderPacks();
+  renderPacks(); renderTblChips();
 }
 
 // ---- Packages: named groups of types a boss gives together, e.g. "Fast belægning" ----
@@ -2341,7 +2446,7 @@ async function loadPacks(){
   if(sb){ const {data, error} = await sb.from("packages").select("*").order("name"); if(!error){ packs = data; store.set("packs", packs); } }
   if(!$("pNew").hidden) renderChosen();
 }
-const autoTitle = () => newSpots ? spotsTitle() : packNames([...picked]).join(" + ") + (picked.size && newShape?.place ? " i " + newShape.place : "");
+const autoTitle = () => newSpots ? spotsTitle() : newTbl ? tblLabel(newTbl) + (newShape?.place ? " i " + newShape.place : "") : packNames([...picked]).join(" + ") + (picked.size && newShape?.place ? " i " + newShape.place : "");
 // e.g. "Pur + Fortov, 7 steder på Storegade, Østergade"
 function spotsTitle(){
   const sp = spotsOf(newSpots), n = sp.length, names = packNames([...picked]);
@@ -2349,8 +2454,28 @@ function spotsTitle(){
   return `${names.length ? names.join(" + ") + ", " : ""}${n} ${n===1 ? "sted" : "steder"}${streets.length && streets.length <= 2 ? " på " + streets.join(", ") : ""}`;
 }
 const newOpen = {open:null}; // the package opened in Ny opgave
+let newTbl = null, tblAll = false; // the tilbudsliste line picked in Ny opgave; tblAll: its chips unfolded
+function renderTblChips(){
+  const el = $("newTblList"); if(!el) return;
+  const sp = !!newSpots; $("newTblHead").hidden = el.hidden = sp; if(sp) return;
+  if(!TBL.list){ el.innerHTML = `<button id="btnTblGet">📋 Vis linjerne</button>`;
+    $("btnTblGet").onclick = async ()=>{ $("btnTblGet").textContent = "Henter …"; try{ await tblLoad(); tblAll = true; }catch(e){ toast("Kunne ikke hente tilbudslisten fra kommunen. Prøv igen om lidt.", 4000); } renderTblChips(); };
+    return; }
+  if(!TBL.list.length){ el.innerHTML = `<span class="muted">Ingen tilbudsliste i kommunens kort</span>`; return; }
+  const chip = l => `<button data-tb="${esc(l.name)}" class="${newTbl?.name===l.name ? "on" : ""}" title="${esc(l.t)}">📋 ${esc(tblLabel(l))}</button>`;
+  el.innerHTML = newTbl && !tblAll ? chip(newTbl) + `<span class="muted">${esc(newTbl.t)}</span> <button class="edit" id="btnTblMore">Skift ▾</button>`
+    : tblAll ? TBL.list.map(chip).join("") + `<button class="edit" id="btnTblMore">Skjul ▴</button>`
+    : `<button class="edit" id="btnTblMore">📋 Vælg en linje (${TBL.list.length}) ▾</button>`;
+  $("btnTblMore").onclick = ()=>{ tblAll = !tblAll; renderTblChips(); };
+  el.querySelectorAll("[data-tb]").forEach(b=>b.onclick=()=>pickTbl(TBL.list.find(l=>l.name===b.dataset.tb)));
+}
+function pickTbl(l){
+  newTbl = newTbl?.name===l.name ? null : l; tblAll = false;
+  if(newTbl){ picked.clear(); newOpen.open = null; $("codeSearch").value = ""; }
+  renderCodes(); renderChosen();
+}
 function renderPacks(){
-  packChips($("packList"), picked, newOpen, ()=>{ renderCodes(); renderChosen(); },
+  packChips($("packList"), picked, newOpen, ()=>{ if(picked.size) newTbl = null; renderCodes(); renderChosen(); },
     isBoss() ? `<button class="edit" id="btnPacks">${packs.length ? "✎ Ret pakker" : "+ Ny pakke"}</button>` : "");
   if($("btnPacks")) $("btnPacks").onclick = ()=>packs.length ? packList() : packEdit({name:"", codes:[]}, true);
 }
@@ -2415,7 +2540,7 @@ async function delPack(p){
 // Step 1: draw the area on the map. Step 2: pick types and people.
 let newHere = null; // types counted in the place the task was started from: {code: count}
 function beginNewTask(code, shape, here){ // code: one type, a list of types (a package from the overview) or none
-  newHere = here || null; newSpots = null;
+  newHere = here || null; newSpots = null; newTbl = null; tblAll = false;
   picked = new Set([].concat(code || [])); $("codeSearch").value=""; $("taskTitle").value=""; delete $("taskTitle").dataset.touched; $("newPick").checked = false;
   assignees = new Set();
   startArea({shape:shape||null, peek:isBoss(), done:s=>{ newShape = s; showNewPanel(); }});
@@ -2464,12 +2589,34 @@ $("btnCreate").onclick = async ()=>{
     await elCachePut(t.id, keep, areaKey(t)); // what was tapped is already on the phone
     await openTask(t); return;
   }
+  if(newTbl){ await createTblTask(); return; }
   if(!picked.size){ toast("Vælg mindst én type"); return; }
   const t = {id:uuid(), name:$("taskTitle").value.trim() || autoTitle(), codes:[...picked],
     extent:newShape.extent, area:newShape.area, assignees:isBoss() ? [...assignees] : [me], created_by:me, created_at:new Date().toISOString(), archived:false};
   const sm = surfaceFor(picked); if(sm) t.surface = sm; // e.g. "16.3a": only beton and granit
   if(await saveTask(t)){ t.made_by_crew = !isBoss(); $("pNew").hidden = true; await openTask(t); if($("newPick").checked) startPick(t, true); }
 };
+
+// A task of one tilbudsliste line: the elements the old map draws in the area become the task's picked elements
+async function createTblTask(){
+  const l = newTbl, b = $("btnCreate"), was = b.textContent;
+  b.disabled = true; b.innerHTML = `<span class="spin"></span> Henter ${esc(tblLabel(l))} fra kommunen …`;
+  let r;
+  try{ r = await tblElements(l, newShape); }
+  catch(e){ console.error(e); toast("Kunne ikke hente tilbudslisten eller elementerne fra kommunen. Prøv igen om lidt.", 5000); }
+  b.disabled = false; b.textContent = was;
+  if(!r) return;
+  if(!r.hit.length){ toast(`${tblLabel(l)} har ingen elementer i området`, 5000); return; }
+  const codes = [...new Set(r.hit.map(f=>f.get("elementkode")).filter(Boolean))];
+  const t = {id:uuid(), name:$("taskTitle").value.trim() || autoTitle(), codes, extent:newShape.extent, area:newShape.area,
+    elements:r.hit.map(f=>f.getId()), assignees:isBoss() ? [...assignees] : [me], created_by:me, created_at:new Date().toISOString(), archived:false};
+  if(!await saveTask(t)) return;
+  t.made_by_crew = !isBoss(); $("pNew").hidden = true;
+  const cs = new Set(codes), keep = r.all.filter(f=>cs.has(f.get("elementkode")));
+  await nameByStreet(keep, t.extent); await elCachePut(t.id, keep, areaKey(t)); // what was fetched is already on the phone
+  toast(`${r.hit.length} steder fra ${tblLabel(l)}`, 4000);
+  await openTask(t);
+}
 
 // ================= DRAWING THE AREA =================
 // Rectangle: drag corners/edges to resize, the middle to move. Freehand: draw a ring with one finger, then drag its points.
