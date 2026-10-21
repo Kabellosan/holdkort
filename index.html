@@ -687,7 +687,9 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <input type="search" id="typeSearch" placeholder="Eller søg type: pur, fortov, løs belægning …" autocomplete="off">
   </header>
   <div class="list">
-    <div class="packbox" id="typePackBox"><div class="section" style="margin:0">Pakker</div><div class="packs" id="typePacks"></div><div class="section" style="margin:0">Typer</div></div>
+    <div class="packbox" id="typePackBox"><div class="section" style="margin:0">Pakker</div><div class="packs" id="typePacks"></div>
+      <div class="section" style="margin:0">Tilbudslisten <span class="muted" style="text-transform:none;font-weight:400">· som på det gamle kort</span></div><div class="packs" id="typeTbl"></div>
+      <div class="section" style="margin:0">Typer</div></div>
     <div class="codes" id="typeList"></div>
   </div>
   <footer><div class="muted">Viser alle elementer af typen (eller pakken) i hele kommunen, og hvilke der er med i en opgave. Hentes fra kommunen højst én gang om dagen.</div></footer>
@@ -2313,6 +2315,67 @@ async function tblElements(l, shape){
   const all = await fetchLayers([`BBOX(wkb_geometry,${b.join(",")})`], g=>inShape(g, prep));
   return {sh, all, hit: all.filter(f=>tblHits(sh, f))};
 }
+// ---- A whole line, for the whole kommune, saved once in tbl_lines (Captain asked to keep them, 2026-10-21): the SVG in
+// 10 km squares (about the scale the old map draws them at), then every layer in small boxes around the drawn shapes.
+// A koordinator starts it; the phones just read the list. els: [{i: element id, c: code, b: [x0,y0,x1,y1]}]
+let tblSaved = null; // name → {saved_at, n} of the saved lines; null until asked
+const tblRows = new Map(); // name → the saved row with its elements
+async function loadTblSaved(){
+  if(!sb) return tblSaved = new Map();
+  const {data, error} = await sb.from("tbl_lines").select("name,saved_at,n");
+  return tblSaved = error ? new Map() : new Map(data.map(r=>[r.name, r]));
+}
+async function tblRow(name){
+  if(tblRows.has(name)) return tblRows.get(name);
+  if(!sb) return null;
+  const {data, error} = await sb.from("tbl_lines").select("*").eq("name", name).maybeSingle();
+  if(error || !data) return null;
+  tblRows.set(name, data); return data;
+}
+function kommuneExt(){
+  const [a, b, c, d] = KOMMUNE_BBOX.split(",").map(Number);
+  return ol.extent.boundingExtent([[a,b],[a,d],[c,b],[c,d]].map(p=>ol.proj.transform(p, "EPSG:4326", proj))).map(Math.round);
+}
+async function tblWhole(l, say){
+  const [x0, y0, x1, y1] = kommuneExt(), T = 10000, tiles = [];
+  for(let x = x0; x < x1; x += T) for(let y = y0; y < y1; y += T) tiles.push([x, y, Math.min(x+T, x1), Math.min(y+T, y1)]);
+  const shapes = [];
+  for(let i = 0; i < tiles.length; i++){ say(`Henter linjen fra kortet: felt ${i+1} af ${tiles.length}`); shapes.push(await tblSvg(l, tiles[i])); }
+  // small boxes around everything drawn, merged when close; the elements are asked for in these boxes only
+  const boxes = mergeBoxes(shapes.flatMap(sh=>[...sh.fills.flatMap(rs=>rs.map(r=>ol.extent.boundingExtent(r))), ...sh.strokes.map(s=>ol.extent.boundingExtent(s.l))])
+    .map(b=>ol.extent.buffer(b, 2)));
+  const got = new Map();
+  let or = true;
+  for(let i = 0; i < boxes.length; i += or ? 30 : 1){
+    say(`Henter elementerne: ${Math.min(i+1, boxes.length)} af ${boxes.length} steder`);
+    const part = boxes.slice(i, i + (or ? 30 : 1)), q = part.map(b=>`BBOX(wkb_geometry,${b.map(Math.round).join(",")})`).join(" OR ");
+    let fs;
+    try{ fs = await fetchLayers([part.length > 1 ? `(${q})` : q], g=>part.some(b=>g.intersectsExtent(b))); }
+    catch(e){ if(!or || part.length < 2) throw e; or = false; i -= 1; continue; } // the server won't take several boxes: one at a time
+    fs.forEach(f=>got.set(f.getId(), f));
+  }
+  // each element is tested against the square its point lies in
+  const els = [...got.values()].filter(f=>{ const c = f.getGeometry() && onPoint(f.getGeometry()); if(!c) return false;
+    const k = tiles.findIndex(t=>ol.extent.containsCoordinate(t, c)); return k >= 0 && tblHits(shapes[k], f); })
+    .map(f=>{ const [a, b, c, d] = f.getGeometry().getExtent(); return {i:f.getId(), c:f.get("elementkode"), b:[Math.floor(a), Math.floor(b), Math.ceil(c), Math.ceil(d)]}; });
+  const row = {name:l.name, num:tblLabel(l), title:l.t, els, n:els.length, saved_at:new Date().toISOString(), saved_by:me};
+  if(sb){ const {error} = await sb.from("tbl_lines").upsert(row); if(error) throw new Error(error.message); }
+  tblRows.set(l.name, row); (tblSaved ||= new Map()).set(l.name, {name:l.name, saved_at:row.saved_at, n:row.n});
+  return row;
+}
+// The saved elements of a line inside a task area
+function tblInArea(row, shape){
+  const prep = prepShape(shape);
+  return row.els.filter(e=>inShape(ol.geom.Polygon.fromExtent(e.b), prep));
+}
+const tblDate = r => new Date(r.saved_at).toLocaleDateString("da-DK", {day:"numeric", month:"numeric", year:"numeric"});
+// Save (or fetch again) a whole line, with the progress on the button that started it
+async function tblSaveWhole(l, btn){
+  const was = btn.innerHTML; btn.disabled = true;
+  try{ const r = await tblWhole(l, t=>{ btn.innerHTML = `<span class="spin"></span> ${esc(t)}`; }); toast(`${tblLabel(l)} er gemt: ${r.n} steder i kommunen`, 5000); return r; }
+  catch(e){ console.error(e); toast("Linjen blev ikke gemt. Prøv igen om lidt." + (/tbl_lines|relation/.test(e.message) ? " (Databasen mangler tabellen tbl_lines.)" : ""), 6000); return null; }
+  finally{ btn.disabled = false; btn.innerHTML = was; }
+}
 
 // The overlay shows only on the panes it helps with; the choice is kept while switching between them
 function showTbl(){
@@ -2463,11 +2526,16 @@ function renderTblChips(){
     $("btnTblGet").onclick = async ()=>{ $("btnTblGet").textContent = "Henter …"; try{ await tblLoad(); tblAll = true; }catch(e){ toast("Kunne ikke hente tilbudslisten fra kommunen. Prøv igen om lidt.", 4000); } renderTblChips(); };
     return; }
   if(!TBL.list.length){ el.innerHTML = `<span class="muted">Ingen tilbudsliste i kommunens kort</span>`; return; }
-  const chip = l => `<button data-tb="${esc(l.name)}" class="${newTbl?.name===l.name ? "on" : ""}" title="${esc(l.t)}">📋 ${esc(tblLabel(l))}</button>`;
-  el.innerHTML = newTbl && !tblAll ? chip(newTbl) + `<span class="muted">${esc(newTbl.t)}</span> <button class="edit" id="btnTblMore">Skift ▾</button>`
+  const chip = l => `<button data-tb="${esc(l.name)}" class="${newTbl?.name===l.name ? "on" : ""}" title="${esc(l.t)}">📋 ${esc(tblLabel(l))}${tblSaved?.has(l.name) ? " ✓" : ""}</button>`;
+  const sv = newTbl && tblSaved?.get(newTbl.name);
+  const save = newTbl && isBoss() ? `<div class="muted" style="flex-basis:100%">${sv ? `Gemt for hele kommunen ${esc(tblDate(sv))} (${sv.n} steder), så opgaven laves med det samme.` : "Hentes fra kortet for området, når du trykker Opret."}</div>
+    <button class="edit" id="btnTblSave">${sv ? "⟳ Hent hele linjen igen" : "📥 Gem hele linjen for kommunen"}</button>` : "";
+  el.innerHTML = newTbl && !tblAll ? chip(newTbl) + `<span class="muted">${esc(newTbl.t)}</span> <button class="edit" id="btnTblMore">Skift ▾</button>` + save
     : tblAll ? TBL.list.map(chip).join("") + `<button class="edit" id="btnTblMore">Skjul ▴</button>`
     : `<button class="edit" id="btnTblMore">📋 Vælg en linje (${TBL.list.length}) ▾</button>`;
   $("btnTblMore").onclick = ()=>{ tblAll = !tblAll; renderTblChips(); };
+  if($("btnTblSave")) $("btnTblSave").onclick = async ()=>{ if(await tblSaveWhole(newTbl, $("btnTblSave"))) renderTblChips(); };
+  if(!tblSaved) loadTblSaved().then(()=>{ if(!$("pNew").hidden) renderTblChips(); });
   el.querySelectorAll("[data-tb]").forEach(b=>b.onclick=()=>pickTbl(TBL.list.find(l=>l.name===b.dataset.tb)));
 }
 function pickTbl(l){
@@ -2540,8 +2608,8 @@ async function delPack(p){
 }
 // Step 1: draw the area on the map. Step 2: pick types and people.
 let newHere = null; // types counted in the place the task was started from: {code: count}
-function beginNewTask(code, shape, here){ // code: one type, a list of types (a package from the overview) or none
-  newHere = here || null; newSpots = null; newTbl = null; tblAll = false;
+function beginNewTask(code, shape, here, tbl){ // code: one type, a list of types (a package from the overview) or none; tbl: a tilbudsliste line
+  newHere = here || null; newSpots = null; newTbl = tbl || null; tblAll = false; if(tbl) code = null;
   picked = new Set([].concat(code || [])); $("codeSearch").value=""; $("taskTitle").value=""; delete $("taskTitle").dataset.touched; $("newPick").checked = false;
   assignees = new Set();
   startArea({shape:shape||null, peek:isBoss(), done:s=>{ newShape = s; showNewPanel(); }});
@@ -2603,7 +2671,9 @@ async function createTblTask(){
   const l = newTbl, b = $("btnCreate"), was = b.textContent;
   b.disabled = true; b.innerHTML = `<span class="spin"></span> Henter ${esc(tblLabel(l))} fra kommunen …`;
   let r;
-  try{ r = await tblElements(l, newShape); }
+  const row = tblSaved?.has(l.name) && await tblRow(l.name);
+  if(row){ const els = tblInArea(row, newShape); r = {sh:{fills:[], strokes:[]}, all:[], hit:els.map(e=>({getId:()=>e.i, get:()=>e.c}))}; }
+  else try{ r = await tblElements(l, newShape); }
   catch(e){ console.error(e); toast("Kunne ikke hente tilbudslisten eller elementerne fra kommunen. Prøv igen om lidt.", 5000); }
   b.disabled = false; b.textContent = was;
   if(!r) return;
@@ -2614,7 +2684,7 @@ async function createTblTask(){
   if(!await saveTask(t)) return;
   t.made_by_crew = !isBoss(); $("pNew").hidden = true;
   const cs = new Set(codes), keep = r.all.filter(f=>cs.has(f.get("elementkode")));
-  await nameByStreet(keep, t.extent); await elCachePut(t.id, keep, areaKey(t)); // what was fetched is already on the phone
+  if(!row){ await nameByStreet(keep, t.extent); await elCachePut(t.id, keep, areaKey(t)); } // what was fetched is already on the phone
   toast(`${r.hit.length} steder fra ${tblLabel(l)}`, 4000);
   await openTask(t);
 }
@@ -2805,6 +2875,7 @@ function renderTypes(){
   $("typePacks").innerHTML = ps.map(p=>`<button data-p="${esc(p.id)}">📦 ${esc(p.name)} <span class="muted">· ${p.codes.length} ${p.codes.length===1 ? "type" : "typer"}</span></button>`).join("");
   $("typePacks").querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{
     const p = packs.find(x=>x.id===b.dataset.p); $("pType").hidden = true; openOverview(p.codes, p.name); });
+  typeTblChips();
   const used = {}; tasks.forEach(t=>(t.codes||[]).forEach(c=>used[c]=(used[c]||0)+1));
   const list = Object.entries(CODES).filter(([k,v])=>typeHit(k, v, q))
     .sort((a,b)=>(used[b[0]]||0)-(used[a[0]]||0));
@@ -2812,6 +2883,28 @@ function renderTypes(){
     ${used[k] ? `<div class="s">${used[k]} ${used[k]===1?"aktiv opgave":"aktive opgaver"}</div>` : ""}</div><span class="code">${k}</span></button>`).join("")
     || `<p class="muted">Ingen typer matcher "${esc(q)}"</p>`;
   $("typeList").querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{ $("pType").hidden = true; openOverview(b.dataset.c); });
+}
+// Tilbudsliste lines in Overblik: a saved line opens at once; one not saved yet is saved first (a minute or so)
+let typeTblAll = false;
+function typeTblChips(){
+  const el = $("typeTbl");
+  if(!TBL.list){ el.innerHTML = `<button id="btnTypeTblGet">📋 Vis linjerne</button>`;
+    $("btnTypeTblGet").onclick = async ()=>{ $("btnTypeTblGet").textContent = "Henter …"; try{ await Promise.all([tblLoad(), loadTblSaved()]); typeTblAll = true; }catch(e){ toast("Kunne ikke hente tilbudslisten fra kommunen. Prøv igen om lidt.", 4000); } typeTblChips(); };
+    return; }
+  if(!tblSaved){ loadTblSaved().then(typeTblChips); }
+  const saved = TBL.list.filter(l=>tblSaved?.has(l.name)), shown = typeTblAll ? TBL.list : saved;
+  el.innerHTML = shown.map(l=>`<button data-tl="${esc(l.name)}" title="${esc(l.t)}">📋 ${esc(tblLabel(l))}${tblSaved?.has(l.name) ? ` <span class="muted">· ${tblSaved.get(l.name).n}</span>` : ""}</button>`).join("")
+    + `<button class="edit" id="btnTypeTblMore">${typeTblAll ? "Skjul ▴" : saved.length ? "Flere linjer ▾" : `📋 Vælg en linje (${TBL.list.length}) ▾`}</button>`;
+  $("btnTypeTblMore").onclick = ()=>{ typeTblAll = !typeTblAll; typeTblChips(); };
+  el.querySelectorAll("[data-tl]").forEach(b=>b.onclick=async ()=>{
+    const l = TBL.list.find(x=>x.name===b.dataset.tl);
+    let row = tblSaved?.has(l.name) ? await tblRow(l.name) : null;
+    if(!row){ if(!isBoss()){ toast("En koordinator skal gemme linjen først", 4000); return; } row = await tblSaveWhole(l, b); }
+    if(!row) return;
+    if(!row.els.length){ toast(`${tblLabel(l)} har ingen elementer i kommunen`, 4000); return; }
+    $("pType").hidden = true;
+    openOverview([...new Set(row.els.map(e=>e.c))], `Tilbudsliste ${tblLabel(l)}`, {l, ids:row.els.map(e=>e.i)});
+  });
 }
 $("btnOverview").onclick = $("btnOverType").onclick = ()=>{ $("typeSearch").value = ""; renderTypes(); $("pType").hidden = false; };
 $("typeSearch").oninput = renderTypes;
@@ -2824,11 +2917,11 @@ function closeOverview(){
 }
 // codes: one type, or a package's types (pack = its name). Each type is fetched and stored on its own (type:<code>),
 // so a package shares its data with the single types, and a big package is fetched one type at a time.
-async function openOverview(codes, pack){
+async function openOverview(codes, pack, tbl){ // tbl: {l: a tilbudsliste line, ids: its saved element ids}
   closeOverview();
   codes = [...new Set([].concat(codes))];
   let mode = store.get("overMode","status"); if(mode==="type" && codes.length < 2) mode = "status";
-  const o = over = {codes, pack: codes.length > 1 ? pack || null : null, mode};
+  const o = over = {codes, pack: codes.length > 1 || tbl ? pack || null : null, mode, tbl:tbl?.l || null, ids:tbl ? new Set(tbl.ids) : null};
   const name = overName(o);
   $("overCode").textContent = codes.length > 1 ? `${codes.length} typer` : codes[0];
   $("btnOverByType").hidden = codes.length < 2;
@@ -2847,8 +2940,7 @@ async function openOverview(codes, pack){
   if(over!==o) return;
   const saved = cached.filter(Boolean).map(c=>c.saved);
   overAge(missing.length ? Math.min(Date.now(), ...saved) : Math.min(...saved));
-  const sm = surfaceFor(new Set(codes)); // "16.3a": only beton and granit, as the kommune's layer
-  overSrc.addFeatures(sm ? feats.filter(f=>surfOk(sm, f)) : feats); overNewLabel();
+  overSrc.addFeatures(overKeep(o, feats)); overNewLabel();
   await overPaint();
   if(over!==o) return;
   const seen = "seenType:" + codes.join("+");
@@ -2858,6 +2950,12 @@ async function openOverview(codes, pack){
   // Same rules as tasks: at most once a day, spread out, never in the morning rush
   if(saved.some(t=>Date.now() - t > DAY) && !rushHour())
     o.refresh = setTimeout(()=>{ if(over===o && navigator.onLine && !rushHour()) refreshType(o, false); }, 15000 + Math.random()*180000);
+}
+// What the overview shows of the fetched types: a package's belægning rule ("16.3a"), or a tilbudsliste line's elements
+function overKeep(o, feats){
+  if(o.ids) return feats.filter(f=>o.ids.has(f.getId()));
+  const sm = surfaceFor(new Set(o.codes));
+  return sm ? feats.filter(f=>surfOk(sm, f)) : feats;
 }
 // "Only Brande": the overview counts and shows only what lies in one town or along one street. Kept when switching type.
 let overFilter = null; // {name, shape:{extent, area}, prep}
@@ -2887,7 +2985,7 @@ async function refreshType(o, manual){
   try{
     const fs = [];
     for(const c of o.codes){ fs.push(...await downloadType(c)); if(over!==o) return; }
-    overSrc.clear(); overSrc.addFeatures(fs); overNewLabel(); await overPaint(); overAge(Date.now()); if(manual) toast("Kortdata opdateret");
+    overSrc.clear(); overSrc.addFeatures(overKeep(o, fs)); overNewLabel(); await overPaint(); overAge(Date.now()); if(manual) toast("Kortdata opdateret");
   }catch(e){ console.error(e); if(manual && over===o){ toast("Kunne ikke hente fra kommunen. Prøv igen senere.", 4000);
     const cs = (await Promise.all(o.codes.map(c=>elCacheGet("type:"+c)))).filter(Boolean);
     if(cs.length) overAge(Math.min(...cs.map(c=>c.saved))); else $("overAge").textContent = ""; } }
@@ -3006,7 +3104,7 @@ function overNewLabel(){
   $("btnOverNew").textContent = all?.length ? `+ Ny opgave med alle ${all.length} ${name}` : `+ Ny opgave med ${name}${f ? " i " + f.name : ""}`;
   $("btnOverArea").hidden = !all?.length;
 }
-const overArea = () => beginNewTask(over.codes, overFilter ? {...overFilter.shape, place:overFilter.drawn ? null : overFilter.name} : null);
+const overArea = () => beginNewTask(over.codes, overFilter ? {...overFilter.shape, place:overFilter.drawn ? null : overFilter.name} : null, null, over.tbl);
 $("btnOverArea").onclick = ()=>{ if(over) overArea(); };
 $("btnOverNew").onclick = ()=>{
   if(!over) return;
