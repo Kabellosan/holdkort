@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="da"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tilbudsliste-test</title>
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.12.1/dist/proj4.js"></script>
+<style>body{font:16px/1.4 system-ui,sans-serif;margin:16px;max-width:640px;background:#fff;color:#222}
+p{margin:6px 0}.ok{color:#2a7a00}.bad{color:#b00020}img,canvas{max-width:100%;border:1px solid #ccc;margin-top:8px}</style>
+</head><body>
+<!-- A one-off check (2026-10-21): may the app read the colours of the kommune's tilbudsliste pictures (WMS GetMap, CORS)?
+     If yes, a tilbudsliste line can take exactly the elements under its colour. -->
+<h2>Tilbudsliste-test</h2>
+<p>Siden spørger kommunens kort om 16.3a i Nørre Snede og prøver at læse farverne. Vent et øjeblik.</p>
+<div id="out"></div>
+<script>
+const WMS = "https://kort.ikast-brande.dk/wms", SVC = "entreprenoer_udbud";
+proj4.defs("EPSG:25832", "+proj=utm +zone=32 +ellps=GRS80 +units=m +no_defs");
+const out = document.getElementById("out");
+const say = (t, c) => { const p = document.createElement("p"); p.className = c || ""; p.textContent = t; out.append(p); };
+(async ()=>{
+  let name;
+  try{
+    const caps = await (await fetch(`${WMS}?SERVICENAME=${SVC}&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetCapabilities`)).text();
+    const doc = new DOMParser().parseFromString(caps, "text/xml");
+    const l = [...doc.getElementsByTagName("Layer")].find(l=>/^16\.3 ?a\b/i.test(l.querySelector(":scope > Title")?.textContent || ""));
+    name = l?.querySelector(":scope > Name")?.textContent;
+    say(name ? "1. Fandt laget 16.3 a ✓" : "1. Fandt ikke laget 16.3 a", name ? "ok" : "bad");
+    if(!name) return;
+  }catch(e){ say("1. Kunne ikke hente kortets lagliste: " + e.message, "bad"); return; }
+  const [x, y] = proj4("EPSG:4326", "EPSG:25832", [9.403, 55.968]).map(Math.round); // Nørre Snede
+  const bbox = [x-1000, y-700, x+1000, y+700], W = 1600, H = 1120;
+  const url = `${WMS}?SERVICENAME=${SVC}&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=${encodeURIComponent(name)}&STYLES=&SRS=EPSG:25832&BBOX=${bbox.join(",")}&WIDTH=${W}&HEIGHT=${H}&FORMAT=image/png&TRANSPARENT=true`;
+  let blob;
+  try{
+    const r = await fetch(url);
+    if(!r.ok) throw new Error("HTTP " + r.status);
+    blob = await r.blob();
+    say(`2. Billedet kom (${Math.round(blob.size/1024)} kB, ${blob.type}) ✓`, "ok");
+  }catch(e){ say("2. Kommunens server lod ikke siden hente billedet: " + e.message + ". Så virker idéen ikke direkte.", "bad");
+    const img = new Image(); img.src = url; out.append(img); return; }
+  try{
+    const bmp = await createImageBitmap(blob), c = document.createElement("canvas"); c.width = bmp.width; c.height = bmp.height;
+    const g = c.getContext("2d"); g.drawImage(bmp, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0;
+    for(let i = 3; i < d.length; i += 4) if(d[i] > 0) n++;
+    say(`3. Farverne kan læses ✓ ${n} farvede punkter af ${c.width*c.height}.`, "ok");
+    say(n ? "Det virker. Skriv til Claude, at testen lykkedes." : "Billedet er tomt. Send et skærmbillede til Claude.", n ? "ok" : "bad");
+    out.append(c);
+  }catch(e){ say("3. Farverne kunne ikke læses: " + e.message, "bad"); }
+})();
+</script>
+</body></html>
