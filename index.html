@@ -2932,12 +2932,31 @@ $("btnHist").onclick = ()=>{ if(selected) showHistory(selected); };
 // Which elements of the open task have sent photos (from the log) or photos waiting in the outbox
 let taskMedia = new Map(); // element id -> number of sent photos
 const hasMedia = id => taskMedia.has(id) || !!(task && pending.get(task.id+"|"+id)?._photos?.length);
+// A note written with several places marked goes in the log once per place (so each place's own screen has it):
+// same task, day, person and text. A photo taken with several marked has the same file on each line.
+// The task's list shows such a group once, and changing or deleting it changes it on every place.
+const logKey = r => r.photo && !r.note ? "p:" + r.photo : "n:" + [r.task_id, r.day, r.worker||"", r.note].join("|");
+async function logSiblings(r){ // r: a log line with id, task_id, day, worker, note/photo
+  let q = sb.from("element_log").select("*").eq("task_id", r.task_id);
+  q = r.photo && !r.note ? q.eq("photo", r.photo) : q.eq("day", r.day).eq("note", r.note);
+  const {data, error} = await q.limit(500);
+  if(error) return {error};
+  return {rows: data.filter(x=>logKey(x)===logKey(r))};
+}
+// Delete the lines, or only clear the field on lines that also hold a status (or a photo / a note)
+async function clearLines(rows, field, keepIf){
+  const clear = rows.filter(keepIf).map(x=>x.id), drop = rows.filter(x=>!keepIf(x)).map(x=>x.id);
+  let n = 0;
+  if(clear.length){ const {data, error} = await sb.from("element_log").update({[field]:null}).in("id", clear).select("id"); if(error) return {error}; n += data.length; }
+  if(drop.length){ const {data, error} = await sb.from("element_log").delete().in("id", drop).select("id"); if(error) return {error}; n += data.length; }
+  return {n};
+}
 async function loadTaskMedia(t){
   if(!sb) return;
-  const {data, error} = await sb.from("element_log").select("element_id,photo").eq("task_id", t.id).or("photo.not.is.null,note.not.is.null").limit(1000);
+  const {data, error} = await sb.from("element_log").select("element_id,task_id,day,worker,note,photo").eq("task_id", t.id).or("photo.not.is.null,note.not.is.null").limit(1000);
   if(error || task !== t) return;
   const m = new Map(); data.forEach(r=>{ if(r.photo) m.set(r.element_id, (m.get(r.element_id)||0) + 1); }); taskMedia = m;
-  const n = data.length; $("taskPhotoN").textContent = n ? `Noter (${n})` : "Noter";
+  const n = new Set(data.map(logKey)).size; $("taskPhotoN").textContent = n ? `Noter (${n})` : "Noter";
   refresh();
 }
 // Every photo and note in the open task, newest first, so nobody has to tap each element to find them
@@ -2952,28 +2971,39 @@ async function showTaskPhotos(){
     .order("day",{ascending:false}).order("id",{ascending:false}).limit(200);
   if($("pHist").hidden || task !== t) return;
   if(error){ L.innerHTML = `<p class="muted">Billederne kan ikke hentes lige nu. Tjek forbindelsen.</p>`; return; }
-  const local = [];
-  for(const r of pending.values()) if(r.task_id===t.id) for(const p of (r._photos||[])){ const b = await photoGet(p); if(b) local.push({id:r.element_id, url:URL.createObjectURL(b)}); }
+  const local = [], seenPid = new Map();
+  for(const r of pending.values()) if(r.task_id===t.id) for(const p of (r._photos||[])){
+    if(seenPid.has(p)){ seenPid.get(p).ids.push(r.element_id); continue; } // one photo taken with several places marked
+    const b = await photoGet(p); if(b){ const x = {ids:[r.element_id], url:URL.createObjectURL(b)}; seenPid.set(p, x); local.push(x); } }
+  const groups = [], byKey = new Map();
+  data.forEach(r=>{ const k = logKey(r), g = byKey.get(k); if(g){ g.ids.push(r.element_id); return; } const n = {...r, ids:[r.element_id]}; byKey.set(k, n); groups.push(n); });
   const name = id => { if(id===taskKey(t)) return "💬 Hele opgaven"; const pn = pinOf(id); if(pn) return "📌 " + pinTitle(pn);
     const f = elSrc.getFeatureById(id); return f ? titleOf(f) : ""; };
   const go = id => id===taskKey(t) || pinOf(id) ? `<button class="btn go" data-go="${esc(id)}">Åbn samtalen ›</button>`
     : elSrc.getFeatureById(id) ? `<button class="btn go" data-go="${esc(id)}">Vis på kortet ›</button>` : "";
+  // Several places: "4 steder: Saltværn (UD84a) …", and Vis på kortet marks all of them
+  const names = ids => { if(ids.length===1) return name(ids[0]);
+    const ns = [...new Set(ids.map(name).filter(Boolean))];
+    return `${ids.length} steder: ${ns.slice(0,2).join(", ")}${ns.length > 2 ? ` og ${ns.length-2} mere` : ""}`; };
+  const goAll = ids => ids.length===1 ? go(ids[0]) : ids.some(i=>elSrc.getFeatureById(i)) ? `<button class="btn go" data-go="${esc(ids.join(","))}">Vis dem på kortet ›</button>` : "";
   L.innerHTML = `<button class="btn primary" id="btnTaskThread">💬 Skriv eller tag billede til hele opgaven</button>`
     + (pinsOk ? `<p class="muted" style="margin:0">Noget ved et bestemt sted uden element? Tryk 📌 Pin på kortet.</p>` : "")
     + (local.length ? `<div class="hist"><div class="when"><b>Ikke sendt endnu</b></div>${local.map(x=>`
-        ${name(x.id) ? `<div>${esc(name(x.id))}</div>` : ""}<img src="${x.url}" alt="Billede, ikke sendt">${go(x.id)}`).join("")}</div>` : "")
-    + (data.length ? data.map(r=>`<div class="hist">
+        ${names(x.ids) ? `<div>${esc(names(x.ids))}</div>` : ""}<img src="${x.url}" alt="Billede, ikke sendt">${goAll(x.ids)}`).join("")}</div>` : "")
+    + (groups.length ? groups.map(r=>`<div class="hist">
         <div class="when"><b>${esc(longDate(r.day))}</b><span class="muted">${sinceText(r.day)}</span></div>
-        ${name(r.element_id) || (isBoss() && r.worker) ? `<div class="muted">${[esc(name(r.element_id)), isBoss() && r.worker ? esc(r.worker) : ""].filter(Boolean).join(" · ")}</div>` : ""}
-        ${r.note ? `<div>${esc(r.note)}</div>` : ""}
-        ${r.photo ? `<img src="${esc(photoUrl(r.photo))}" loading="lazy" alt="Billede fra ${esc(longDate(r.day))}">` : ""}${go(r.element_id)}</div>`).join("")
+        ${names(r.ids) || r.worker ? `<div class="muted">${[esc(names(r.ids)), r.worker && (isBoss() || r.note || r.photo) ? esc(r.worker) : ""].filter(Boolean).join(" · ")}</div>` : ""}
+        ${r.note ? `<div>${esc(r.note)}${r.edited ? ` <span class="muted" style="font-size:13px">(rettet)</span>` : ""}</div>` : ""}
+        ${r.photo ? `<img src="${esc(photoUrl(r.photo))}" loading="lazy" alt="Billede fra ${esc(longDate(r.day))}">` : ""}${goAll(r.ids)}</div>`).join("")
       : (local.length ? "" : `<p class="muted">Ingen noter eller billeder i denne opgave endnu.</p>`));
   $("btnTaskThread").onclick = ()=>{ $("pHist").hidden = true; openThread({key:taskKey(t), title:"Hele opgaven"}); };
   L.querySelectorAll("img").forEach(i=>i.onclick=()=>{ $("photoImg").src = i.src; $("photoView").hidden = false; });
   L.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{ const id = b.dataset.go, pn = pinOf(id); $("pHist").hidden = true;
     if(id===taskKey(t)) return openThread({key:id, title:"Hele opgaven"});
     if(pn) return openPin(pn);
-    const f = elSrc.getFeatureById(id); if(f) select(f); });
+    const fs = id.split(",").map(i=>elSrc.getFeatureById(i)).filter(Boolean); if(!fs.length) return;
+    if(fs.length===1) return select(fs[0]);
+    selected = fs[0]; selSet = new Set(fs); elLayer.changed(); showEl(true); });
 }
 $("btnTaskPhotos").onclick = showTaskPhotos;
 $("btnHistClose").onclick = ()=>{ $("pHist").hidden = true; };
@@ -3372,12 +3402,19 @@ async function showNotes(){
   }
   if(seq !== notesSeq || $("pNotes").hidden) return;
   const msgs = toMsgs(data);
+  // How many places each note or photo of this task is on (written with several marked)
+  const mine = data.filter(r=>r.task_id===task.id), cnt = new Map(), add = r=>{ const k = logKey(r); (cnt.get(k) || cnt.set(k, new Set()).get(k)).add(r.element_id); };
+  const nts = [...new Set(mine.filter(r=>r.note).map(r=>r.note))], pts = [...new Set(mine.filter(r=>r.photo && !r.note).map(r=>r.photo))];
+  if(sb && nts.length){ const {data:d} = await sb.from("element_log").select("element_id,task_id,day,worker,note,photo").eq("task_id", task.id).in("note", nts).limit(1000); d?.forEach(add); }
+  if(sb && pts.length){ const {data:d} = await sb.from("element_log").select("element_id,task_id,day,worker,note,photo").eq("task_id", task.id).in("photo", pts).limit(1000); d?.forEach(add); }
+  msgs.forEach(m=>{ m.places = Math.max(m.line ? cnt.get(logKey(m.line))?.size || 1 : 1, ...m.pics.map(p=>p.line ? cnt.get(logKey(p.line))?.size || 1 : 1)); });
   const base = progress.get(id), pend = pending.get(task.id+"|"+id), now = eff(id)?.note?.trim() || "";
   // A note from before the log, or not in it for some other reason
   if(base?.note?.trim() && !msgs.some(m=>m.note===base.note && m.tid===task.id) && !pend?._notes?.includes(base.note.trim()) && (!pend || pend.note===base.note))
     msgs.push({who:base.worker, day:(base.updated_at||"").slice(0,10), tid:task.id, note:base.note, pics:[]});
-  (pend?._notes||[]).forEach((t,i)=>msgs.push({who:me, wait:true, tid:task.id, note:t, pics:[], pidx:i}));
-  for(const ph of pend?._photos||[]){ const b = await photoGet(ph); if(b) msgs.push({who:me, wait:true, tid:task.id, pics:[{url:URL.createObjectURL(b), pid:ph}]}); }
+  const pendOn = f => [...pending.values()].filter(r=>r.task_id===task.id && f(r)).length;
+  (pend?._notes||[]).forEach((t,i)=>msgs.push({who:me, wait:true, tid:task.id, note:t, pics:[], pidx:i, places:pendOn(r=>r._notes?.includes(t))}));
+  for(const ph of pend?._photos||[]){ const b = await photoGet(ph); if(b) msgs.push({who:me, wait:true, tid:task.id, pics:[{url:URL.createObjectURL(b), pid:ph}], places:pendOn(r=>r._photos?.includes(ph))}); }
   if(seq !== notesSeq) return;
   groupPics(msgs); // photos in a row from the same person and day share one message
   // The current note: the newest message with that text in this task
@@ -3392,7 +3429,7 @@ const taskKey = t => "opgave:" + t.id;
 function msgHtml(msgs, curAt=-1){
   const taskName = tid => tid===task?.id ? "" : tasks.find(t=>t.id===tid)?.name || "en tidligere opgave";
   return msgs.length ? msgs.map((m,i)=>`<div class="msg${norm(m.who)===norm(me) ? " mine" : ""}${m.wait ? " wait" : ""}">
-        <div class="by"><b>${esc(m.who || "Ukendt")}</b> · ${m.wait ? "ikke sendt endnu" : m.day ? sinceText(m.day) + (daysSince(m.day) > 1 ? ` (${esc(longDate(m.day))})` : "") : ""}${taskName(m.tid) ? ` · ${esc(taskName(m.tid))}` : ""}</div>
+        <div class="by"><b>${esc(m.who || "Ukendt")}</b> · ${m.wait ? "ikke sendt endnu" : m.day ? sinceText(m.day) + (daysSince(m.day) > 1 ? ` (${esc(longDate(m.day))})` : "") : ""}${taskName(m.tid) ? ` · ${esc(taskName(m.tid))}` : ""}${m.places > 1 ? ` · på ${m.places} steder` : ""}</div>
         ${m.note ? `<div class="txt">${esc(m.note)}${m.edited ? ` <span class="muted" style="font-size:13px">(rettet)</span>` : ""}</div>` : ""}
         ${m.note && (canEditNote(m) || canDelNote(m)) ? `<button class="btn ghost ednote" data-ed="${i}">${canEditNote(m) ? "✏️ Ret" : "🗑 Slet"}</button>` : ""}
         ${m.pics.length ? `<div class="pics">${m.pics.map(p=>`<span class="pic"><img src="${esc(p.url)}" alt="Billede" data-i="${notePics.indexOf(p)}">${canDelPic(p) ? `<button class="del" data-del="${notePics.indexOf(p)}" aria-label="Slet billedet">🗑</button>` : ""}</span>`).join("")}</div>` : ""}
@@ -3415,7 +3452,8 @@ function toMsgs(data){
     if(r.note) last[r.task_id] = r.note;
     const pic = r.photo ? {url:photoUrl(r.photo), log:r.id, path:r.photo, day:r.day, who:r.worker, mixed: !!(r.status || r.done || r.part || r.note)} : null;
     // nlog: the note's log line, so it can be changed; a line that also holds a status or a photo only loses its note
-    if(r.note || pic) msgs.push({who:r.worker, day:r.day, tid:r.task_id, note:r.note, edited:!!r.edited, pics: pic ? [pic] : [],
+    if(pic) pic.line = r;
+    if(r.note || pic) msgs.push({who:r.worker, day:r.day, tid:r.task_id, note:r.note, edited:!!r.edited, pics: pic ? [pic] : [], line: r.note ? r : null,
       ...(r.note ? {nlog:r.id, nmixed: !!(r.status || r.done || r.part || r.photo)} : {})});
   });
   return msgs;
@@ -3534,28 +3572,40 @@ $("askNoteDel").onclick = ()=>{ // second tap deletes, so a slip of the finger d
 async function changeNote(m, text){
   closeEditNote(); if(!m) return;
   const id = noteCtx ? null : selected?.getId();
-  if(m.wait){ // not sent yet: change it in the outbox
-    const key = task.id+"|"+id, r = pending.get(key); if(!r?._notes) return;
-    const wasCur = (r.note||"").trim()===r._notes[m.pidx];
-    if(text) r._notes[m.pidx] = text; else r._notes.splice(m.pidx, 1);
-    const b = progress.get(id) || {status:"todo", note:""};
-    if(wasCur) r.note = text || (r._notes.at(-1) ?? b.note ?? "");
-    if(!r._photos?.length && !r._notes.length && r.status===b.status && r.note===(b.note||"") && r.reason===(b.reason||null) && partsKey(r.parts)===partsKey(b.parts)) pending.delete(key);
+  if(m.wait){ // not sent yet: change it in the outbox, on every marked place it was written on
+    const old = m.note;
+    for(const [key, r] of [...pending]){
+      const i = r.task_id===task.id ? r._notes?.indexOf(old) ?? -1 : -1; if(i < 0) continue;
+      const wasCur = (r.note||"").trim()===old;
+      if(text) r._notes[i] = text; else r._notes.splice(i, 1);
+      const b = progress.get(r.element_id) || {status:"todo", note:""};
+      if(wasCur) r.note = text || (r._notes.at(-1) ?? b.note ?? "");
+      if(!r._photos?.length && !r._notes.length && r.status===b.status && r.note===(b.note||"") && r.reason===(b.reason||null) && partsKey(r.parts)===partsKey(b.parts)) pending.delete(key);
+    }
     store.set("pending", [...pending.values()]); renderOutbox(); refresh();
     toast(text ? "Noten er rettet" : "Noten er slettet"); return showNotes();
   }
-  const q = text ? {note:text, edited:true} : {note:null};
-  const run = body => text || m.nmixed ? sb.from("element_log").update(body).eq("id", m.nlog).select("id") : sb.from("element_log").delete().eq("id", m.nlog).select("id");
-  let {data, error} = await run(q);
-  if(error && /edited/.test(error.message||"")) ({data, error} = await run({note:text})); // before the SQL file: no "(rettet)"
-  if(error || !data?.length){ if(error) console.error(error);
-    return toast(error ? "Noten kunne ikke ændres. Tjek forbindelsen." : "Noten kan ikke ændres herfra. Spørg koordinatoren.", 4000); }
-  // The element's current note follows along, without a new line in the log
-  if(id && m.tid===task.id && (eff(id)?.note||"").trim()===m.note.trim()){
-    setStatus([id], null, text || "");
-    const r = pending.get(task.id+"|"+id); if(r?._notes?.at(-1)===text){ r._notes.pop(); store.set("pending", [...pending.values()]); }
+  // The same note on every place it was written on (several marked at once)
+  const sib = m.line ? await logSiblings(m.line) : {rows:[]};
+  const rows = sib.rows?.length ? sib.rows : [{id:m.nlog, element_id:id, status:m.nmixed ? "x" : null}];
+  let res;
+  if(text){
+    const run = body => sb.from("element_log").update(body).in("id", rows.map(x=>x.id)).select("id");
+    let {data, error} = await run({note:text, edited:true});
+    if(error && /edited/.test(error.message||"")) ({data, error} = await run({note:text})); // before the SQL file: no "(rettet)"
+    res = {error, n: data?.length || 0};
+  } else res = await clearLines(rows, "note", x=>!!(x.status || x.done || x.part || x.photo));
+  if(sib.error || res.error || !res.n){ if(sib.error || res.error) console.error(sib.error || res.error);
+    return toast(sib.error || res.error ? "Noten kunne ikke ændres. Tjek forbindelsen." : "Noten kan ikke ændres herfra. Spørg koordinatoren.", 4000); }
+  // Each place's current note follows along, without a new line in the log
+  if(m.tid===task.id){
+    const cur = [...new Set(rows.map(x=>x.element_id))].filter(e=>(eff(e)?.note||"").trim()===m.note.trim());
+    if(cur.length){ setStatus(cur, null, text || "");
+      cur.forEach(e=>{ const r = pending.get(task.id+"|"+e); if(r?._notes?.at(-1)===text) r._notes.pop(); });
+      store.set("pending", [...pending.values()]); }
   }
-  toast(text ? "Noten er rettet" : "Noten er slettet"); refresh(); showNotes();
+  const k = new Set(rows.map(x=>x.element_id)).size;
+  toast((text ? "Noten er rettet" : "Noten er slettet") + (k > 1 ? ` på ${k} steder` : "")); refresh(); showNotes();
 }
 // Delete a photo: one not sent yet always; a sent one by whoever took it or a koordinator. The database decides the rest
 // (anyone the day it was taken or the next; a koordinator any time, once supabase/notes_photos_pins.sql has been run).
@@ -3565,21 +3615,24 @@ function askDelPic(p){ delPic = p; $("delPicImg").src = p.url; $("askDelPic").hi
 $("askDelPicNo").onclick = ()=>{ $("askDelPic").hidden = true; delPic = null; };
 $("askDelPicOk").onclick = async ()=>{
   const p = delPic; $("askDelPic").hidden = true; delPic = null; if(!p) return;
-  if(p.pid){ // still on the phone: take it out of the outbox
-    const id = selected?.getId(), key = task.id+"|"+id, r = pending.get(key); await photoDel(p.pid);
-    if(r){ r._photos = (r._photos||[]).filter(x=>x!==p.pid); const b = progress.get(id) || {status:"todo", note:""};
-      if(!r._photos.length && !r._notes?.length && r.status===b.status && r.note===(b.note||"") && r.reason===(b.reason||null) && partsKey(r.parts)===partsKey(b.parts)) pending.delete(key);
-      store.set("pending", [...pending.values()]); renderOutbox(); }
+  if(p.pid){ // still on the phone: take it out of the outbox, from every place it was taken for
+    await photoDel(p.pid);
+    for(const [key, r] of [...pending]){ if(!r._photos?.includes(p.pid)) continue;
+      r._photos = r._photos.filter(x=>x!==p.pid); const b = progress.get(r.element_id) || {status:"todo", note:""};
+      if(!r._photos.length && !r._notes?.length && r.status===b.status && r.note===(b.note||"") && r.reason===(b.reason||null) && partsKey(r.parts)===partsKey(b.parts)) pending.delete(key); }
+    store.set("pending", [...pending.values()]); renderOutbox();
     toast("Billedet er slettet"); refresh(); return showNotes();
   }
   // A line that is only the photo goes; one that also holds a status keeps it and loses the photo
-  const q = p.mixed ? sb.from("element_log").update({photo:null}).eq("id", p.log).select("id") : sb.from("element_log").delete().eq("id", p.log).select("id");
-  const {data, error} = await q;
-  if(error || !data?.length){ if(error) console.error(error);
+  // The same file can be on several places (taken with several marked): it goes from all of them, then the file
+  const sib = p.line ? await logSiblings(p.line) : {rows:[]};
+  const rows = sib.rows?.length ? sib.rows : [{id:p.log, status:p.mixed ? "x" : null}];
+  const res = sib.error ? {error:sib.error} : await clearLines(rows, "photo", x=>!!(x.status || x.done || x.part || x.note));
+  const error = res.error;
+  if(error || !res.n){ if(error) console.error(error);
     return toast(error ? "Billedet kunne ikke slettes. Tjek forbindelsen." : "Billedet kan ikke slettes herfra. Spørg koordinatoren.", 4000); }
   sb.storage.from("photos").remove([p.path]).then(({error})=>{ if(error) console.warn("photo file stays", error); });
-  if(noteCtx) loadTaskMedia(task);
-  else if(task){ const n = (taskMedia.get(selected?.getId())||1) - 1; if(n > 0) taskMedia.set(selected.getId(), n); else taskMedia.delete(selected?.getId()); }
+  if(task) loadTaskMedia(task);
   toast("Billedet er slettet"); refresh(); showNotes();
 };
 function closeNotes(){
