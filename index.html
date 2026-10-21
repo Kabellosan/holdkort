@@ -44,7 +44,8 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0;color:var(--ink)}
 .flip .ic{font-size:19px;line-height:1}
 .flip .tx{font-size:11px;font-weight:600}
-.basemap #btnPin:not([hidden]){display:flex}
+.basemap #btnPin:not([hidden]),.basemap #btnMe{display:flex}
+#btnMe .ic{font-size:22px;color:#2b6cd4}
 #btnPin[aria-pressed="true"]{background:var(--moss);color:#fff;border-color:var(--moss)}
 .basemap .credit{font-size:10px;background:#ffffffcc;color:#333;border-radius:6px;padding:1px 5px}
 .basemap .credit a{color:inherit}
@@ -293,6 +294,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 </div>
 <div class="basemap">
   <button class="flip" id="btnFlip"><span class="ic"></span><span class="tx"></span></button>
+  <button class="flip" id="btnMe" aria-label="Vis min position" title="Min position"><span class="ic">◎</span><span class="tx">Mig</span></button>
   <button class="flip" id="btnPin" hidden aria-pressed="false"><span class="ic">📌</span><span class="tx">Pin</span></button>
   <div class="seg2" role="group" aria-label="Baggrundskort">
     <button data-b="photo" aria-pressed="true">🛰 Luftfoto</button>
@@ -393,7 +395,6 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <div class="grow"></div>
       <button class="btn ghost" id="btnEditArea" hidden>▭ Område</button>
       <button class="btn ghost" id="btnPick" hidden>☝ Steder</button>
-      <button class="btn ghost" id="btnGps">◎ Min position</button>
     </div>
     <div class="row" data-keep>
       <div class="grow"><div class="eyebrow" id="workCodes"></div><h2 id="workName"></h2></div>
@@ -3835,7 +3836,21 @@ function next(){
   toast(`${fmtDist(distTo(pool[0],p))} væk`);
 }
 $("btnNext").onclick = next; $("btnNext2").onclick = next;
-$("btnGps").onclick = ()=>{ const p = geo.getPosition(); if(p) map.getView().animate({center:p, zoom:Math.max(map.getView().getZoom(),10)}); else toast("Venter på GPS …"); };
+// "◎ Mig" under the map switch, on every screen. Starts GPS on first use (outside a task it isn't running yet)
+// and centres once the first position comes in.
+let meWait = false;
+// The dot lands in the middle of the map above the bottom sheet, not behind it
+function goMe(){
+  const p = geo.getPosition(); if(!p) return false;
+  const v = map.getView(), z = Math.max(v.getZoom(), 10), dy = sheetH() / 2 * v.getResolutionForZoom(z);
+  v.animate({center:[p[0], p[1] - dy], zoom:z}); return true;
+}
+$("btnMe").onclick = ()=>{
+  geo.setTracking(true);
+  if(goMe()) return;
+  toast("Finder din position …", 4000);
+  if(!meWait){ meWait = true; geo.once("change:position", ()=>{ meWait = false; goMe(); $("toast").classList.remove("show"); }); }
+};
 
 let onlyOpen = store.get("onlyOpen", true);
 function renderList(){
