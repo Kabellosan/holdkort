@@ -2257,7 +2257,8 @@ function svgShapes(xml, ext){
     }
     return out.filter(p=>p.length); };
   const key = ([x, y]) => Math.round(x*20) + "," + Math.round(y*20); // 5 cm
-  const paths = [...doc.getElementsByTagName("path")].filter(p=>!p.closest("mask,defs,clipPath"));
+  // cairo puts the drawing in <defs> and shows it with <use> (for the layer's opacity); masks and clip paths aren't drawing
+  const paths = [...doc.getElementsByTagName("path")].filter(p=>!p.closest("mask,clipPath"));
   paths.forEach(p=>{ const st = p.getAttribute("style") || "", d = p.getAttribute("d") || "";
     if(!/fill:\s*none/.test(st) && /fill:/.test(st)){ const rs = subs(d); fills.push(rs); rs.flat().forEach(c=>fillD.add(key(c))); } });
   paths.forEach(p=>{ const st = p.getAttribute("style") || "", d = p.getAttribute("d") || "";
@@ -2606,7 +2607,7 @@ async function createTblTask(){
   catch(e){ console.error(e); toast("Kunne ikke hente tilbudslisten eller elementerne fra kommunen. Prøv igen om lidt.", 5000); }
   b.disabled = false; b.textContent = was;
   if(!r) return;
-  if(!r.hit.length){ toast(`${tblLabel(l)} har ingen elementer i området`, 5000); return; }
+  if(!r.hit.length){ toast(`${tblLabel(l)} har ingen elementer i området (${r.sh.fills.length} flader og ${r.sh.strokes.length} streger fra kortet, ${r.all.length} elementer)`, 8000); return; }
   const codes = [...new Set(r.hit.map(f=>f.get("elementkode")).filter(Boolean))];
   const t = {id:uuid(), name:$("taskTitle").value.trim() || autoTitle(), codes, extent:newShape.extent, area:newShape.area,
     elements:r.hit.map(f=>f.getId()), assignees:isBoss() ? [...assignees] : [me], created_by:me, created_at:new Date().toISOString(), archived:false};
