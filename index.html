@@ -811,20 +811,67 @@ const FOLDERS = {
 const FOLDER_OF = Object.fromEntries(Object.entries(FOLDERS).flatMap(([name, ks])=>ks.map(k=>[k, name])));
 // A type's group: the kommune map's folder, else its code family (BI, UD)
 const groupOf = k => FOLDER_OF[k] || GROUPS[k.replace(/\d.*$/,"")] || "";
-// Lines from the old kommune map's "Tilbudslisten, Grøn" (the tender price list) that are one of our types, so a search
-// for the number or the old wording finds it. Captain's list, 2026-10-21. Only lines that clearly are one type;
-// "16.3a ukrudt" is work (weeding) on some surface, not a type, so it isn't here.
-const OLD = {
- LB2a:["12.2 grusstier","grustier"], LB2c:["12.3a anden løs belægning"], BY1:["13.2 trapper og ramper"]
+// The old kommune map's "Tilbudslisten, Grøn" (the tender price list; Captain's screenshots, 2026-10-21): each line is
+// a number, the work (text cut off on the old map is finished where it was plain) and our types it covers, so a search for
+// "16.3a", "ukrudt" or "grusstier" finds the types. Lines covering several types (16.1a, 16.3a) are our best reading of the
+// name, not checked against the old map's layers.
+const TILBUD = [
+ ["2.1 a","Brugsplæner. Tilstandskrav",["GR2"]], ["2.2 a","Græsflader. Tilstandskrav",["GR3"]],
+ ["2.3 a_b","Fælledgræs. Slåning, tilstandskrav",["GR4"]], ["2.4 a_b","Naturgræs. Slåning, tilstandskrav",["GR7"]],
+ ["2.5 a","Græsarmering. Slåning",["GR7d"]], ["2.6 a","Blomsterenge med og uden græs",["GR7b"]],
+ ["2.7 a_b","Rabatgræs by. Slåning",["GR6n"]],
+ ["2.10 a_b_c_d","Boldbane B. Klargøring",["GR5b"]], ["2.10 f","Boldbane B. Jordbundsprøver",["GR5b"]],
+ ["2.11 a_b_c","Boldbane C. Klargøring",["GR5c"]], ["2.11 g","Boldbane C. Jordbundsprøver",["GR5c"]], ["2.11 h","Boldbane C. Vinterpleje",["GR5c"]],
+ ["3.1 a_b_c_d","Roser. Ukrudtsbekæmpelse",["BL1"]], ["3.2 a_b_c_d","Stauder. Ukrudtsbekæmpelse",["BL3"]],
+ ["3.2 e","Saltværn. Opsætning, nedtagning",["UD84a"]], ["3.3 a_b_c_d_e","Blomsterkummer",["BL5"]],
+ ["4.1 a","Klatreplanter. Fritrumsbeskæring",["KL2"]], ["4.2 a","Søjledækkende klatreplanter",["KL3"]],
+ ["5.1 a_c_e","Prydbuske, flade. Ukrudtsbekæmpelse",["BU1a"]], ["5.1 b_d","Prydbuske, punkt. Ukrudtsbekæmpelse",["BU1"]],
+ ["5.2 a","Bunddækkende buske. Ukrudtsbekæmpelse",["BU2"]], ["5.3 a","Busket. Ukrudtsbekæmpelse",["BU3"]],
+ ["6.1 a_b","Prydhække. Klipning, lugning",["HA11"]], ["6.2 a_b","Hække. Klipning, tilstandskrav",["HA21"]],
+ ["6.3 a_b_c","Prydpur. Klipning, gødning",["HA1"]], ["6.4 a_b","Pur. Klipning, tilstandskrav",["HA3"]],
+ ["7.1 a_c","Fuldkronede træer. Fjernelse",["TR1"]], ["7.1 b","Fuldkronede træer. Etablering",["TR1"]],
+ ["7.2 a","Formede træer. Tilstandskrav",["TR4"]], ["7.2 b","Formede træer. Påsætning",["TR4"]], ["7.2 c","Formklippede træer. Klipning",["TR4"]],
+ ["7.2 d","Formede træer. Opbygningsbeskæring",["TR4"]], ["7.2 e","Formede træer. Knudebeskæring",["TR4"]],
+ ["7.3 a_b_c","Frugttræer. Fjernelse af vanris",["TR3"]],
+ ["7.4 a","Allétræer. Etableringsvanding",["TR2"]], ["7.4 b","Allétræer. Fjernelse af vanris",["TR2"]],
+ ["8.1 a","Krat. Tilsyn",["SK2"]], ["8.2 a_b_c","Lund. Tilsyn, fjernelse",["SK3"]], ["8.3 a","Byskov. Tilsyn",["SK6a"]],
+ ["8.4 a_b","Levende hegn. Renholdelse",["SK5"]],
+ ["9.1 a","Rekreative stier. Slåning en gang",["LB3"]], ["9.1 b","Rekreative stier. Slåning to gange",["LB3"]], ["9.1 c","Rekreative stier. Beskæring",["LB3"]],
+ ["9.2 a","Fortidsminder",["GR9"]], ["9.3 a","Plateau og spang. Tilsyn",["BY3"]], ["9.4 a","Piktogramstandere. Tilsyn",["UD4a"]],
+ ["9.5 a","Informationsskilt. Tilsyn, vask",["UD4"]], ["9.6 a","Dyrehegn. Tilsyn",["UD8d"]],
+ ["10.1 a_b_c_d_e_f","Udendørs kunstgræs",["SB4f"]], ["10.2 a_b_c_d_e_f_g","Indendørs kunstgræs",["SB4e"]],
+ ["10.3 a_b_c_d_e","Faldsand. Udjævning",["SB4g"]], ["10.4 a","Gummibelægning. Renholdelse",["SB4a"]],
+ ["10.5 a_b_d","Strandsand. Udjævning",["SB4h"]], ["10.6 a","Rødgrus-baner. Forårsklargøring",["SB4b"]],
+ ["12.2 a_b_c","Grusstier. Afretning",["LB2a"]], ["12.3 a","Anden løs belægning. Ukrudtsbekæmpelse",["LB2c"]],
+ ["13.2 a_b","Trapper og ramper. Fejning",["BY1"]], ["13.3 a","Monumenter. Rengøring",["BY9"]],
+ ["15.4 a","Borde og bænke. Eftersyn",["UD2a","UD2b"]], ["15.4 b","Borde og bænke. Træbeskyttelse",["UD2a","UD2b"]],
+ ["15.7 a","Skaterramper. Inspektion",["UD3b"]], ["15.8 a_b_c_d","Legepladsudstyr",["UD6"]],
+ ["16.1 a","Fejning. Stier, torve, pladser",["FB1a","FB1b"]],
+ ["16.2 a","Skraldespande. Tømning",["UD1"]], ["16.2 b","Skraldespande. Tømning",["UD1"]], ["16.2 c","Skraldespande. Tømning",["UD1"]],
+ ["16.2 d","Skraldespande med sortering",["UD1a"]], ["16.2 e","Skraldespande. Tømning",["UD1"]],
+ ["16.3 a","Ukrudtsbekæmpelse. Stier, torve, pladser",["FB1a","FB1b"]], ["16.3 b","Kantsten og svingsten. Ukrudtsbekæmpelse",["FB3a","FB3b"]],
+ ["16.4 a_e","Tørklosetter. Indvendig rengøring",["UD55a"]], ["16.4 b_c","Toiletter. Indvendig rengøring",["UD55a"]],
+ ["16.4 d_f","Toiletbygninger. Udvendig rengøring",["UD55a"]]
+].map(([n, t, c])=>{
+  const [num, ls=""] = n.split(" ");
+  return {n, t, c, num, ls: ls.split("_").filter(Boolean)};
+});
+// "16.3 a", "16,3a" and "16.3a" all match line 16.3 a; "16.3" matches 16.3 a and b, but not 16.30 or 6.3
+const tilbudHit = (line, q) => {
+  const m = q.replace(/,/g, ".").replace(/\s+/g, "").match(/^(\d+\.\d+)([a-h]?)$/);
+  if(m) return line.num === m[1] && (!m[2] || line.ls.includes(m[2]));
+  const ss = x => x.toLowerCase().replace(/ss/g, "s"); // "grustier" finds Grusstier
+  return q.length > 2 && ss(line.t).includes(ss(q));
 };
-// "16.3 a", "16,3a" and "16.3a" all match
-const squash = s => s.toLowerCase().replace(/,/g, ".").replace(/\s+/g, "");
-const oldHit = (k, q) => q && (OLD[k]||[]).find(o=>squash(o).includes(squash(q)));
-const typeHit = (k, v, q) => !q || k.toLowerCase().includes(q) || v.toLowerCase().includes(q) || groupOf(k).toLowerCase().includes(q) || !!oldHit(k, q);
-// Shown under a type when the search matched its group or an old price-list line but not its own name.
+const TILBUD_OF = {};
+TILBUD.forEach(l=>l.c.forEach(k=>(TILBUD_OF[k] ||= []).push(l)));
+const tilbudFor = (k, q) => q && (TILBUD_OF[k]||[]).find(l=>tilbudHit(l, q));
+const typeHit = (k, v, q) => !q || k.toLowerCase().includes(q) || v.toLowerCase().includes(q) || groupOf(k).toLowerCase().includes(q) || !!tilbudFor(k, q);
+// Shown under a type when the search matched its group or a price-list line but not its own name.
 const groupNote = (k, v, q) => {
   if(!q || v.toLowerCase().includes(q) || k.toLowerCase().includes(q)) return "";
-  const g = groupOf(k).toLowerCase().includes(q) ? groupOf(k).toLowerCase() : (OLD[k]||[])[0] && oldHit(k, q) ? "gamle kort: " + OLD[k][0] : "";
+  const l = tilbudFor(k, q);
+  const g = groupOf(k).toLowerCase().includes(q) ? groupOf(k).toLowerCase() : l ? `tilbudslisten ${l.n.replace(/_/g, ",")}: ${l.t}` : "";
   return g ? `<span class="muted"> · ${esc(g)}</span>` : "";
 };
 
