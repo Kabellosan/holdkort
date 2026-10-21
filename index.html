@@ -218,6 +218,9 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .ask{position:absolute;inset:0;background:#0007;display:flex;align-items:center;justify-content:center;padding:18px;z-index:30}
 .ask>div{background:var(--card);border-radius:20px;padding:20px;max-width:360px;width:100%;display:flex;flex-direction:column;gap:12px;box-shadow:0 10px 40px #0005}
 .ask h2{font-size:20px}
+.tbllist{display:flex;flex-direction:column;gap:6px;max-height:42vh;overflow:auto}
+.tbllist button{text-align:left;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--paper);font:inherit;font-size:16px;color:var(--ink);min-height:48px}
+.tbllist button.on{border-color:var(--moss);border-width:2px;font-weight:600}
 .ask .btn{width:100%;min-height:56px;font-size:17px}
 .reasons{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .reasons .btn{font-weight:600}
@@ -349,6 +352,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     </div>
     <div data-keep><div class="eyebrow" id="overCode"></div><h2 id="overName"></h2></div>
     <button class="btn" id="btnOverFind">⌕ Kun én by eller vej</button>
+    <div class="row tblrow"><span class="grow" id="overTbl">📋 Tilbudsliste: <span class="muted">ingen</span></span><button class="btn" data-tbl>Vis</button></div>
     <div class="row filt" id="overFilt" hidden><span class="grow">Kun i <b id="overFiltName"></b></span><button class="btn ghost" id="btnOverAll">✕ Hele kommunen</button></div>
     <div class="seg" id="overMode" role="group" aria-label="Farver">
       <button data-o="status">Status</button>
@@ -415,6 +419,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div data-keep><div class="eyebrow">Vælg steder</div><h2 id="pickName"></h2></div>
     <div class="muted" id="pickHint">Tryk på de steder, holdet skal tage. Tryk igen for at fjerne et sted. Blå er med, grå er ikke.</div>
     <div class="legend" id="pickLegend" hidden></div>
+    <div class="row tblrow"><span class="grow" id="pickTbl">📋 Tilbudsliste: <span class="muted">ingen</span></span><button class="btn" data-tbl>Vis</button></div>
     <div class="row" data-keep><span class="grow"><b class="num" id="pickCount">0</b> <span class="muted" id="pickOf"></span></span><button class="btn" id="btnPickAll">Hele området</button></div>
     <div class="row" data-keep>
       <button class="btn" id="btnPickCancel">Annullér</button>
@@ -428,6 +433,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="muted" id="spotsHint"></div>
     <div class="row"><span class="grow" id="spotsShow"></span><button class="btn" id="btnSpotsShow">Skift</button></div>
     <div class="legend" id="spotsLegend" hidden></div>
+    <div class="row tblrow"><span class="grow" id="spotsTbl">📋 Tilbudsliste: <span class="muted">ingen</span></span><button class="btn" data-tbl>Vis</button></div>
     <div class="row" data-keep>
       <span class="grow"><b class="num" id="spotsCount">0</b> <span class="muted" id="spotsOf">steder valgt</span></span>
       <button class="btn" id="btnSpotsOwn">📍 Eget punkt</button>
@@ -540,6 +546,16 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <p class="muted" style="margin:0">Tryk på et navn for at tage det med eller fjerne det. "Alle" er hele holdet, men ikke hjælpere: de ser kun opgaver med deres eget navn.</p>
     <button class="btn primary" id="askWhoOk">Gem</button>
     <button class="btn" id="askWhoNo">Annullér</button>
+  </div>
+</div>
+<div class="ask" id="askTbl" hidden role="dialog" aria-modal="true" aria-labelledby="askTblQ">
+  <div>
+    <h2 id="askTblQ">Vis en linje fra tilbudslisten</h2>
+    <p class="muted" style="margin:0">Kommunens eget udvalg af steder bliver vist oven på kortet. Tryk så på de steder, du vil have med.</p>
+    <input id="tblQ" type="search" placeholder="Søg, fx 16.3 eller ukrudt" autocomplete="off">
+    <div class="tbllist" id="tblList"></div>
+    <button class="btn" id="askTblOff">Vis ingen</button>
+    <button class="btn ghost" id="askTblNo">Luk</button>
   </div>
 </div>
 <div class="ask" id="askPhoto" hidden role="dialog" aria-modal="true" aria-labelledby="askPhotoQ">
@@ -896,6 +912,11 @@ const tileGrid = new ol.tilegrid.TileGrid({extent:EXTENT, resolutions:RES, tileS
 const ortoSrc = new ol.source.TileWMS({url:WMS_URL, tileGrid, projection:proj, transition:0,
   params:{SERVICE:"WMS",VERSION:"1.1.1",LAYERS:LAYER_ORTO,FORMAT:"image/jpeg",SERVICENAME:WMS_SERVICE,STYLES:""}});
 const ortoLayer = new ol.layer.Tile({source:ortoSrc, preload:2});
+// A line of the kommune's "Tilbudslisten, Grøn" drawn by their WMS on top of the base map (see TBL below). The layers are
+// pictures only (the old map's info box doesn't open on them), so the app can't read which elements they hold.
+const tblSrc = new ol.source.TileWMS({url:WMS_URL, tileGrid, projection:proj, transition:0,
+  params:{SERVICE:"WMS",VERSION:"1.1.1",LAYERS:"",FORMAT:"image/png",TRANSPARENT:true,SERVICENAME:WMS_SERVICE,STYLES:""}});
+const tblLayer = new ol.layer.Tile({source:tblSrc, visible:false, opacity:0.9});
 // Plain street map (OpenStreetMap), reprojected to EPSG:25832 by OpenLayers. No preload: OSM's tile policy asks for light use.
 const osmLayer = new ol.layer.Tile({source:new ol.source.OSM({attributions:[], maxZoom:19}), className:"osm-base", visible:false});
 
@@ -1065,7 +1086,7 @@ const pinSrc = new ol.source.Vector();
 const PIN_STYLE = new ol.style.Style({zIndex:50, text:new ol.style.Text({text:"📌", font:"30px sans-serif", offsetY:-14, stroke:new ol.style.Stroke({color:"#fff", width:3})})});
 const PIN_NEW = new ol.style.Style({zIndex:51, text:new ol.style.Text({text:"📌", font:"36px sans-serif", offsetY:-16, backgroundFill:new ol.style.Fill({color:"#ffffffcc"}), padding:[2,4,2,4]})});
 const pinLayer = new ol.layer.Vector({source:pinSrc, style:f=>f.get("draft") ? PIN_NEW : PIN_STYLE});
-const map = new ol.Map({target:"map", layers:[ortoLayer, osmLayer, filterLayer, areaLayer, overLayer, elLayer, labelLayer, editLayer, pinLayer, gpsLayer],
+const map = new ol.Map({target:"map", layers:[ortoLayer, osmLayer, tblLayer, filterLayer, areaLayer, overLayer, elLayer, labelLayer, editLayer, pinLayer, gpsLayer],
   view:new ol.View({projection:proj, center:START_CENTER, zoom:START_ZOOM, resolutions:RES, constrainResolution:true}),
   controls: ol.control.defaults.defaults({attribution:false, rotate:false})});
 const store = {get(k,d){try{const v=localStorage.getItem(k);return v ? (JSON.parse(v) ?? d) : d}catch(e){return d}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
@@ -1098,7 +1119,7 @@ function toast(t, ms=2600, act){const el=$("toast"), b=$("toastAct"); $("toastTx
 const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick","pPlace","pPart","pSpots"];
 const curPane = () => PANES.find(p=>!$(p).hidden);
 function pane(id){ if(id!==curPane()) fold(false); PANES.forEach(p=>$(p).hidden = p!==id);
-  $("sheet").classList.toggle("can-fold", !!$(id).querySelector(":scope>[data-keep]")); }
+  $("sheet").classList.toggle("can-fold", !!$(id).querySelector(":scope>[data-keep]")); showTbl(); }
 // Fold the sheet down to the rows marked data-keep (its main buttons), so more of the map shows
 function fold(on){ const s = $("sheet"); if(!s) return; s.classList.toggle("folded", on);
   $("grip").setAttribute("aria-expanded", String(!on)); $("grip").setAttribute("aria-label", on ? "Vis hele panelet" : "Gør panelet mindre"); }
@@ -2075,6 +2096,77 @@ $("btnSpotsOk").onclick = async ()=>{
   await elCachePut(t.id, keep, areaKey(t)); // already on the phone, so no need to ask the kommune again
   endSpots(); toast(`${sp.length} ${sp.length===1 ? "sted" : "steder"} gemt`); openTask(t);
 };
+
+// ================= TILBUDSLISTEN ON THE MAP =================
+// The kommune's WMS has one picture layer per price-list line (title "16.3 a Ukrudtsbekæmpelse…", legend "TBL 16_3_a").
+// Their names are read from the WMS capabilities (once a month per phone), so nothing here guesses them.
+// Shown under the element layers in Tryk på stederne, Vælg steder and Overblik, so a koordinator can tap exactly
+// the places the kommune has in that line. Not checked against the live server (blocked from the cloud container).
+// var: pane() calls showTbl() and may run before this line
+var TBL_PANES = ["pSpots","pPick","pOver"];
+var TBL = {list:null, on:null};
+function tblParse(xml){
+  const doc = new DOMParser().parseFromString(xml, "text/xml"), out = [];
+  for(const l of doc.getElementsByTagName("Layer")){
+    const kid = n => [...l.children].find(c=>c.localName===n)?.textContent.trim() || "";
+    const name = kid("Name"), title = kid("Title");
+    const m = title.match(/^(\d+\.\d+)\s*((?:[a-z](?:_|\s|$))*)\s*(.*)$/i);
+    if(!name || !m) continue;
+    out.push({name, title, num:m[1], ls:m[2].toLowerCase().split(/[_\s]+/).filter(Boolean), t:m[3]});
+  }
+  const key = x => x.num.split(".").map(Number);
+  return out.sort((a,b)=>{ const [a1,a2]=key(a), [b1,b2]=key(b); return a1-b1 || a2-b2 || a.title.localeCompare(b.title); });
+}
+async function tblLoad(force){
+  const c = store.get("tblCaps", null);
+  if(!force && c?.list?.length && Date.now()-c.at < 30*864e5) return TBL.list = c.list;
+  const url = `${WMS_URL}?SERVICENAME=${WMS_SERVICE}&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetCapabilities`;
+  const r = await fetch(url, {signal:AbortSignal.timeout?.(20000)});
+  if(!r.ok) throw new Error("HTTP " + r.status);
+  const list = tblParse(await r.text());
+  if(list.length) store.set("tblCaps", {at:Date.now(), list});
+  return TBL.list = list;
+}
+// The overlay shows only on the panes it helps with; the choice is kept while switching between them
+function showTbl(){
+  if(!TBL) return;
+  const p = curPane(), on = !!TBL.on && TBL_PANES.includes(p);
+  tblLayer.setVisible(on);
+  const label = TBL.on ? `📋 <b>${esc(TBL.on.num)} ${esc(TBL.on.ls.join(","))}</b> ${esc(TBL.on.t)}` : `📋 Tilbudsliste: <span class="muted">ingen</span>`;
+  TBL_PANES.forEach(id=>{ const el = $(id.slice(1).toLowerCase()+"Tbl"); if(el) el.innerHTML = label; });
+  document.querySelectorAll("[data-tbl]").forEach(b=>b.textContent = TBL.on ? "Skift" : "Vis");
+}
+function setTbl(l){
+  TBL.on = l || null;
+  if(l){ tblSrc.updateParams({LAYERS:l.name}); toast(`${l.num} ${l.ls.join(",")} vises på kortet`); }
+  $("askTbl").hidden = true; showTbl();
+}
+function tblRender(){
+  const el = $("tblList"), q = $("tblQ").value.trim().toLowerCase();
+  if(!TBL.list){ el.innerHTML = `<div class="muted">Henter tilbudslisten fra kommunen…</div>`; return; }
+  if(!TBL.list.length){ el.innerHTML = `<div class="muted">Kommunens kort har ingen tilbudsliste lige nu.</div><button data-retry>Prøv igen</button>`; }
+  else {
+    const hits = TBL.list.filter(l=>!q || tilbudHit(l, q) || l.title.toLowerCase().includes(q));
+    el.innerHTML = hits.map(l=>`<button data-n="${esc(l.name)}" class="${TBL.on?.name===l.name?"on":""}"><b>${esc(l.num)} ${esc(l.ls.join(","))}</b> ${esc(l.t)}</button>`).join("")
+      || `<div class="muted">Ingen linje passer på "${esc(q)}".</div>`;
+  }
+  el.querySelectorAll("[data-n]").forEach(b=>b.onclick=()=>setTbl(TBL.list.find(l=>l.name===b.dataset.n)));
+  el.querySelectorAll("[data-retry]").forEach(b=>b.onclick=()=>openTbl(true));
+}
+async function openTbl(force){
+  $("askTbl").hidden = false; $("tblQ").value = ""; $("askTblOff").hidden = !TBL.on;
+  if(force) TBL.list = null;
+  tblRender();
+  if(TBL.list) return;
+  try { await tblLoad(force); }
+  catch(e){ $("tblList").innerHTML = `<div class="muted">Kunne ikke hente tilbudslisten fra kommunen. Tjek forbindelsen.</div><button data-retry>Prøv igen</button>`;
+    $("tblList").querySelector("[data-retry]").onclick = ()=>openTbl(true); return; }
+  tblRender();
+}
+document.querySelectorAll("[data-tbl]").forEach(b=>b.onclick=()=>openTbl());
+$("tblQ").oninput = tblRender;
+$("askTblOff").onclick = ()=>setTbl(null);
+$("askTblNo").onclick = ()=>{ $("askTbl").hidden = true; };
 
 // ================= NEW TASK (full screen) =================
 let picked = new Set(), newShape = null, assignees = new Set(), people = [];
