@@ -28,23 +28,24 @@ const say = (t, c) => { const p = document.createElement("p"); p.className = c |
   const [x, y] = proj4("EPSG:4326", "EPSG:25832", [9.403, 55.968]).map(Math.round); // Nørre Snede
   const bbox = [x-1000, y-700, x+1000, y+700], W = 1600, H = 1120;
   const url = `${WMS}?SERVICENAME=${SVC}&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=${encodeURIComponent(name)}&STYLES=&SRS=EPSG:25832&BBOX=${bbox.join(",")}&WIDTH=${W}&HEIGHT=${H}&FORMAT=image/png&TRANSPARENT=true`;
-  let blob;
-  try{
-    const r = await fetch(url);
-    if(!r.ok) throw new Error("HTTP " + r.status);
-    blob = await r.blob();
-    say(`2. Billedet kom (${Math.round(blob.size/1024)} kB, ${blob.type}) ✓`, "ok");
-  }catch(e){ say("2. Kommunens server lod ikke siden hente billedet: " + e.message + ". Så virker idéen ikke direkte.", "bad");
-    const img = new Image(); img.src = url; out.append(img); return; }
-  try{
-    const bmp = await createImageBitmap(blob), c = document.createElement("canvas"); c.width = bmp.width; c.height = bmp.height;
-    const g = c.getContext("2d"); g.drawImage(bmp, 0, 0);
-    const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0;
-    for(let i = 3; i < d.length; i += 4) if(d[i] > 0) n++;
-    say(`3. Farverne kan læses ✓ ${n} farvede punkter af ${c.width*c.height}.`, "ok");
-    say(n ? "Det virker. Skriv til Claude, at testen lykkedes." : "Billedet er tomt. Send et skærmbillede til Claude.", n ? "ok" : "bad");
-    out.append(c);
-  }catch(e){ say("3. Farverne kunne ikke læses: " + e.message, "bad"); }
+  // The picture itself may be shown but not read (no CORS on image/png). Try other answers from the same server:
+  // vector formats would even give the lines themselves.
+  const base = `${WMS}?SERVICENAME=${SVC}&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=${encodeURIComponent(name)}&STYLES=&SRS=EPSG:25832&BBOX=${bbox.join(",")}&WIDTH=${W}&HEIGHT=${H}&TRANSPARENT=true&FORMAT=`;
+  const fmts = ["image/png", "image/png; mode=8bit", "image/gif", "image/jpeg", "image/svg+xml", "application/vnd.google-earth.kml+xml", "kml", "application/json", "geojson", "application/x-pdf"];
+  let n = 0;
+  for(const f of fmts){
+    try{
+      const r = await fetch(base + encodeURIComponent(f));
+      const b = await r.blob(), head = (await b.slice(0, 80).text()).replace(/[^\x20-\x7e]/g, "·");
+      say(`${f}: læst ✓ HTTP ${r.status}, ${b.type}, ${Math.round(b.size/1024)} kB: ${head}`, "ok"); n++;
+    }catch(e){ say(`${f}: blokeret (${e.message})`, "bad"); }
+  }
+  for(const [t, u] of [["GetLegendGraphic", `${WMS}?SERVICENAME=${SVC}&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetLegendGraphic&LAYER=${encodeURIComponent(name)}&FORMAT=image/png`],
+                       ["DescribeLayer", `${WMS}?SERVICENAME=${SVC}&SERVICE=WMS&VERSION=1.1.1&REQUEST=DescribeLayer&LAYERS=${encodeURIComponent(name)}`]]){
+    try{ const r = await fetch(u), x = (await r.text()).slice(0, 200); say(`${t}: læst ✓ ${x}`, "ok"); }catch(e){ say(`${t}: blokeret (${e.message})`, "bad"); }
+  }
+  say(n ? "Send et skærmbillede af det hele til Claude." : "Alt var blokeret. Send et skærmbillede til Claude.");
+  const img = new Image(); img.src = base + "image/png"; out.append(img);
 })();
 </script>
 </body></html>
