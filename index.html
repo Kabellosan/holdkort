@@ -550,6 +550,14 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <button class="btn" id="askWhoNo">Annullér</button>
   </div>
 </div>
+<div class="ask" id="askOverlap" hidden role="dialog" aria-modal="true" aria-labelledby="askOverlapQ">
+  <div>
+    <h2 id="askOverlapQ">Det ligger her</h2>
+    <p class="muted" style="margin:0" id="askOverlapSub"></p>
+    <div class="tbllist" id="overlapList"></div>
+    <button class="btn primary" id="askOverlapNo">Færdig</button>
+  </div>
+</div>
 <div class="ask" id="askTbl" hidden role="dialog" aria-modal="true" aria-labelledby="askTblQ">
   <div>
     <h2 id="askTblQ">Vis en linje fra tilbudslisten</h2>
@@ -2008,22 +2016,50 @@ function spotTap(e){
     p.info.set(s.id, s); p.ids.add(s.id); elSrc.addFeature(ownFeat(s)); p.own = false;
     spotsCount(); toast(`📍 ${s.name} er med`); return;
   }
-  const hits = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:12}).filter(f=>!spotHidden(f));
+  const hits = underFinger(e, f=>!spotHidden(f));
   if(!hits.length) return;
-  const f = hits.slice().sort((a,b)=>spotSize(a) - spotSize(b))[0], id = f.getId();
+  const msg = spotToggle(hits[0]);
+  spotsCount();
+  overlapToast(msg, hits, f=>{ spotToggle(f); spotsCount(); }, f=>pick?.ids.has(f.getId()));
+}
+function spotToggle(f){
+  const p = pick, id = f.getId();
   if(p.ids.has(id)){
     p.ids.delete(id);
     if(f.get("_own")!=null){ p.info.delete(id); elSrc.removeFeature(f); }
-    toast(`${titleOf(f)} er taget ud`);
-  } else {
-    const [x0,y0,x1,y1] = f.getGeometry().getExtent();
-    p.info.delete(id); // a spot taken out and put back goes to the end, in tapping order
-    p.info.set(id, {id, code:f.get("elementkode"), box:[Math.floor(x0), Math.floor(y0), Math.ceil(x1), Math.ceil(y1)], street:f.get("vejnavn") || f.get("_street") || null});
-    p.ids.add(id);
-    toast(`${titleOf(f)} er med`);
+    return `${titleOf(f)} er taget ud`;
   }
-  spotsCount();
+  const [x0,y0,x1,y1] = f.getGeometry().getExtent();
+  p.info.delete(id); // a spot taken out and put back goes to the end, in tapping order
+  p.info.set(id, {id, code:f.get("elementkode"), box:[Math.floor(x0), Math.floor(y0), Math.ceil(x1), Math.ceil(y1)], street:f.get("vejnavn") || f.get("_street") || null});
+  p.ids.add(id);
+  return `${titleOf(f)} er med`;
 }
+// Several things under the finger (a hedge on a lawn beside a path, Captain 2026-10-21): the tap takes the smallest,
+// and the toast offers "Vælg ▾" with all of them, so the others can be reached too without an extra step every time
+function underFinger(e, keep=()=>true){
+  const seen = new Set();
+  return map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:12})
+    .filter(f=>keep(f) && !seen.has(f.getId()) && seen.add(f.getId()))
+    .sort((a,b)=>spotSize(a) - spotSize(b)).slice(0, 8);
+}
+function overlapToast(msg, hits, onPick, isOn){
+  if(hits.length < 2){ toast(msg); return; }
+  toast(`${msg} · ${hits.length} ting her`, 6000, {label:"Vælg ▾", fn:()=>openOverlap(hits, onPick, isOn)});
+}
+function openOverlap(hits, onPick, isOn){
+  const single = !isOn; // task view: pick one to open; picking spots: tick as many as you like
+  $("askOverlapSub").textContent = single ? "Tryk på den, du vil åbne." : "Tryk for at tage med eller tage ud. ✓ er med.";
+  const render = ()=>{
+    $("overlapList").innerHTML = hits.map((f, i)=>`<button data-i="${i}" class="${!single && isOn(f) ? "on" : ""}">${!single ? (isOn(f) ? "✓ " : "○ ") : ""}<b>${esc(titleOf(f))}</b>${subOf(f) ? `<br><span class="muted">${esc(subOf(f))}</span>` : ""}</button>`).join("");
+    $("overlapList").querySelectorAll("[data-i]").forEach(b=>b.onclick=()=>{
+      onPick(hits[+b.dataset.i]);
+      if(single) $("askOverlap").hidden = true; else render();
+    });
+  };
+  render(); $("askOverlap").hidden = false;
+}
+$("askOverlapNo").onclick = ()=>{ $("askOverlap").hidden = true; };
 // While picking, every type gets a type colour in the order it turns up on the map, kept while panning, so you
 // see at once what things are. With Vis alt there are too many types for that, so each group gets one instead
 // (Græs, Hæk og pur, Fast belægning …, the kommune map's folders). One type alone stays grey.
@@ -3453,9 +3489,8 @@ map.on("singleclick", e=>{
   if(partEd){ partTap(e.coordinate); return; }
   if(pick?.spots){ spotTap(e); return; }
   if(pick){ // tapping a spot puts it in the task or takes it out
-    const f = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:0})[0]
-           || map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:12})[0];
-    if(f){ const id = f.getId(); pick.ids.has(id) ? pick.ids.delete(id) : pick.ids.add(id); pickCount(); }
+    const hits = underFinger(e), tog = f=>{ const id = f.getId(); pick.ids.has(id) ? pick.ids.delete(id) : pick.ids.add(id); pickCount(); };
+    if(hits.length){ tog(hits[0]); if(hits.length > 1) overlapToast(`${titleOf(hits[0])} ${pick.ids.has(hits[0].getId()) ? "er med" : "er taget ud"}`, hits, tog, f=>pick?.ids.has(f.getId())); }
     return;
   }
   if(place && !task){ // place view: mark the tapped element and say what it is
@@ -3489,7 +3524,9 @@ map.on("singleclick", e=>{
     if(open && selSet.size > 1) askClear(); else if(open) select(null);
     return;
   }
-  if(!open){ select(hits[0]); return; }
+  if(!open){ select(hits[0]);
+    const all = underFinger(e); if(all.length > 1) overlapToast(titleOf(hits[0]), all, f=>select(f));
+    return; }
   // Tapping right on a marked element removes it; otherwise add the nearest unmarked one (beds can overlap)
   const exact = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:0}).find(h=>selSet.has(h));
   const add = !exact && hits.find(h=>!selSet.has(h));
