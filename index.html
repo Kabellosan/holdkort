@@ -918,7 +918,8 @@ const ortoLayer = new ol.layer.Tile({source:ortoSrc, preload:2});
 // pictures only (the old map's info box doesn't open on them), so the app can't read which elements they hold.
 const tblSrc = new ol.source.TileWMS({url:WMS_URL, tileGrid, projection:proj, transition:0,
   params:{SERVICE:"WMS",VERSION:"1.1.1",LAYERS:"",FORMAT:"image/png",TRANSPARENT:true,SERVICENAME:WMS_SERVICE,STYLES:""}});
-const tblLayer = new ol.layer.Tile({source:tblSrc, visible:false, opacity:0.9});
+// Drawn on top of the elements (Captain couldn't see it under the coloured paths in Vis alt); see-through so picks show
+const tblLayer = new ol.layer.Tile({source:tblSrc, visible:false, opacity:0.75});
 // Plain street map (OpenStreetMap), reprojected to EPSG:25832 by OpenLayers. No preload: OSM's tile policy asks for light use.
 const osmLayer = new ol.layer.Tile({source:new ol.source.OSM({attributions:[], maxZoom:19}), className:"osm-base", visible:false});
 
@@ -1088,7 +1089,7 @@ const pinSrc = new ol.source.Vector();
 const PIN_STYLE = new ol.style.Style({zIndex:50, text:new ol.style.Text({text:"📌", font:"30px sans-serif", offsetY:-14, stroke:new ol.style.Stroke({color:"#fff", width:3})})});
 const PIN_NEW = new ol.style.Style({zIndex:51, text:new ol.style.Text({text:"📌", font:"36px sans-serif", offsetY:-16, backgroundFill:new ol.style.Fill({color:"#ffffffcc"}), padding:[2,4,2,4]})});
 const pinLayer = new ol.layer.Vector({source:pinSrc, style:f=>f.get("draft") ? PIN_NEW : PIN_STYLE});
-const map = new ol.Map({target:"map", layers:[ortoLayer, osmLayer, tblLayer, filterLayer, areaLayer, overLayer, elLayer, labelLayer, editLayer, pinLayer, gpsLayer],
+const map = new ol.Map({target:"map", layers:[ortoLayer, osmLayer, filterLayer, areaLayer, overLayer, elLayer, tblLayer, labelLayer, editLayer, pinLayer, gpsLayer],
   view:new ol.View({projection:proj, center:START_CENTER, zoom:START_ZOOM, resolutions:RES, constrainResolution:true}),
   controls: ol.control.defaults.defaults({attribution:false, rotate:false})});
 const store = {get(k,d){try{const v=localStorage.getItem(k);return v ? (JSON.parse(v) ?? d) : d}catch(e){return d}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
@@ -2110,7 +2111,7 @@ $("btnSpotsOk").onclick = async ()=>{
 // the places the kommune has in that line. Not checked against the live server (blocked from the cloud container).
 // var: pane() calls showTbl() and may run before this line
 var TBL_PANES = ["pSpots","pPick","pOver"];
-var TBL = {list:null, on:null};
+var TBL = {list:null, on:null}; // on: the shown line, kept per phone (localStorage tblOn)
 function tblParse(xml){
   const doc = new DOMParser().parseFromString(xml, "text/xml"), out = [];
   for(const l of doc.getElementsByTagName("Layer")){
@@ -2143,7 +2144,7 @@ function showTbl(){
   document.querySelectorAll("[data-tbl]").forEach(b=>b.textContent = TBL.on ? "Skift" : "Vis");
 }
 function setTbl(l){
-  TBL.on = l || null;
+  TBL.on = l || null; store.set("tblOn", TBL.on);
   if(l){ tblSrc.updateParams({LAYERS:l.name}); toast(`${l.num} ${l.ls.join(",")} vises på kortet`); }
   $("askTbl").hidden = true; showTbl();
 }
@@ -2173,6 +2174,7 @@ document.querySelectorAll("[data-tbl]").forEach(b=>b.onclick=()=>openTbl());
 $("tblQ").oninput = tblRender;
 $("askTblOff").onclick = ()=>setTbl(null);
 $("askTblNo").onclick = ()=>{ $("askTbl").hidden = true; };
+{ const l = store.get("tblOn", null); if(l?.name){ TBL.on = l; tblSrc.updateParams({LAYERS:l.name}); showTbl(); } }
 
 // ================= NEW TASK (full screen) =================
 let picked = new Set(), newShape = null, assignees = new Set(), people = [];
