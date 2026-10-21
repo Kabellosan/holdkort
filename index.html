@@ -1196,8 +1196,16 @@ function packSurf(p){
     cs.filter(c=>p.codes.includes(c)).forEach(c=>{ (m[c] ||= []).includes(v) || m[c].push(v); }); });
   return m;
 }
-const surfOk = (m, f) => { const s = m?.[f.get("elementkode")]; if(!s) return true; const v = surfOf(f).toLowerCase(); return s.some(a=>v.includes(String(a).toLowerCase())); };
-const surfText = m => m ? Object.entries(m).map(([c, v])=>`${(CODES[c] || c).toLowerCase()} kun i ${v.join(" og ")}`).join(", ") : "";
+// "beton" = must be beton; "!asfalt" = anything but asfalt (also no belægning registered)
+const surfOk = (m, f) => { const s = m?.[f.get("elementkode")]; if(!s) return true;
+  const v = surfOf(f).toLowerCase(), has = a => v.includes(a.replace(/^!/, "").toLowerCase());
+  const yes = s.filter(a=>!a.startsWith("!")), no = s.filter(a=>a.startsWith("!"));
+  return (!yes.length || yes.some(has)) && !no.some(has); };
+const surfText = m => { if(!m) return "";
+  const say = v => { const yes = v.filter(a=>!a.startsWith("!")), no = v.filter(a=>a.startsWith("!")).map(a=>a.slice(1));
+    return [yes.length ? "kun i " + yes.join(" og ") : "", no.length ? "ikke " + no.join(" eller ") : ""].filter(Boolean).join(", "); };
+  const all = Object.values(m).map(say), same = all.every(x=>x===all[0]);
+  return same && Object.keys(m).length > 1 ? all[0] : Object.entries(m).map(([c, v])=>`${(CODES[c] || c).toLowerCase()} ${say(v)}`).join(", "); };
 // Types named by the packages they fill (biggest first), then any other types: "Fast belægning + Pur"
 function packNames(codes){
   const left = new Set(codes), names = [];
