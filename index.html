@@ -856,9 +856,12 @@ const TILBUD = [
   const [num, ls=""] = n.split(" ");
   return {n, t, c, num, ls: ls.split("_").filter(Boolean)};
 });
-// "16.3 a", "16,3a" and "16.3a" all match line 16.3 a; "16.3" matches 16.3 a and b, but not 16.30 or 6.3
+// "16.3 a", "16,3a" and "16.3a" all match line 16.3 a; "16.3" matches 16.3 a and b, but not 16.30 or 6.3; "16" matches every 16.x
 const tilbudHit = (line, q) => {
-  const m = q.replace(/,/g, ".").replace(/\s+/g, "").match(/^(\d+\.\d+)([a-h]?)$/);
+  const sq = q.replace(/,/g, ".").replace(/\s+/g, "");
+  const whole = sq.match(/^(\d+)\.?$/); // "16" or "16." = every 16.x line
+  if(whole) return line.num.split(".")[0] === whole[1];
+  const m = sq.match(/^(\d+\.\d+)([a-h]?)$/);
   if(m) return line.num === m[1] && (!m[2] || line.ls.includes(m[2]));
   const ss = x => x.toLowerCase().replace(/ss/g, "s"); // "grustier" finds Grusstier
   return q.length > 2 && ss(line.t).includes(ss(q));
