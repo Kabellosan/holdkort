@@ -51,6 +51,10 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
 #btnFlaw[hidden]{display:none}
 #btnFlaw[aria-pressed="true"]{background:#b45309;color:#fff;border-color:#b45309}
 /* ⚠️ Kortfejl tab */
+/* Pick by surface (belægning): the tilbudsliste picks some types only with beton or granit */
+.surf{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}
+.surf button{border-radius:999px;border:2px solid var(--line);background:var(--card);padding:6px 12px;min-height:40px;font-size:15px}
+.surf button.on{border-color:var(--moss2);background:var(--moss);color:#fff}
 .frow{display:flex;gap:8px;align-items:stretch;border-top:1px solid var(--line);padding:10px 0}
 .frow .fgo{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;font-size:15px;color:var(--ink);line-height:1.35}
 .frow .btn{align-self:center}
@@ -434,6 +438,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="muted" id="pickHint">Tryk på de steder, holdet skal tage. Tryk igen for at fjerne et sted. Blå er med, grå er ikke.</div>
     <div class="legend" id="pickLegend" hidden></div>
     <div class="row tblrow"><span class="grow" id="pickTbl">📋 Tilbudsliste: <span class="muted">ingen</span></span><button class="btn" data-tbl>Vis</button></div>
+    <div class="surf" id="pickSurf" hidden></div>
     <div class="row" data-keep><span class="grow"><b class="num" id="pickCount">0</b> <span class="muted" id="pickOf"></span></span><button class="btn" id="btnPickAll">Hele området</button></div>
     <div class="row" data-keep>
       <button class="btn" id="btnPickCancel">Annullér</button>
@@ -447,6 +452,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="muted" id="spotsHint"></div>
     <div class="row"><span class="grow" id="spotsShow"></span><button class="btn" id="btnSpotsShow">Skift</button></div>
     <div class="legend" id="spotsLegend" hidden></div>
+    <div class="surf" id="spotsSurf" hidden></div>
     <div class="row tblrow"><span class="grow" id="spotsTbl">📋 Tilbudsliste: <span class="muted">ingen</span></span><button class="btn" data-tbl>Vis</button></div>
     <div class="row" data-keep>
       <span class="grow"><b class="num" id="spotsCount">0</b> <span class="muted" id="spotsOf">steder valgt</span></span>
@@ -887,7 +893,7 @@ const TILBUD = [
  ["16.1 a","Fejning. Stier, torve, pladser",["FB1a","FB1b"]],
  ["16.2 a","Skraldespande. Tømning",["UD1"]], ["16.2 b","Skraldespande. Tømning",["UD1"]], ["16.2 c","Skraldespande. Tømning",["UD1"]],
  ["16.2 d","Skraldespande med sortering",["UD1a"]], ["16.2 e","Skraldespande. Tømning",["UD1"]],
- ["16.3 a","Ukrudtsbekæmpelse. Stier, torve, pladser",["FB1a","FB1c","FB1j","FB2a"]], ["16.3 b","Kantsten og svingsten. Ukrudtsbekæmpelse",["FB3a","FB3b"]],
+ ["16.3 a","Ukrudtsbekæmpelse. Stier, torve og pladser, andre faste belægninger, heller samt fortove med beton- eller granitbelægning",["FB1a","FB1b","FB1c","FB1j","FB2a"]], ["16.3 b","Kantsten og svingsten. Ukrudtsbekæmpelse",["FB3a","FB3b"]],
  ["16.4 a_e","Tørklosetter. Indvendig rengøring",["UD55a"]], ["16.4 b_c","Toiletter. Indvendig rengøring",["UD55a"]],
  ["16.4 d_f","Toiletbygninger. Udvendig rengøring",["UD55a"]]
 ].map(([n, t, c])=>{
@@ -1922,6 +1928,7 @@ function pickCount(){
   $("pickCount").textContent = pick.ids.size;
   $("pickOf").textContent = `valgt af ${taskAll.length} i området`;
   pickLegend($("pickLegend"));
+  surfRow($("pickSurf"), taskAll, "Vælg efter belægning:");
   $("pickHint").textContent = "Tryk på de steder, holdet skal tage. Tryk igen for at fjerne et sted. " + (pick.tcol?.size ? "Farvet er med, grå er ikke." : "Blå er med, grå er ikke.");
   elLayer.changed();
 }
@@ -1988,6 +1995,8 @@ function spotsCount(){
   $("btnSpotsOwn").textContent = p.own ? "✕ Intet punkt" : "📍 Eget punkt";
   $("btnSpotsOwn").classList.toggle("on", p.own);
   pickLegend($("spotsLegend"));
+  const view = map.getView().calculateExtent(map.getSize());
+  surfRow($("spotsSurf"), elSrc.getFeatures().filter(f=>f.get("elementkode") && !spotHidden(f) && f.getGeometry().intersectsExtent(view)), "Vælg alt på skærmen med:");
   $("spotsShow").innerHTML = p.show ? `Viser kun: <b>${esc(shortCodes([...p.show]))}</b>` : `Viser: <b>alt</b>`;
   const v = map.getView().calculateExtent(map.getSize());
   $("spotsHint").innerHTML = p.own ? "<b>Tryk på kortet, hvor punktet skal være.</b>"
@@ -2053,6 +2062,26 @@ function spotToggle(f){
   p.info.set(id, {id, code:f.get("elementkode"), box:[Math.floor(x0), Math.floor(y0), Math.ceil(x1), Math.ceil(y1)], street:f.get("vejnavn") || f.get("_street") || null});
   p.ids.add(id);
   return `${titleOf(f)} er med`;
+}
+// Pick by surface (Captain 2026-10-21: tilbudsliste 16.3 a is the paved types with beton or granit, a fortov in asphalt
+// isn't in it): one chip per belaegningstype among the elements (the whole area in Vælg steder, what's on the screen in
+// Tryk på stederne); a tap takes them all, or takes them all out again when they're all in
+const surfOf = f => String(f.get("belaegningstype") || "").trim();
+function surfRow(el, fs, label){
+  const by = new Map();
+  fs.forEach(f=>{ const v = surfOf(f); if(!v || /^ukendt/i.test(v)) return; const k = v.toLowerCase(); if(!by.has(k)) by.set(k, {v, fs:[]}); by.get(k).fs.push(f); });
+  el.hidden = !by.size; if(!by.size){ el.innerHTML = ""; return; }
+  const groups = [...by.values()].sort((a,b)=>b.fs.length - a.fs.length);
+  const allIn = g => g.fs.every(f=>pick.ids.has(f.getId()));
+  el.innerHTML = `<span class="muted">${label}</span>` + groups.map((g, i)=>`<button data-s="${i}" class="${allIn(g) ? "on" : ""}">${esc(g.v[0].toUpperCase() + g.v.slice(1))} <b class="num">${g.fs.length}</b></button>`).join("");
+  el.querySelectorAll("[data-s]").forEach(b=>b.onclick=()=>{
+    const g = groups[+b.dataset.s], out = allIn(g);
+    g.fs.forEach(f=>{ const on = pick.ids.has(f.getId());
+      if(pick.spots){ if(on===out) spotToggle(f); }
+      else if(out) pick.ids.delete(f.getId()); else pick.ids.add(f.getId()); });
+    toast(`${g.fs.length} med ${g.v.toLowerCase()} ${out ? "er taget ud" : "er med"}`);
+    pick.spots ? spotsCount() : pickCount();
+  });
 }
 // Several things under the finger (a hedge on a lawn beside a path, Captain 2026-10-21): the tap takes the smallest,
 // and the toast offers "Vælg ▾" with all of them, so the others can be reached too without an extra step every time
