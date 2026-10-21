@@ -28,30 +28,24 @@ const say = (t, c) => { const p = document.createElement("p"); p.className = c |
   const [x, y] = proj4("EPSG:4326", "EPSG:25832", [9.403, 55.968]).map(Math.round); // Nørre Snede
   const bbox = [x-1000, y-700, x+1000, y+700], W = 1600, H = 1120;
   const url = `${WMS}?SERVICENAME=${SVC}&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=${encodeURIComponent(name)}&STYLES=&SRS=EPSG:25832&BBOX=${bbox.join(",")}&WIDTH=${W}&HEIGHT=${H}&FORMAT=image/png&TRANSPARENT=true`;
-  // Round 2 (2026-10-21): every GetMap format was blocked, but GetLegendGraphic and DescribeLayer could be read.
-  // DescribeLayer may name a WFS behind the layer; then the app could read the kommune's own 16.3 a table.
-  const q = `SERVICENAME=${SVC}&SERVICE=WMS&VERSION=1.1.1`, L = encodeURIComponent(name);
-  try{
-    const x = await (await fetch(`${WMS}?${q}&REQUEST=DescribeLayer&LAYERS=${L}`)).text();
-    say("DescribeLayer:", "ok"); const pre = document.createElement("pre"); pre.style.whiteSpace = "pre-wrap"; pre.textContent = x.slice(0, 1500); out.append(pre);
-    const d = new DOMParser().parseFromString(x, "text/xml"), ld = d.querySelector("LayerDescription"), qy = d.querySelector("Query");
-    const ows = ld?.getAttribute("owsURL") || ld?.getAttribute("wfs"), tn = qy?.getAttribute("typeName");
-    if(ows && tn){
-      const u = `${ows}${ows.includes("?") ? "&" : "?"}SERVICE=WFS&VERSION=1.1.0&REQUEST=GetFeature&TYPENAME=${encodeURIComponent(tn)}&MAXFEATURES=3&OUTPUTFORMAT=application/json`;
-      try{ const t = await (await fetch(u)).text(); say("WFS bag laget: læst ✓ " + t.slice(0, 400), "ok"); }catch(e){ say("WFS bag laget: blokeret (" + e.message + ") " + u, "bad"); }
-    }
-  }catch(e){ say("DescribeLayer: blokeret (" + e.message + ")", "bad"); }
-  // Variants of GetMap, in case the server only lets some spellings through
-  const tries = [
-    ["request=getmap (små bogstaver)", `${WMS}?servicename=${SVC}&service=WMS&version=1.1.1&request=getmap&layers=${L}&styles=&srs=EPSG:25832&bbox=${bbox.join(",")}&width=400&height=280&format=image/png&transparent=true`],
-    ["WMS 1.3.0", `${WMS}?SERVICENAME=${SVC}&SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=${L}&STYLES=&CRS=EPSG:25832&BBOX=${bbox.join(",")}&WIDTH=400&HEIGHT=280&FORMAT=image/png&TRANSPARENT=true`],
-    ["GetFeatureInfo", `${WMS}?${q}&REQUEST=GetFeatureInfo&LAYERS=${L}&QUERY_LAYERS=${L}&STYLES=&SRS=EPSG:25832&BBOX=${bbox.join(",")}&WIDTH=400&HEIGHT=280&X=200&Y=140&INFO_FORMAT=text/plain&FEATURE_COUNT=5`],
-  ];
+  // Round 3 (2026-10-21): "request=getmap" in small letters could be read, the same request in capitals could not.
+  // Is it the spelling or the size? And can the vector formats be had the same way (they would give the lines)?
+  const L = encodeURIComponent(name), lo = (w, h, f) => `${WMS}?servicename=${SVC}&service=WMS&version=1.1.1&request=getmap&layers=${L}&styles=&srs=EPSG:25832&bbox=${bbox.join(",")}&width=${w}&height=${h}&format=${encodeURIComponent(f)}&transparent=true`;
+  const tries = [["små, 400 px", lo(400, 280, "image/png")], ["små, 1600 px", lo(1600, 1120, "image/png")], ["små, 2048 px", lo(2048, 1434, "image/png")],
+    ["STORE, 400 px", lo(400, 280, "image/png").replace("request=getmap", "REQUEST=GetMap")],
+    ["svg", lo(1600, 1120, "image/svg+xml")], ["kml", lo(1600, 1120, "application/vnd.google-earth.kml+xml")], ["kml kort", lo(1600, 1120, "kml")],
+    ["geojson", lo(1600, 1120, "application/json")]];
   for(const [t, u] of tries){
-    try{ const r = await fetch(u), b = await r.blob(); say(`${t}: læst ✓ HTTP ${r.status}, ${b.type}, ${b.size} byte: ${(await b.slice(0, 120).text()).replace(/[^\x20-\x7e]/g, "·")}`, "ok"); }
-    catch(e){ say(`${t}: blokeret (${e.message})`, "bad"); }
+    try{
+      const r = await fetch(u), b = await r.blob();
+      let px = "";
+      if(/^image\/(png|gif)/.test(b.type)){ const bmp = await createImageBitmap(b), c = document.createElement("canvas"); c.width = bmp.width; c.height = bmp.height;
+        const g = c.getContext("2d"); g.drawImage(bmp, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0;
+        for(let i = 3; i < d.length; i += 4) if(d[i] > 0) n++; px = ` · ${n} farvede punkter`; }
+      say(`${t}: læst ✓ HTTP ${r.status}, ${b.type}, ${Math.round(b.size/1024)} kB${px} · ${(await b.slice(0, 100).text()).replace(/[^\x20-\x7e]/g, "·")}`, "ok");
+    }catch(e){ say(`${t}: blokeret (${e.message})`, "bad"); }
   }
-  say("Send et skærmbillede af det hele til Claude (rul ned, hvis der er mere).");
+  say("Send et skærmbillede af det hele til Claude.");
 })();
 </script>
 </body></html>
