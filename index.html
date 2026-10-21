@@ -360,6 +360,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="row"><span class="muted grow" id="overAge"></span><button class="btn ghost" id="btnOverRefresh" style="min-height:36px;padding:4px 8px">Opdater</button></div>
     <div class="scroll" id="overTasks"></div>
     <button class="btn primary" id="btnOverNew">+ Ny opgave</button>
+    <button class="btn ghost" id="btnOverArea" hidden>▭ Eller tegn et område</button>
   </div>
 
   <!-- Everything in one town or along one street: all types, and the tasks there -->
@@ -2407,7 +2408,7 @@ async function openOverview(codes, pack){
   if(over!==o) return;
   const saved = cached.filter(Boolean).map(c=>c.saved);
   overAge(missing.length ? Math.min(Date.now(), ...saved) : Math.min(...saved));
-  overSrc.addFeatures(feats);
+  overSrc.addFeatures(feats); overNewLabel();
   await overPaint();
   if(over!==o) return;
   const seen = "seenType:" + codes.join("+");
@@ -2424,7 +2425,7 @@ function overHead(){
   if(!over) return;
   const name = overName(over), f = overFilter;
   $("overName").textContent = f ? `${name} i ${f.name}` : `${name} i hele kommunen`;
-  $("btnOverNew").textContent = `+ Ny opgave med ${name.toLowerCase()}${f ? " i " + f.name : ""}`;
+  overNewLabel();
   $("btnOverFind").hidden = !!f; $("overFilt").hidden = !f;
   if(f) $("overFiltName").textContent = f.name;
   // Narrowed to a place: back goes to everything in that place, not all the way out
@@ -2446,7 +2447,7 @@ async function refreshType(o, manual){
   try{
     const fs = [];
     for(const c of o.codes){ fs.push(...await downloadType(c)); if(over!==o) return; }
-    overSrc.clear(); overSrc.addFeatures(fs); await overPaint(); overAge(Date.now()); if(manual) toast("Kortdata opdateret");
+    overSrc.clear(); overSrc.addFeatures(fs); overNewLabel(); await overPaint(); overAge(Date.now()); if(manual) toast("Kortdata opdateret");
   }catch(e){ console.error(e); if(manual && over===o){ toast("Kunne ikke hente fra kommunen. Prøv igen senere.", 4000);
     const cs = (await Promise.all(o.codes.map(c=>elCacheGet("type:"+c)))).filter(Boolean);
     if(cs.length) overAge(Math.min(...cs.map(c=>c.saved))); else $("overAge").textContent = ""; } }
@@ -2556,7 +2557,31 @@ $("btnOverBack").onclick = ()=>{
   if(overFilter){ openPlace(overFilter.drawn ? null : overFilter.name, overFilter.shape, overFilter.fromArea); return; }
   closeOverview(); pane("pTasks"); loadTasks();
 };
-$("btnOverNew").onclick = ()=>{ if(over) beginNewTask(over.codes, overFilter ? {...overFilter.shape, place:overFilter.drawn ? null : overFilter.name} : null); };
+// A rare type (saltværn, a few bins …) spread over the whole kommune: one task of every element, as picked spots,
+// since an area task can't be bigger than MAX_AREA. Common types still start with drawing an area.
+const OVER_ALL_MAX = 300;
+const overAllFeats = () => over && !overFilter && overSrc.getFeatures().length <= OVER_ALL_MAX ? overSrc.getFeatures() : null;
+function overNewLabel(){
+  const name = overName(over).toLowerCase(), f = overFilter, all = overAllFeats();
+  $("btnOverNew").textContent = all?.length ? `+ Ny opgave med alle ${all.length} ${name}` : `+ Ny opgave med ${name}${f ? " i " + f.name : ""}`;
+  $("btnOverArea").hidden = !all?.length;
+}
+const overArea = () => beginNewTask(over.codes, overFilter ? {...overFilter.shape, place:overFilter.drawn ? null : overFilter.name} : null);
+$("btnOverArea").onclick = ()=>{ if(over) overArea(); };
+$("btnOverNew").onclick = ()=>{
+  if(!over) return;
+  const all = overAllFeats();
+  if(!all?.length){ overArea(); return; }
+  const info = new Map(), keep = all.map(f=>{
+    const c = f.clone(); c.setId(f.getId());
+    Object.keys(c.getProperties()).forEach(k=>{ if(k[0]==="_" && k!=="_street") c.unset(k, true); }); // the overview's colours aren't the task's
+    const [x0,y0,x1,y1] = c.getGeometry().getExtent();
+    info.set(c.getId(), {id:c.getId(), code:c.get("elementkode"), box:[Math.floor(x0), Math.floor(y0), Math.ceil(x1), Math.ceil(y1)], street:c.get("vejnavn") || c.get("_street") || null});
+    return c; });
+  newHere = null; picked = new Set(); assignees = new Set(); $("taskTitle").value = ""; delete $("taskTitle").dataset.touched;
+  newSpots = {ids:new Set(info.keys()), info, keep, show:new Set(over.codes)};
+  showNewPanel();
+};
 
 // ================= ONE PLACE: EVERY TYPE IN A TOWN OR ALONG A STREET =================
 // "What is there on Odinsgade?": all elements in the place (any type), counted per type, and the tasks that cover them.
