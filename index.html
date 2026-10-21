@@ -47,6 +47,14 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
 .basemap #btnPin:not([hidden]),.basemap #btnMe{display:flex}
 #btnMe .ic{font-size:22px;color:#2b6cd4}
 #btnPin[aria-pressed="true"]{background:var(--moss);color:#fff;border-color:var(--moss)}
+#btnFlaw{position:absolute;top:calc(env(safe-area-inset-top,0px) + 68px);right:12px}
+#btnFlaw[hidden]{display:none}
+#btnFlaw[aria-pressed="true"]{background:#b45309;color:#fff;border-color:#b45309}
+/* ⚠️ Kortfejl tab */
+.frow{display:flex;gap:8px;align-items:stretch;border-top:1px solid var(--line);padding:10px 0}
+.frow .fgo{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;font-size:15px;color:var(--ink);line-height:1.35}
+.frow .btn{align-self:center}
+.flawask{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px;margin:8px 0}
 .basemap .credit{font-size:10px;background:#ffffffcc;color:#333;border-radius:6px;padding:1px 5px}
 .basemap .credit a{color:inherit}
 /* Paler street map, so status and task colours stand out on it */
@@ -105,6 +113,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .seg{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--paper);border-radius:var(--r);padding:4px}
 .seg button{border:0;border-radius:11px;background:transparent;min-height:44px;font-size:15px;font-weight:600;color:var(--ink2)}
 .seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 4px #0002}
+#bossView{grid-template-columns:1fr 1fr 1fr}
 .legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;box-shadow:0 0 0 1px #0003}
 .pill.none{background:#7c5cff}
@@ -303,6 +312,8 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   </div>
   <span class="credit" id="osmCredit" hidden>© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></span>
 </div>
+<!-- Top right, so a tall bottom sheet (Overblik) can't hide it -->
+<button class="flip" id="btnFlaw" hidden aria-pressed="false" aria-label="Meld en fejl i kommunens kort" title="Kortfejl"><span class="ic">⚠️</span><span class="tx">Fejl</span></button>
 <div class="toast" id="toast" role="status"><span id="toastTxt"></span><button id="toastAct" hidden></button></div>
 
 <div class="sheet" id="sheet">
@@ -319,6 +330,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="seg" id="bossView" role="group" aria-label="Visning" hidden>
       <button data-v="tasks">Opgaver</button>
       <button data-v="team">Holdet</button>
+      <button data-v="flaws">Kortfejl</button>
     </div>
     <div class="scroll" id="taskList"></div>
     <div class="row" id="bossRow" hidden>
@@ -1097,7 +1109,12 @@ const pinSrc = new ol.source.Vector();
 const PIN_STYLE = new ol.style.Style({zIndex:50, text:new ol.style.Text({text:"📌", font:"30px sans-serif", offsetY:-14, stroke:new ol.style.Stroke({color:"#fff", width:3})})});
 const PIN_NEW = new ol.style.Style({zIndex:51, text:new ol.style.Text({text:"📌", font:"36px sans-serif", offsetY:-16, backgroundFill:new ol.style.Fill({color:"#ffffffcc"}), padding:[2,4,2,4]})});
 const pinLayer = new ol.layer.Vector({source:pinSrc, style:f=>f.get("draft") ? PIN_NEW : PIN_STYLE});
-const map = new ol.Map({target:"map", layers:[ortoLayer, osmLayer, filterLayer, areaLayer, overLayer, elLayer, tblLayer, labelLayer, editLayer, pinLayer, gpsLayer],
+// ⚠️ Kortfejl: shown on every map, they're few and anyone may run into the same spot
+const flawSrc = new ol.source.Vector();
+const FLAW_STYLE = new ol.style.Style({zIndex:52, text:new ol.style.Text({text:"⚠️", font:"26px sans-serif", offsetY:-12, stroke:new ol.style.Stroke({color:"#fff", width:3})})});
+const FLAW_NEW = new ol.style.Style({zIndex:53, text:new ol.style.Text({text:"⚠️", font:"34px sans-serif", offsetY:-16, backgroundFill:new ol.style.Fill({color:"#ffffffcc"}), padding:[2,4,2,4]})});
+const flawLayer = new ol.layer.Vector({source:flawSrc, style:f=>f.get("draft") ? FLAW_NEW : FLAW_STYLE});
+const map = new ol.Map({target:"map", layers:[ortoLayer, osmLayer, filterLayer, areaLayer, overLayer, elLayer, tblLayer, labelLayer, editLayer, pinLayer, flawLayer, gpsLayer],
   view:new ol.View({projection:proj, center:START_CENTER, zoom:START_ZOOM, resolutions:RES, constrainResolution:true}),
   controls: ol.control.defaults.defaults({attribution:false, rotate:false})});
 const store = {get(k,d){try{const v=localStorage.getItem(k);return v ? (JSON.parse(v) ?? d) : d}catch(e){return d}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
@@ -1130,7 +1147,7 @@ function toast(t, ms=2600, act){const el=$("toast"), b=$("toastAct"); $("toastTx
 const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick","pPlace","pPart","pSpots"];
 const curPane = () => PANES.find(p=>!$(p).hidden);
 function pane(id){ if(id!==curPane()) fold(false); PANES.forEach(p=>$(p).hidden = p!==id);
-  $("sheet").classList.toggle("can-fold", !!$(id).querySelector(":scope>[data-keep]")); showTbl(); }
+  $("sheet").classList.toggle("can-fold", !!$(id).querySelector(":scope>[data-keep]")); showTbl(); showFlawBtn(); }
 // Fold the sheet down to the rows marked data-keep (its main buttons), so more of the map shows
 function fold(on){ const s = $("sheet"); if(!s) return; s.classList.toggle("folded", on);
   $("grip").setAttribute("aria-expanded", String(!on)); $("grip").setAttribute("aria-label", on ? "Vis hele panelet" : "Gør panelet mindre"); }
@@ -1407,6 +1424,7 @@ async function loadTasks(){
   renderTasks();
   if(isBoss()) loadCrew();
   loadPacks().then(renderTasks);
+  loadFlaws();
 }
 // Freehand areas live in tasks.area; until that column exists the task is saved with its rectangle (extent) only
 const noAreaCol = e => e && (e.code==="PGRST204" || /'area' column/.test(e.message||""));
@@ -1476,7 +1494,7 @@ if(sb){
         const k = r.worker + r.updated_at; remoteBatch[k] = (remoteBatch[k]||0) + 1; const n = remoteBatch[k];
         toast(`${isBoss() ? "Opdateret" : (r.worker||"Nogen")}: ${LABEL[r.status]}${n>1 ? ` · ${n} elementer` : f ? " · " + titleOf(f) : ""}`); }
     })
-    .on("postgres_changes",{event:"*",schema:"public",table:"pins"},p=>{ const r = p.new || p.old; if(task && r?.task_id===task.id) loadPins(task); })
+    .on("postgres_changes",{event:"*",schema:"public",table:"pins"},p=>{ const r = p.new || p.old; if(r?.flaw) return loadFlaws(); if(task && r?.task_id===task.id) loadPins(task); })
     .on("postgres_changes",{event:"*",schema:"public",table:"tasks"},()=>{ if(!task) loadTasks().then(()=>{ if(over) overPaint(); if(place) placePaint(); }); })
     .subscribe();
 }
@@ -1696,6 +1714,7 @@ function renderTasks(){
   document.querySelectorAll("#bossView [data-v]").forEach(b=>b.classList.toggle("on", b.dataset.v===bossView));
   if(!user){ L.innerHTML = ""; return; }
   if(isBoss() && bossView==="team") L.innerHTML = teamHtml();
+  else if(isBoss() && bossView==="flaws"){ L.innerHTML = flawsHtml(); wireFlaws(L); }
   else if(!tasks.length) L.innerHTML = isBoss()
       ? `<p class="muted" style="margin:0">Ingen opgaver endnu. Tryk <b>Ny opgave</b> og tegn området på kortet.</p>`
       : `<h2>Dine opgaver</h2><p class="muted" style="margin:0">Ingen opgaver lige nu. ${ownHint()}</p>`;
@@ -3485,8 +3504,11 @@ $("reqs").addEventListener("toggle", ()=>{ store.set("reqsOpen", $("reqs").open)
 $("reqs").querySelector("summary").addEventListener("click", ()=>setTimeout(()=>{ if($("reqs").open) $("reqs").scrollIntoView({block:"nearest", behavior:"smooth"}); }, 0));
 map.on("singleclick", e=>{
   if(areaEd) return;
+  if(flawDrop){ dropFlaw(e); return; }
   if(pinDrop && task){ dropPin(e.coordinate); return; }
   if(partEd){ partTap(e.coordinate); return; }
+  const flawHit = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===flawLayer, hitTolerance:14}).find(f=>f.get("pin"));
+  if(flawHit){ openFlaw(flawHit.get("pin")); return; }
   if(pick?.spots){ spotTap(e); return; }
   if(pick){ // tapping a spot puts it in the task or takes it out
     const hits = underFinger(e), tog = f=>{ const id = f.getId(); pick.ids.has(id) ? pick.ids.delete(id) : pick.ids.add(id); pickCount(); };
@@ -3627,7 +3649,7 @@ async function showNotes(){
 // The messages of a conversation, oldest first; curAt marks the element's current note
 const taskKey = t => "opgave:" + t.id;
 function msgHtml(msgs, curAt=-1){
-  const taskName = tid => tid===task?.id ? "" : tasks.find(t=>t.id===tid)?.name || "en tidligere opgave";
+  const taskName = tid => tid===task?.id || !tid && noteCtx?.flaw ? "" : tasks.find(t=>t.id===tid)?.name || "en tidligere opgave";
   return msgs.length ? msgs.map((m,i)=>`<div class="msg${norm(m.who)===norm(me) ? " mine" : ""}${m.wait ? " wait" : ""}">
         <div class="by"><b>${esc(m.who || "Ukendt")}</b> · ${m.wait ? "ikke sendt endnu" : m.day ? sinceText(m.day) + (daysSince(m.day) > 1 ? ` (${esc(longDate(m.day))})` : "") : ""}${taskName(m.tid) ? ` · ${esc(taskName(m.tid))}` : ""}${m.places > 1 ? ` · på ${m.places} steder` : ""}</div>
         ${m.note ? `<div class="txt">${esc(m.note)}${m.edited ? ` <span class="muted" style="font-size:13px">(rettet)</span>` : ""}</div>` : ""}
@@ -3676,9 +3698,9 @@ async function loadPins(t){
   if(task !== t) return;
   pinsOk = !error; $("btnPin").hidden = !pinsOk; // until supabase/notes_photos_pins.sql has been run
   if(error) return;
-  pins = data;
+  pins = data.filter(p=>!p.flaw); // kortfejl have a layer of their own
   pinSrc.getFeatures().filter(f=>!f.get("draft")).forEach(f=>pinSrc.removeFeature(f));
-  pinSrc.addFeatures(data.map(p=>{ const f = new ol.Feature(new ol.geom.Point([p.x, p.y])); f.set("pin", p); return f; }));
+  pinSrc.addFeatures(pins.map(p=>{ const f = new ol.Feature(new ol.geom.Point([p.x, p.y])); f.set("pin", p); return f; }));
 }
 function pinMode(on){
   pinDrop = on; $("btnPin").setAttribute("aria-pressed", String(on));
@@ -3691,11 +3713,13 @@ function dropPin(xy){
   const f = new ol.Feature(new ol.geom.Point(xy)); f.set("draft", true); pinSrc.addFeature(f);
   openThread({key:null, title:"📌 Ny pin", pin:{x:xy[0], y:xy[1], draft:true}, feat:f});
 }
-function openThread(ctx){ noteCtx = ctx; $("noteIn").value = ""; $("pNotes").hidden = true; showThread(); }
+function openThread(ctx){ noteCtx = ctx; $("noteIn").value = ""; $("pNotes").hidden = true;
+  $("noteIn").placeholder = ctx.flaw ? "Beskriv fejlen …" : "Skriv en note til holdet …"; showThread(); }
 async function showThread(){
   const c = noteCtx, L = $("notesList"), first = $("pNotes").hidden; if(!c) return;
   $("pNotes").hidden = false; $("notesTitle").textContent = c.title; $("btnNote").textContent = "Send";
-  const head = c.pin && !c.pin.draft ? `<div class="pinhead">📌 Sat af ${esc(c.pin.worker || "?")} ${sinceText(c.pin.day)}<button class="btn ghost" data-close>✓ Klaret, fjern pinnen</button></div>` : "";
+  const head = c.flaw ? flawHead(c) : c.pin && !c.pin.draft ? `<div class="pinhead">📌 Sat af ${esc(c.pin.worker || "?")} ${sinceText(c.pin.day)}<button class="btn ghost" data-close>✓ Klaret, fjern pinnen</button></div>` : "";
+  if(!c.key && c.flaw){ L.innerHTML = head; wireFlawHead(L, c); return; }
   if(!c.key){ L.innerHTML = `<p class="muted">Skriv hvad pinnen handler om, eller tag et billede. Holdet og koordinatoren kan se den på kortet, når du trykker Send.</p>`; $("noteIn").focus(); return; }
   if(first) L.innerHTML = `<p class="muted"><span class="spin"></span> Henter …</p>`;
   const seq = ++notesSeq;
@@ -3705,11 +3729,13 @@ async function showThread(){
   L.innerHTML = head + (error ? `<p class="muted">Noterne kan ikke hentes lige nu. Tjek forbindelsen.</p>` : msgHtml(msgs));
   wireMsgs(L, msgs);
   L.querySelector("[data-close]")?.addEventListener("click", ()=>closePin(c.pin));
+  if(c.flaw) wireFlawHead(L, c);
   if(first && !msgs.length) $("noteIn").focus();
 }
 // A new pin is only saved with its first note or photo
 async function ensurePin(c, first){
   if(!c.pin?.draft) return true;
+  if(c.flaw) return ensureFlaw(c, first);
   const {data, error} = await sb.from("pins").insert({task_id:task.id, x:c.pin.x, y:c.pin.y, worker:me, title: first ? first.slice(0, 60) : null}).select().single();
   if(error){ console.error(error); return false; }
   if(c.feat) pinSrc.removeFeature(c.feat);
@@ -3717,20 +3743,24 @@ async function ensurePin(c, first){
   pins.push(data); const f = new ol.Feature(new ol.geom.Point([data.x, data.y])); f.set("pin", data); pinSrc.addFeature(f);
   return true;
 }
-const threadLine = (c, extra) => ({element_id:c.key, code:null, task_id:task.id, day:today(), done:false, worker:me, status:null, reason:null, note:null, photo:null, ...extra});
+// A kortfejl's conversation belongs to no task (it outlives them and isn't one of the task's notes)
+const threadLine = (c, extra) => ({element_id:c.key, code:null, task_id:c.flaw ? null : task.id, day:today(), done:false, worker:me, status:null, reason:null, note:null, photo:null, ...extra});
 async function threadSend(text){
-  const c = noteCtx, btn = $("btnNote"); btn.disabled = true;
+  const c = noteCtx, btn = $("btnNote");
+  if(!flawKindOk(c)) return;
+  btn.disabled = true;
   try{
     if(!await ensurePin(c, text)) throw new Error("pin");
     const {error} = await sb.from("element_log").insert(threadLine(c, {note:text}));
     if(error) throw error;
-    $("noteIn").value = ""; toast("Sendt"); loadTaskMedia(task);
+    $("noteIn").value = ""; toast(c.flaw ? "Kortfejlen er sendt til koordinatoren" : "Sendt", c.flaw ? 3500 : 2600); if(task) loadTaskMedia(task);
   }catch(e){ console.error(e); toast("Kunne ikke sende. Tjek forbindelsen og prøv igen.", 4000); }
   finally{ btn.disabled = false; }
   if(noteCtx === c) showThread();
 }
 async function threadPhoto(file, cam){
   const c = noteCtx;
+  if(!flawKindOk(c)) return;
   try{
     toast("Sender billedet …", 8000);
     const blob = await shrink(file), path = `${today()}/${uuid()}.jpg`;
@@ -3739,7 +3769,7 @@ async function threadPhoto(file, cam){
     if(up.error) throw up.error;
     const {error} = await sb.from("element_log").insert(threadLine(c, {photo:path}));
     if(error) throw error;
-    toast("Billedet er sendt", cam ? 8000 : 2600, cam && keepAct(file)); loadTaskMedia(task);
+    toast("Billedet er sendt", cam ? 8000 : 2600, cam && keepAct(file)); if(task) loadTaskMedia(task);
   }catch(e){ console.error(e); toast("Billedet kunne ikke sendes. Tjek forbindelsen og prøv igen.", 4000); }
   if(noteCtx === c) showThread();
 }
@@ -3748,6 +3778,142 @@ async function closePin(p){
   if(error){ console.error(error); return toast("Pinnen kunne ikke fjernes. Tjek forbindelsen.", 4000); }
   closeNotes(); loadPins(task); toast("Pinnen er fjernet fra kortet. Noterne står stadig under 💬 Noter.", 4000);
 }
+// ================= KORTFEJL =================
+// A ⚠️ kortfejl is a pin that says the kommune's map is wrong. Anyone makes one (⚠️ Fejl on the map, then a tap;
+// a tap on an element ties it to that element), also outside a task. A koordinator sends the open ones to the
+// kommune from the "⚠️ Kortfejl" tab and marks them sent; "✓ Rettet" takes one off the map. supabase/kortfejl.sql.
+const FLAWS = ["Mangler på kortet","Forkert type","Ligger forkert","Findes ikke mere","Passer ikke med tilbudslisten","Andet"];
+var FLAW_PANES = ["pWork","pEl","pList","pOver","pPlace","pPick","pSpots"];
+var flaws = [], flawsOk = false, flawDrop = false, flawSent = null; // var: pane() asks before this runs
+function showFlawBtn(){
+  const on = flawsOk && !!user && FLAW_PANES.includes(curPane());
+  $("btnFlaw").hidden = !on; if(!on && flawDrop) flawMode(false);
+}
+async function loadFlaws(){
+  if(!sb || !user) return;
+  const {data, error} = await sb.from("pins").select("*").not("flaw","is",null).is("closed",null).order("day",{ascending:false}).limit(500);
+  flawsOk = !error; showFlawBtn(); // until supabase/kortfejl.sql has been run
+  if(error) return;
+  flaws = data;
+  flawSrc.getFeatures().filter(f=>!f.get("draft")).forEach(f=>flawSrc.removeFeature(f));
+  flawSrc.addFeatures(data.map(p=>{ const f = new ol.Feature(new ol.geom.Point([p.x, p.y])); f.set("pin", p); return f; }));
+  if(bossView==="flaws" && curPane()==="pTasks") renderTasks();
+}
+function flawMode(on){
+  flawDrop = on; $("btnFlaw").setAttribute("aria-pressed", String(on));
+  if(on){ pinMode(false); toast("Tryk på stedet med fejlen. Er fejlen ved et element, så tryk på det. Tryk ⚠️ igen for at lade være.", 7000); }
+}
+$("btnFlaw").onclick = ()=>{ flawMode(!flawDrop); if(!flawDrop) $("toast").classList.remove("show"); };
+function dropFlaw(e){
+  flawMode(false); $("toast").classList.remove("show");
+  const lay = task || pick ? elLayer : overLayer; // the overview and place view draw on their own layer
+  const el = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===lay, hitTolerance:12})
+    .filter(f=>f.get("elementkode")).sort((a,b)=>spotSize(a) - spotSize(b))[0] || null;
+  const [x, y] = e.coordinate, f = new ol.Feature(new ol.geom.Point(e.coordinate)); f.set("draft", true); flawSrc.addFeature(f);
+  openThread({key:null, title:"⚠️ Ny kortfejl", flaw:true, feat:f,
+    pin:{x, y, draft:true, flaw:null, task_id:task?.id || null, element:el?.getId() || null, code:el?.get("elementkode") || null, what:el ? titleOf(el) : null}});
+}
+function openFlaw(p){ openThread({key:"pin:"+p.id, title:"⚠️ " + p.flaw, flaw:true, pin:p}); }
+const flawWhat = p => p.what || (p.code ? `${typeName(p.code)} (${p.code})` : "");
+function flawHead(c){
+  const p = c.pin;
+  if(p.draft) return `<p style="margin:0 0 6px"><b>Hvad er galt?</b></p>
+    <div class="people" id="flawKinds">${FLAWS.map(k=>`<button data-k="${esc(k)}" class="${p.flaw===k ? "on" : ""}">${esc(k)}</button>`).join("")}</div>
+    ${p.element ? `<div class="pinhead" style="margin-top:10px">Om: <b>${esc(flawWhat(p))}</b><button class="btn ghost" data-unel>✕ Ikke om det</button></div>`
+      : `<p class="muted">Ikke ved et bestemt element.</p>`}
+    <p class="muted">Skriv hvad der er galt, eller tag et billede. Koordinatoren samler kortfejlene og sender dem til kommunen.</p>`;
+  const mine = isBoss() || norm(p.worker)===norm(me);
+  return `<div class="pinhead" style="display:block"><div>⚠️ <b>${esc(p.flaw)}</b>${p.code ? ` · ${esc(flawWhat(p))}` : ""}</div>
+    <div>Sat af ${esc(p.worker || "?")} ${sinceText(p.day)} · ${p.reported ? `sendt til kommunen ${esc(longDate(p.reported))}` : "ikke sendt til kommunen endnu"}</div>
+    ${mine ? `<button class="btn ghost" data-fixed style="margin-top:6px">✓ Rettet, fjern den</button>` : ""}</div>`;
+}
+function wireFlawHead(L, c){
+  L.querySelectorAll("#flawKinds [data-k]").forEach(b=>b.onclick=()=>{ c.pin.flaw = b.dataset.k; c.title = "⚠️ " + c.pin.flaw; $("notesTitle").textContent = c.title; showThread(); });
+  L.querySelector("[data-unel]")?.addEventListener("click", ()=>{ c.pin.element = c.pin.code = c.pin.what = null; showThread(); });
+  L.querySelector("[data-fixed]")?.addEventListener("click", ()=>closeFlaw(c.pin));
+}
+function flawKindOk(c){
+  if(!c?.flaw || !c.pin?.draft || c.pin.flaw) return true;
+  toast("Vælg først, hvad der er galt"); $("flawKinds")?.scrollIntoView({block:"nearest"}); return false;
+}
+async function ensureFlaw(c, first){
+  const p = c.pin;
+  const {data, error} = await sb.from("pins").insert({task_id:p.task_id, x:p.x, y:p.y, worker:me, flaw:p.flaw, element:p.element, code:p.code, what:p.what,
+    title: first ? first.slice(0, 60) : null}).select().single();
+  if(error){ console.error(error); return false; }
+  if(c.feat) flawSrc.removeFeature(c.feat);
+  c.pin = data; c.key = "pin:" + data.id; c.feat = null;
+  flaws.unshift(data); const f = new ol.Feature(new ol.geom.Point([data.x, data.y])); f.set("pin", data); flawSrc.addFeature(f);
+  return true;
+}
+async function closeFlaw(p){
+  const {error} = await sb.from("pins").update({closed: today()}).eq("id", p.id);
+  if(error){ console.error(error); return toast("Kortfejlen kunne ikke fjernes. Tjek forbindelsen.", 4000); }
+  closeNotes(); loadFlaws(); toast("Kortfejlen er fjernet fra kortet og listen.", 3500);
+}
+// The koordinator's list
+function flawsHtml(){
+  if(!flawsOk) return `<p class="muted" style="margin:0">Kortfejl kan ikke hentes lige nu. Tjek forbindelsen.</p>`;
+  if(!flaws.length) return `<p class="muted" style="margin:0">Ingen kortfejl lige nu. Ser nogen en fejl i kommunens kort, trykker de <b>⚠️ Fejl</b> på kortet og så på stedet.</p>`;
+  const un = flaws.filter(p=>!p.reported);
+  return `<div class="row"><span class="grow muted">${flaws.length} ${flaws.length===1 ? "åben" : "åbne"} · ${un.length} ikke sendt</span>
+      <button class="btn primary" id="btnFlawSend"${un.length ? "" : " disabled"}>📤 Send ${un.length || ""} til kommunen</button></div>`
+    + (flawSent ? `<div class="flawask"><b>Har du sendt dem til kommunen?</b><div class="row" style="margin-top:8px">
+        <button class="btn primary" id="btnFlawDone">✓ Ja, markér ${flawSent.length} som sendt</button><button class="btn ghost" id="btnFlawNot">Ikke endnu</button></div></div>` : "")
+    + flaws.map(p=>`<div class="frow"><button class="fgo" data-flaw="${esc(p.id)}"><b>⚠️ ${esc(p.flaw)}</b>${p.code ? ` · ${esc(flawWhat(p))}` : ""}
+        ${p.title ? `<br><span>${esc(p.title)}</span>` : ""}<br><small class="muted">${esc(p.worker || "?")} ${sinceText(p.day)} · ${p.reported ? "sendt " + esc(longDate(p.reported)) : "ikke sendt"}</small></button>
+        <button class="btn" data-flawmap="${esc(p.id)}">Vis</button></div>`).join("");
+}
+function wireFlaws(L){
+  const byId = id => flaws.find(p=>p.id===id);
+  L.querySelectorAll("[data-flaw]").forEach(b=>b.onclick=()=>openFlaw(byId(b.dataset.flaw)));
+  L.querySelectorAll("[data-flawmap]").forEach(b=>b.onclick=()=>{ const p = byId(b.dataset.flawmap), v = map.getView(), z = Math.max(v.getZoom(), 9);
+    v.animate({center:[p.x, p.y - sheetH() / 2 * v.getResolutionForZoom(z)], zoom:z}); fold(true); });
+  if($("btnFlawSend")) $("btnFlawSend").onclick = sendFlaws;
+  if($("btnFlawDone")) $("btnFlawDone").onclick = async ()=>{
+    const ids = flawSent; $("btnFlawDone").disabled = true;
+    const {error} = await sb.from("pins").update({reported: today()}).in("id", ids);
+    if(error){ console.error(error); $("btnFlawDone").disabled = false; return toast("Kunne ikke gemme. Tjek forbindelsen.", 4000); }
+    flawSent = null; toast(`${ids.length} kortfejl er markeret som sendt`); loadFlaws();
+  };
+  if($("btnFlawNot")) $("btnFlawNot").onclick = ()=>{ flawSent = null; renderTasks(); };
+}
+// Plain text for a mail to the kommune: what, which element, where (a map link), the notes and photo links.
+// No names: they go outside the team.
+async function flawText(list){
+  const {data, error} = await sb.from("element_log").select("element_id,note,photo,day").in("element_id", list.map(p=>"pin:"+p.id)).order("id");
+  if(error) throw error;
+  const lines = [`Fejl i kommunens kort (entreprenoer_udbud), fundet af idverdes hold ${longDate(today())}: ${list.length} fejl.`, ""];
+  list.forEach((p, i)=>{
+    const [lon, lat] = ol.proj.toLonLat([p.x, p.y], proj), [layer, fid] = (p.element || "").split(":");
+    lines.push(`${i+1}. ${p.flaw}${p.code ? `: ${flawWhat(p)}${p.what && !p.what.includes(p.code) ? ` (${p.code})` : ""}` : ""}`);
+    if(p.element) lines.push(`   Element: element_${layer}_distribution, ogc_fid ${fid}`);
+    lines.push(`   Sted: https://www.google.com/maps?q=${lat.toFixed(6)},${lon.toFixed(6)} (EPSG:25832: ${Math.round(p.x)}, ${Math.round(p.y)})`);
+    lines.push(`   Set: ${longDate(p.day)}`);
+    data.filter(r=>r.element_id==="pin:"+p.id).forEach(r=>{
+      if(r.note) lines.push(`   - ${r.note.replace(/\s+/g, " ").trim()}`);
+      if(r.photo) lines.push(`   - Billede: ${photoUrl(r.photo)}`);
+    });
+    lines.push("");
+  });
+  return lines.join("\n");
+}
+async function sendFlaws(){
+  const list = flaws.filter(p=>!p.reported); if(!list.length) return;
+  let text;
+  try{ text = await flawText(list); }catch(e){ console.error(e); return toast("Kunne ikke hente noterne. Tjek forbindelsen.", 4000); }
+  let done = false;
+  if(navigator.share && matchMedia("(pointer:coarse)").matches){ // phones: straight into Mail, Outlook, SMS …
+    try{ await navigator.share({title:"Kortfejl", text}); done = true; }
+    catch(e){ if(e.name==="AbortError") return; }
+  }
+  if(!done){
+    try{ await navigator.clipboard.writeText(text); toast("Teksten er kopieret. Sæt den ind i en mail til kommunen.", 5000); done = true; }
+    catch(e){ console.error(e); return toast("Kunne ikke kopiere teksten.", 4000); }
+  }
+  flawSent = list.map(p=>p.id); renderTasks();
+}
+
 let notesSeq = 0, notePics = [], delPic = null, edNote = null;
 // Notes: your own you can change or delete the day you wrote them and the next (any time before Send);
 // a koordinator can delete anyone's. The database checks the same (supabase/notes_photos_pins.sql).
@@ -3836,12 +4002,13 @@ $("askDelPicOk").onclick = async ()=>{
   toast("Billedet er slettet"); refresh(); showNotes();
 };
 function closeNotes(){
-  if(noteCtx?.feat) pinSrc.removeFeature(noteCtx.feat); // a new pin with nothing sent isn't kept
+  const nf = noteCtx?.feat; // a new pin or kortfejl with nothing sent isn't kept
+  if(nf) [pinSrc, flawSrc].forEach(s=>{ if(s.hasFeature(nf)) s.removeFeature(nf); });
   noteCtx = null; $("pNotes").hidden = true; $("noteIn").blur();
 }
 $("btnNoteOpen").onclick = $("notePeek").onclick = ()=>{ noteCtx = null; $("noteIn").value = ""; showNotes(); };
 $("btnNotesClose").onclick = closeNotes;
-$("btnNotePhoto").onclick = ()=>$("btnPhoto").click();
+$("btnNotePhoto").onclick = ()=>{ if(flawKindOk(noteCtx)) $("btnPhoto").click(); };
 $("btnNote").onclick = ()=>{
   const t = $("noteIn").value.trim(), ids = [...selSet].map(g=>g.getId());
   if(!t){ $("noteIn").focus(); return toast("Skriv noten først"); }
@@ -4288,7 +4455,7 @@ const BACK = [["photoView","btnPhotoClose"], ["guide",closeGuide],
   ["pPerson","btnPersonNo","btnPersonCancel"], ["pProfile","btnProfClose"], ["pLogin"],
   ["pFind","btnFindClose"], ["pSearch","btnSearchClose"], ["pNotes","btnNotesClose"], ["pHist","btnHistClose"],
   ["pShow","btnShowClose"], ["pType","btnTypeClose"], ["pPack","btnPackClose"], ["pNew","btnNewCancel"],
-  [()=>pinDrop, "btnPin"],
+  [()=>pinDrop, "btnPin"], [()=>flawDrop, "btnFlaw"],
   ["pEl","btnElClose"], ["pList","btnListClose"], ["pPart","btnPartCancel"], ["pPick","btnPickCancel"],
   ["pSpots","btnSpotsCancel"], ["pArea","btnAreaCancel"], ["pPlace","btnPlaceBack"], ["pOver","btnOverBack"], ["pWork","btnBack"]];
 const backTop = () => BACK.find(([w]) => typeof w==="function" ? w() : $(w) && !$(w).hidden);
