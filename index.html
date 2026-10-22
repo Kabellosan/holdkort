@@ -124,6 +124,8 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .seg button{border:0;border-radius:11px;background:transparent;min-height:44px;font-size:15px;font-weight:600;color:var(--ink2)}
 .seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 4px #0002}
 #bossView{grid-template-columns:1fr 1fr 1fr}
+#pArea .seg{grid-template-columns:1fr 1fr 1fr}
+#pArea .seg button{padding:4px;line-height:1.2}
 .legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;box-shadow:0 0 0 1px #0003}
 .pill.none{background:#7c5cff}
@@ -174,6 +176,11 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .code-item.on{border-color:var(--moss2)}
 .code-item input{width:22px;height:22px;accent-color:var(--moss);flex:none}
 .code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;color:var(--ink2);min-width:3.6em}
+.where{display:flex;gap:10px;align-items:center;width:100%;text-align:left;background:var(--card);color:var(--ink);border:2px dashed var(--line);border-radius:var(--r);padding:10px 12px;font:inherit;line-height:1.3}
+.where.set{border-style:solid;border-color:var(--moss2)}
+.where .btn{pointer-events:none;white-space:nowrap}
+.warn{color:#b35a00;font-weight:600}
+@media (prefers-color-scheme:dark){.warn{color:#ffb35c}}
 .chosen{display:flex;gap:6px;flex-wrap:wrap}
 .chosen span{background:var(--moss);color:#fff;border-radius:999px;padding:5px 11px;font-size:14px}
 /* Packages: saved groups of types */
@@ -357,16 +364,17 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <div class="pane" id="pArea" hidden>
     <div class="row" data-keep><h2 class="grow" id="areaTitle">Tegn opgavens område</h2><button class="btn ghost" id="btnAreaCancel">Annullér</button></div>
     <div class="seg" role="group" aria-label="Form">
+      <button data-m="view">📱 Det jeg ser</button>
       <button data-m="box">▭ Firkant</button>
       <button data-m="draw">✎ Tegn frit</button>
     </div>
     <div class="row">
-      <button class="btn fill" id="btnAreaFind">⌕ Vælg en by eller en vej</button>
+      <button class="btn fill" id="btnAreaFind">⌕ Find en by eller en vej</button>
       <button class="btn" id="btnAreaPeek" hidden>Se alt her</button>
     </div>
     <div class="muted" id="areaHint"></div>
     <div class="row" data-keep>
-      <span class="muted grow num" id="areaSize"></span>
+      <span class="muted grow num" id="areaSize" aria-live="polite"></span>
       <button class="btn" id="btnRedraw" hidden>Tegn igen</button>
       <button class="btn primary" id="btnAreaOk">Videre ▸</button>
     </div>
@@ -536,13 +544,24 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 </div>
 
 <!-- New task: a whole area, or the spots tapped one by one -->
+<div class="ask" id="askBig" hidden role="dialog" aria-modal="true" aria-labelledby="askBigQ">
+  <div>
+    <h2 id="askBigQ">En stor opgave</h2>
+    <p id="askBigTxt"></p>
+    <button class="btn primary" id="askBigYes">Opret alligevel</button>
+    <button class="btn ghost" id="askBigNo">Tilbage</button>
+  </div>
+</div>
 <div class="ask" id="askNew" hidden role="dialog" aria-modal="true" aria-labelledby="askNewQ">
   <div>
     <h2 id="askNewQ">Hvordan vil du lave opgaven?</h2>
-    <button class="btn primary" id="askNewSpots">☝ Tryk på stederne</button>
-    <div class="muted" style="margin-top:-6px">Vælg de enkelte steder på kortet, fx dem maskinen ikke kan komme til. Du kan også sætte et eget punkt.</div>
-    <button class="btn" id="askNewArea">▭ Et helt område</button>
-    <div class="muted" style="margin-top:-6px">Alt af nogle typer inden for et område, fx al pur i Brande.</div>
+    <!-- No default: the three ways are equal (Captain, 2026-10-22) -->
+    <button class="btn" id="askNewWhere">📍 Start med hvor</button>
+    <div class="muted" style="margin-top:-6px">Find stedet på kortet, og vælg så hvad der skal laves der.</div>
+    <button class="btn" id="askNewArea">📋 Start med hvad</button>
+    <div class="muted" style="margin-top:-6px">Vælg typerne, en pakke eller en linje fra tilbudslisten, og så hvor.</div>
+    <button class="btn" id="askNewSpots">☝ Vælg selv stederne</button>
+    <div class="muted" style="margin-top:-6px">Se det hele på kortet, og tryk på de enkelte steder, fx dem maskinen ikke kan komme til. Du kan også sætte et eget punkt.</div>
     <button class="btn ghost" id="askNewNo">Annullér</button>
   </div>
 </div>
@@ -657,6 +676,9 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 <div class="panel" id="pNew" hidden>
   <header>
     <div class="row"><h2 class="grow">Ny opgave</h2><button class="btn ghost" id="btnNewCancel">Annullér</button></div>
+    <!-- Hvor and Hvad can be filled in in either order -->
+    <button class="where" id="btnNewArea"><span class="grow"><b id="newWhereHead">Hvor?</b><br><span class="muted" id="newAreaInfo"></span></span><span class="btn" id="newWhereGo">Vælg på kortet ▸</span></button>
+    <div class="section" style="margin:0" id="newWhatHead">Hvad?</div>
     <input type="search" id="codeSearch" placeholder="Søg type: pur, fortov, løs belægning, bænk …" autocomplete="off">
     <div class="section" style="margin:0" id="spotsHead" hidden>Stederne i opgaven</div>
   </header>
@@ -678,7 +700,6 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="section" id="assignWho">Hvem skal lave den?</div>
     <div class="people" id="assignList"></div>
     <div class="muted" id="assignSelf" hidden>Opgaven er til dig. Kun en koordinator kan give opgaver til andre.</div>
-    <div class="row"><span class="muted grow" id="newAreaInfo"></span><button class="btn ghost" id="btnNewArea">Ret område</button></div>
     <button class="btn primary" id="btnCreate">Opret opgave</button>
   </footer>
 </div>
@@ -1103,6 +1124,11 @@ const editLayer = new ol.layer.Vector({source:editSrc, style:f=>{
   const h = f.get("h"); if(h) return h.length===2 ? handleBig : handleSmall;
   return areaEd?.mode==="draw" ? [...editShape, editVertex] : editShape;
 }});
+// Ny opgave: the chosen types drawn while the area is picked, so you can see with your own eyes what's caught
+const prevSrc = new ol.source.Vector();
+const prevLayer = new ol.layer.Vector({source:prevSrc, style:[
+  new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffcc", width:5}), image:new ol.style.Circle({radius:7, fill:new ol.style.Fill({color:"#fff"})})}),
+  new ol.style.Style({fill:new ol.style.Fill({color:"#2b6cd466"}), stroke:new ol.style.Stroke({color:EDIT, width:2.5}), image:new ol.style.Circle({radius:5, fill:new ol.style.Fill({color:EDIT})})})]});
 const gpsFeat = new ol.Feature();
 gpsFeat.setStyle(new ol.style.Style({image:new ol.style.Circle({radius:9,fill:new ol.style.Fill({color:"#2b6cd4"}),stroke:new ol.style.Stroke({color:"#fff",width:3})})}));
 const gpsLayer = new ol.layer.Vector({source:new ol.source.Vector({features:[gpsFeat]})});
@@ -1134,7 +1160,7 @@ const flawSrc = new ol.source.Vector();
 const FLAW_STYLE = new ol.style.Style({zIndex:52, text:new ol.style.Text({text:"⚠️", font:"26px sans-serif", offsetY:-12, stroke:new ol.style.Stroke({color:"#fff", width:3})})});
 const FLAW_NEW = new ol.style.Style({zIndex:53, text:new ol.style.Text({text:"⚠️", font:"34px sans-serif", offsetY:-16, backgroundFill:new ol.style.Fill({color:"#ffffffcc"}), padding:[2,4,2,4]})});
 const flawLayer = new ol.layer.Vector({source:flawSrc, style:f=>f.get("draft") ? FLAW_NEW : FLAW_STYLE});
-const map = new ol.Map({target:"map", layers:[ortoLayer, osmLayer, filterLayer, areaLayer, overLayer, elLayer, tblLayer, labelLayer, editLayer, pinLayer, flawLayer, gpsLayer],
+const map = new ol.Map({target:"map", layers:[ortoLayer, osmLayer, filterLayer, areaLayer, overLayer, elLayer, tblLayer, labelLayer, prevLayer, editLayer, pinLayer, flawLayer, gpsLayer],
   view:new ol.View({projection:proj, center:START_CENTER, zoom:START_ZOOM, resolutions:RES, constrainResolution:true}),
   controls: ol.control.defaults.defaults({attribution:false, rotate:false})});
 const store = {get(k,d){try{const v=localStorage.getItem(k);return v ? (JSON.parse(v) ?? d) : d}catch(e){return d}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
@@ -1369,7 +1395,7 @@ const GUIDES = {
   crew: [
     {ic:"👋", t:"Velkommen til Holdkort", h:`<p>Her ser du dine opgaver på kortet og markerer, hvad der er lavet. Så ved alle, hvor I er nået til, uden at ringe rundt.</p>`},
     {ic:"📋", t:"Vælg en opgave", h:`<p>Tryk på en opgave i listen. Kortet viser så de steder, der hører til.</p><p>Du ser dine egne opgaver og dem, der er til alle.</p>`},
-    {ic:"➕", t:"Lav din egen opgave", h:`<p>Tryk <b>+ Ny opgave</b>. Tegn et område og vælg typerne, eller tryk på de enkelte steder på kortet. Opgaven er kun til dig.</p><p>Du kan selv afslutte de opgaver, du har lavet.</p>`},
+    {ic:"➕", t:"Lav din egen opgave", h:`<p>Tryk <b>+ Ny opgave</b>. Vælg hvor og hvad, eller tryk på de enkelte steder på kortet. Opgaven er kun til dig.</p><p>Du kan selv afslutte de opgaver, du har lavet.</p>`},
     COLOR_STEP, MARK_STEP, SEND_STEP, HELP_STEP],
   helper: [
     {ic:"👋", t:"Velkommen til Holdkort", h:`<p>Her ser du de opgaver, du er sat på, og markerer, hvad der er lavet.</p>`},
@@ -1377,7 +1403,7 @@ const GUIDES = {
     COLOR_STEP, MARK_STEP, SEND_STEP, HELP_STEP],
   boss: [
     {ic:"👋", t:"Velkommen, koordinator", h:`<p>Du laver opgaverne og fordeler dem. Holdet markerer på kortet, hvad de har lavet, så du kan følge med.</p>`},
-    {ic:"➕", t:"Lav en opgave", h:`<p>Tryk <b>+ Ny opgave</b>. Vælg <b>Et helt område</b>: tegn det på kortet, og vælg typerne, fx al pur i Brande.</p><p>Eller vælg <b>Tryk på stederne</b>: vælg om kortet skal vise alt eller kun nogle typer eller pakker, og tryk så på de enkelte steder, der skal med. Med <b>📍 Eget punkt</b> sætter du et sted, kommunens kort ikke har.</p>`},
+    {ic:"➕", t:"Lav en opgave", h:`<p>Tryk <b>+ Ny opgave</b>, og vælg om du vil <b>starte med hvor</b> eller <b>starte med hvad</b>. Du vælger begge dele: typerne, fx pur, og hvor på kortet. Det, du ser på kortet, bliver området, og du kan se, hvor mange steder der kommer med.</p><p>Eller tryk <b>Vælg selv stederne</b>: vælg om kortet skal vise alt eller kun nogle typer eller pakker, og tryk så på de enkelte steder, der skal med. Med <b>📍 Eget punkt</b> sætter du et sted, kommunens kort ikke har.</p>`},
     {ic:"▦", t:"Overblik", h:`<p><b>▦ Overblik</b> viser én type eller en hel pakke i hele kommunen, farvet efter hvor langt holdet er.</p><p><b>Lilla</b> er steder, der ikke er med i nogen opgave endnu.</p>`},
     {ic:"👥", t:"Holdet", h:`<p>Under <b>Holdet</b> ser du hver person og deres opgaver. Her kan du også tilføje eller fjerne folk.</p>`},
     COLOR_STEP,
@@ -1639,6 +1665,12 @@ async function fetchSpots(spots){
 }
 // Every element of one type in the whole kommune (overview)
 const fetchKommune = code => fetchLayers([codeIn([code])], ()=>true);
+// How many elements of these types touch the box, without fetching them: the server counts (totalFeatures)
+// and sends one element per layer. null when a layer doesn't say.
+async function countIn(codes, extent){
+  const ns = await Promise.all(WFS_LAYERS.map(layer=>wfs(layer, {CQL_FILTER:`${codeIn(codes)} AND BBOX(wkb_geometry,${extent.join(",")})`, maxFeatures:"1"}).then(fs=>fs.total ?? (fs.length ? null : 0))));
+  return ns.some(n=>n==null) ? null : ns.reduce((a,b)=>a+b, 0);
+}
 // The overview's name for what it shows: a package's name, or the type's
 const overName = o => o.pack || CODES[o.codes[0]] || o.codes[0];
 
@@ -2578,7 +2610,7 @@ function renderChosen(){
     + (isBoss() && picked.size > 1 && !packs.some(p=>sameCodes(p.codes, picked)) ? `<button class="btn ghost" id="btnSavePack" style="min-height:36px;padding:4px 10px">📦 Gem som pakke</button>` : "");
   if($("btnSavePack")) $("btnSavePack").onclick = ()=>packEdit({name:"", codes:[...picked]}, true);
   if(!$("taskTitle").dataset.touched) $("taskTitle").value = autoTitle();
-  renderPacks(); renderTblChips();
+  renderPacks(); renderTblChips(); renderWhere();
 }
 
 // ---- Packages: named groups of types a boss gives together, e.g. "Fast belægning" ----
@@ -2687,16 +2719,33 @@ async function delPack(p){
 }
 // Step 1: draw the area on the map. Step 2: pick types and people.
 let newHere = null; // types counted in the place the task was started from: {code: count}
-function beginNewTask(code, shape, here, tbl){ // code: one type, a list of types (a package from the overview) or none; tbl: a tilbudsliste line
+function beginNewTask(code, shape, here, tbl, draw){ // code: one type, a list of types (a package from the overview) or none; tbl: a tilbudsliste line
   newHere = here || null; newSpots = null; newTbl = tbl || null; tblAll = false; if(tbl) code = null;
   picked = new Set([].concat(code || [])); $("codeSearch").value=""; $("taskTitle").value=""; delete $("taskTitle").dataset.touched; $("newPick").checked = false;
-  assignees = new Set();
-  startArea({shape:shape||null, peek:isBoss(), done:s=>{ newShape = s; showNewPanel(); }});
+  assignees = new Set(); newShape = null; newCount = null;
+  // From Overblik's "Eller tegn et område" the map comes first; otherwise Hvad and Hvor are on one screen, in either order
+  if(draw) startArea({shape:shape||null, peek:isBoss(), done:(s, n)=>{ newShape = s; newCount = n; showNewPanel(); }});
+  else { newShape = shape || null; showNewPanel(); }
+}
+let newCount = null; // {key, n, upTo}: the elements the area editor counted for the chosen types
+function pickWhere(first){ // first: "Start med hvor", so Annullér leaves Ny opgave
+  $("pNew").hidden = true;
+  startArea({shape:newShape, peek:isBoss(), codes:newTbl ? null : [...picked], tbl:newTbl, title:"Hvor skal opgaven være?", okLabel:"✓ Brug området",
+    done:(s, n)=>{ if(newShape && areaKey(s)!==areaKey(newShape)) newHere = null; newShape = s; newCount = n; showNewPanel(); }, cancel:()=>{ $("pNew").hidden = !!first; }});
+}
+function renderWhere(){
+  const sp = !!newSpots, s = newShape;
+  $("btnNewArea").classList.toggle("set", sp || !!s);
+  $("newWhereHead").textContent = sp ? "Stederne" : "Hvor?"; $("newWhatHead").hidden = sp;
+  $("newWhereGo").textContent = sp ? "Ret steder" : s ? "Ret" : "Vælg på kortet ▸";
+  $("newWhereGo").classList.toggle("primary", !sp && !s);
+  const c = s && newCount?.key===areaKey(s) && newCount.c===[...picked].join(",") ? newCount : null;
+  if(!sp) $("newAreaInfo").innerHTML = s ? esc(`${s.place ? s.place + ", " : s.area ? "Tegnet frit, " : ""}${fmtArea(shapeGeom(s).getArea())}`) + (c ? " · " + countMsg(c.n, c.upTo) : "") : "Intet område valgt endnu";
 }
 function showNewPanel(){
   const sp = !!newSpots; newOpen.open = null;
   ["packBox","codeSearch","newPickRow"].forEach(id=>$(id).hidden = sp); $("spotsHead").hidden = !sp;
-  $("btnNewArea").textContent = sp ? "Ret steder" : "Ret område";
+  renderWhere();
   if(sp){
     const list = spotsOf(newSpots), n = list.length, byId = new Map(newSpots.keep.map(f=>[f.getId(), f]));
     picked = new Set(list.filter(s=>s.code).map(s=>s.code));
@@ -2706,7 +2755,6 @@ function showNewPanel(){
     if(!$("taskTitle").dataset.touched) $("taskTitle").value = autoTitle();
     $("chosen").innerHTML = "";
   } else {
-    $("newAreaInfo").textContent = `Område: ${fmtArea(shapeGeom(newShape).getArea())}${newShape.place ? ", " + newShape.place : newShape.area ? ", tegnet frit" : ""}`;
     renderCodes(); renderChosen();
   }
   $("pNew").hidden = false;
@@ -2715,15 +2763,16 @@ function showNewPanel(){
   if(!sp) loadPacks();
 }
 // "+ Ny opgave": a whole area of some types, or the spots tapped one by one
-function askNewTask(){ $("askNew").hidden = false; $("askNewSpots").focus(); }
+function askNewTask(){ $("askNew").hidden = false; $("askNewWhere").focus(); }
 $("askNewSpots").onclick = ()=>{ $("askNew").hidden = true; newSpots = null; picked = new Set(); assignees = new Set();
   $("taskTitle").value = ""; delete $("taskTitle").dataset.touched; askShow(show=>startSpots(null, null, show)); };
 $("askNewArea").onclick = ()=>{ $("askNew").hidden = true; beginNewTask(null); };
+$("askNewWhere").onclick = ()=>{ $("askNew").hidden = true; beginNewTask(null); pickWhere(true); };
 $("askNewNo").onclick = ()=>{ $("askNew").hidden = true; };
 $("btnNewTask").onclick = askNewTask;
-$("btnNewArea").onclick = ()=>{ $("pNew").hidden = true;
-  if(newSpots){ startSpots(null, newSpots); return; }
-  startArea({shape:newShape, done:s=>{ if(areaKey(s)!==areaKey(newShape)) newHere = null; newShape = s; showNewPanel(); }, cancel:()=>{ $("pNew").hidden = false; }}); };
+$("btnNewArea").onclick = ()=>{
+  if(newSpots){ $("pNew").hidden = true; startSpots(null, newSpots); return; }
+  pickWhere(); };
 $("codeSearch").oninput = renderCodes;
 $("taskTitle").oninput = ()=>$("taskTitle").dataset.touched = 1;
 $("btnNewCancel").onclick = ()=>{ $("pNew").hidden = true; newSpots = null; };
@@ -2737,14 +2786,49 @@ $("btnCreate").onclick = async ()=>{
     await elCachePut(t.id, keep, areaKey(t)); // what was tapped is already on the phone
     await openTask(t); return;
   }
+  if(!newTbl && !picked.size){ toast("Vælg mindst én type"); return; }
+  if(!newShape){ toast("Vælg hvor opgaven skal være"); pickWhere(); return; }
+  if(!await sizeOk()) return;
   if(newTbl){ await createTblTask(); return; }
-  if(!picked.size){ toast("Vælg mindst én type"); return; }
   const t = {id:uuid(), name:$("taskTitle").value.trim() || autoTitle(), codes:[...picked],
     extent:newShape.extent, area:newShape.area, assignees:isBoss() ? [...assignees] : [me], created_by:me, created_at:new Date().toISOString(), archived:false};
   const sm = surfaceFor(picked); if(sm) t.surface = sm; // e.g. "16.3a": only beton and granit
   if(await saveTask(t)){ t.made_by_crew = !isBoss(); $("pNew").hidden = true; await openTask(t); if($("newPick").checked) startPick(t, true); }
 };
 
+// The real limit is how many elements every phone must fetch and draw, so count them (the area editor may have already)
+async function sizeOk(){
+  const s = newShape, big = ol.extent.getArea(s.extent) > MAX_AREA;
+  let n = null;
+  if(newTbl){
+    const row = tblSaved?.has(newTbl.name) && await tblRow(newTbl.name);
+    if(!row){
+      // without a saved line the old map's picture of the area is read, and over a big area it gets too coarse
+      if(big){ toast(`Så stort et område kan kun bruges, når hele linjen er gemt. Tryk "📥 Gem hele linjen for kommunen" først, eller vælg et mindre område.`, 7000); return false; }
+      return true;
+    }
+    n = tblInArea(row, s).length;
+  } else {
+    const ck = [...picked].join(",");
+    if(newCount?.key===areaKey(s) && newCount.c===ck) n = newCount.n;
+    else {
+      const b = $("btnCreate"), was = b.textContent; b.disabled = true; b.innerHTML = `<span class="spin"></span> Tæller steder …`;
+      try{ n = await countIn([...picked], s.extent); }catch(e){ console.error(e); }
+      b.disabled = false; b.textContent = was;
+    }
+  }
+  if(n==null) return !big || askBig(`Jeg kunne ikke tælle stederne i området (${fmtArea(shapeGeom(s).getArea())}). Er der mange, kan kortet blive langsomt på telefonerne.`);
+  if(n > HUGE_TASK){ toast(`${n.toLocaleString("da-DK")} steder er for mange til én opgave. Vælg færre typer eller et mindre område.`, 6000); return false; }
+  if(n > BIG_TASK) return askBig(`Opgaven får ${n.toLocaleString("da-DK")} steder. Det er mange, så kortet kan blive langsomt på telefonerne. Del den gerne op i flere opgaver.`);
+  return true;
+}
+function askBig(txt){
+  return new Promise(res=>{
+    const end = ok=>{ $("askBig").hidden = true; res(ok); };
+    $("askBigTxt").textContent = txt; $("askBig").hidden = false;
+    $("askBigYes").onclick = ()=>end(true); $("askBigNo").onclick = ()=>end(false); $("askBigYes").focus();
+  });
+}
 // A task of one tilbudsliste line: the elements the old map draws in the area become the task's picked elements
 async function createTblTask(){
   const l = newTbl, b = $("btnCreate"), was = b.textContent;
@@ -2770,7 +2854,10 @@ async function createTblTask(){
 
 // ================= DRAWING THE AREA =================
 // Rectangle: drag corners/edges to resize, the middle to move. Freehand: draw a ring with one finger, then drag its points.
-const MAX_AREA = 60e6; // bounding box, m²: keeps each task's request to the kommune small
+const MAX_AREA = 60e6; // bounding box, m²: "Se alt her" (every type) and views that fetch while you look stay below this
+// A task's real limit is how many elements every phone must fetch and draw, not its size (Captain, 2026-10-22):
+// above BIG_TASK it asks first, above HUGE_TASK it says no; PREVIEW_MAX is the most drawn while picking the area
+const BIG_TASK = 3000, HUGE_TASK = 20000, PREVIEW_MAX = 2000; // a cheap phone (6× slower CPU) drew 3000 small areas in ½ s per frame, 12000 in 2½ s, when all were in view
 let areaEd = null, areaT = null;
 const shapeFeat = new ol.Feature();
 const handleFeats = ["sw","s","se","e","ne","n","nw","w"].map(h=>{ const f = new ol.Feature(); f.set("h", h); return f; });
@@ -2808,14 +2895,15 @@ const boxI = new ol.interaction.Pointer({
   handleUpEvent(){ if(areaEd) areaEd.drag = null; return false; }
 });
 // Default rectangle: the part of the map you can see above the sheet
-function defaultExtent(){
+function defaultExtent(all){
   const [w,h] = map.getSize(), top = 70, bottom = Math.max(h - sheetH() - 16, top + 80);
-  // a computer screen shows a much bigger map, so start with its middle rather than all of it
-  const mx = wide() ? w*.25 : 24, my = wide() ? (bottom-top)*.2 : 0;
+  // a computer screen shows a much bigger map, so a rectangle starts with its middle rather than all of it
+  const mx = wide() && !all ? w*.25 : 24, my = wide() && !all ? (bottom-top)*.2 : 0;
   const a = map.getCoordinateFromPixel([mx, top+my]), b = map.getCoordinateFromPixel([w-mx, bottom-my]);
   return [Math.min(a[0],b[0]), Math.min(a[1],b[1]), Math.max(a[0],b[0]), Math.max(a[1],b[1])];
 }
 const HINT = {
+  view: "Flyt og zoom kortet. Det, der er inden for den blå ramme, kommer med.",
   box: "Træk i hjørnerne eller kanterne for at ændre størrelsen, og midt i firkanten for at flytte den. Træk udenfor for at flytte kortet.",
   drawing: matchMedia("(pointer:fine)").matches ? "Hold museknappen nede og tegn rundt om området. Slip, så lukkes formen." : "Tegn med én finger rundt om området. Slip, så lukkes formen.",
   edit: "Træk i punkterne for at rette formen. Træk i en kant for at lave et nyt punkt."
@@ -2828,7 +2916,11 @@ function dropTools(){
 function setMode(mode, init){
   const a = areaEd; dropTools(); a.mode = mode; a.place = null; editSrc.clear();
   document.querySelectorAll("#pArea [data-m]").forEach(b=>b.classList.toggle("on", b.dataset.m===mode));
-  if(mode==="box"){
+  $("btnAreaFind").textContent = mode==="view" ? "⌕ Find en by eller en vej" : "⌕ Følg en by eller en vej";
+  if(mode==="view"){
+    a.ext = defaultExtent(true); shapeFeat.setGeometry(ol.geom.Polygon.fromExtent(a.ext)); editSrc.addFeature(shapeFeat);
+    $("areaHint").textContent = HINT.view; $("btnRedraw").hidden = true;
+  } else if(mode==="box"){
     a.ext = init || defaultExtent(); paintBox();
     editSrc.addFeatures([shapeFeat, ...handleFeats]);
     $("areaHint").textContent = HINT.box; $("btnRedraw").hidden = true;
@@ -2856,7 +2948,9 @@ function setPoly(g){
   $("areaHint").textContent = HINT.edit; $("btnRedraw").hidden = false;
   areaChanged();
 }
-const areaGeom = () => areaEd.mode==="box" ? ol.geom.Polygon.fromExtent(areaEd.ext) : shapeFeat.getGeometry();
+const areaGeom = () => areaEd.mode!=="draw" ? ol.geom.Polygon.fromExtent(areaEd.ext) : shapeFeat.getGeometry();
+// "Det jeg ser": the frame follows the map
+map.on("moveend", ()=>{ const a = areaEd; if(a?.mode==="view" && !a.drag){ a.ext = defaultExtent(true); shapeFeat.setGeometry(ol.geom.Polygon.fromExtent(a.ext)); } });
 function curShape(){
   const g = areaGeom(); if(!g) return null;
   const [x0,y0,x1,y1] = g.getExtent();
@@ -2873,14 +2967,56 @@ function areaChanged(){
     const s = curShape();
     if(!s){ $("areaSize").textContent = ""; return; }
     let txt = fmtArea(shapeGeom(s).getArea());
-    if(ol.extent.getArea(s.extent) > MAX_AREA) txt += " · for stort";
+    if(areaEd.codes?.length || areaEd.tbl){ areaCount(s, txt); return; }
+    if(ol.extent.getArea(s.extent) > MAX_AREA && !over) txt += ` · <span class="warn">stort område</span>`;
     else if(over && overSrc.getFeatures().length){
       const sh = prepShape(s), inside = overSrc.getFeaturesInExtent(s.extent).filter(f=>inShape(f.getGeometry(), sh));
       const free = inside.filter(f=>f.get("_s")==="none").length;
       txt += ` · ${inside.length} ${over.pack ? "steder" : overName(over).toLowerCase()}, ${free} ikke i en opgave`;
     }
-    $("areaSize").textContent = txt;
+    $("areaSize").innerHTML = txt;
   }, 100);
+}
+// With the types (or a tilbudsliste line) already chosen in Ny opgave: how many are caught, and draw them when they're few enough.
+// The count is the server's (one tiny request per layer), so moving around a big area doesn't fetch it all.
+const plural = n => n===1 ? "sted" : "steder";
+const countMsg = (n, upTo) => `${upTo ? "op til " : ""}${n.toLocaleString("da-DK")} ${plural(n)}` + (n > HUGE_TASK ? ` · <span class="warn">for mange til én opgave</span>` : n > BIG_TASK ? ` · <span class="warn">mange, kortet kan blive langsomt</span>` : "");
+async function areaCount(s, txt){
+  const a = areaEd, key = areaKey(s), show = h => { if(areaEd===a && a.key===key) $("areaSize").innerHTML = txt + " · " + h; };
+  a.key = key;
+  if(a.tbl){
+    const row = a.tblRow ?? (a.tblRow = (tblSaved?.has(a.tbl.name) && await tblRow(a.tbl.name)) || false);
+    show(row ? countMsg(tblInArea(row, s).length) : "tælles når du trykker Opret"); return;
+  }
+  // what's drawn already covers the area: count it here, exactly (the drawn shape and the belægning rule too)
+  const sh = prepShape(s), sm = surfaceFor(new Set(a.codes));
+  if(a.got?.some(g=>ol.extent.containsExtent(g, s.extent))){
+    const n = prevSrc.getFeaturesInExtent(s.extent).filter(f=>inShape(f.getGeometry(), sh) && surfOk(sm, f)).length;
+    a.count = {key, n, c:a.codes.join(",")}; show(countMsg(n)); return;
+  }
+  show(`<span class="spin"></span> tæller …`);
+  clearTimeout(a.ct);
+  a.ct = setTimeout(async ()=>{
+    if(areaEd!==a || a.key!==key) return;
+    let n;
+    try{ n = await countIn(a.codes, s.extent); }catch(e){ console.error(e); show("kunne ikke tælle lige nu"); return; }
+    if(areaEd!==a || a.key!==key) return;
+    if(n==null){ show(""); return; }
+    a.count = {key, n, upTo:!!(s.area || sm), c:a.codes.join(",")};
+    show(countMsg(n, a.count.upTo));
+    if(n <= PREVIEW_MAX) areaPreview(a, s.extent);
+  }, 700);
+}
+async function areaPreview(a, ext){
+  // a margin, so a small move doesn't ask again
+  const e = ol.extent.buffer(ext, Math.min(ol.extent.getWidth(ext), ol.extent.getHeight(ext)) * .25).map(Math.round);
+  try{
+    const fs = await fetchLayers([`${codeIn(a.codes)} AND BBOX(wkb_geometry,${e.join(",")})`], g=>g.intersectsExtent(e));
+    if(areaEd!==a) return;
+    (a.got ||= []).push(e);
+    fs.forEach(f=>{ if(!prevSrc.getFeatureById(f.getId())) prevSrc.addFeature(f); });
+    areaChanged();
+  }catch(e){ console.error(e); }
 }
 // opts: {shape:{extent, area}|null, done(shape), cancel(), title, okLabel, hideOutline}
 function startArea(opts){
@@ -2892,13 +3028,15 @@ function startArea(opts){
   pane("pArea");
   map.addInteraction(boxI);
   const s = opts.shape;
+  prevSrc.clear();
   if(s?.area) setMode("draw", new ol.geom.Polygon(s.area.coordinates));
-  else setMode("box", s?.extent || null);
+  else if(s?.extent) setMode("box", s.extent);
+  else setMode("view");
   if(s?.place) placeHint(s.place);
   if(s) map.getView().fit(s.extent, {padding:[80,30,sheetPad(),30], maxZoom:11, duration:300});
 }
 function endArea(){
-  const a = areaEd; dropTools(); map.removeInteraction(boxI); editSrc.clear(); areaLayer.setVisible(true);
+  const a = areaEd; dropTools(); map.removeInteraction(boxI); editSrc.clear(); prevSrc.clear(); areaLayer.setVisible(true); clearTimeout(a.ct);
   areaEd = null; pane(a.prev); return a;
 }
 document.querySelectorAll("#pArea [data-m]").forEach(b=>b.onclick=()=>{
@@ -2908,7 +3046,8 @@ document.querySelectorAll("#pArea [data-m]").forEach(b=>b.onclick=()=>{
 });
 $("btnRedraw").onclick = ()=>setMode("draw", null);
 function placeHint(name){ areaEd.place = name; $("areaHint").textContent = `Området følger ${name}. Træk i punkterne for at rette det.`; areaChanged(); }
-$("btnAreaFind").onclick = ()=>openFind((s, it)=>{
+// "Det jeg ser" only needs the map moved there (quick, and it can't miss anything); a rectangle or freehand area can follow the town's or street's outline
+$("btnAreaFind").onclick = ()=>areaEd?.mode==="view" ? $("btnSearch").onclick() : openFind((s, it)=>{
   if(!areaEd) return;
   setMode("draw", new ol.geom.Polygon(s.area.coordinates)); placeHint(it.label);
   map.getView().fit(s.extent, {padding:[80,30,sheetPad(),30], duration:300});
@@ -2924,13 +3063,14 @@ $("btnAreaPeek").onclick = ()=>{
 $("btnAreaOk").onclick = ()=>{
   const s = curShape();
   if(!s){ toast("Tegn området først"); return; }
-  if(ol.extent.getArea(s.extent) > MAX_AREA){ toast("Området er for stort. Gør det mindre, eller del det i flere opgaver.", 4000); return; }
-  endArea().done(s);
+  const a = areaEd;
+  if(a.count?.key===areaKey(s) && a.count.n > HUGE_TASK){ toast(`${a.count.n.toLocaleString("da-DK")} steder er for mange til én opgave. Zoom mere ind, eller vælg færre typer.`, 5000); return; }
+  endArea().done(s, a.count?.key===areaKey(s) ? a.count : null);
 };
 // A boss can redraw an existing task's area
 $("btnEditArea").onclick = ()=>{
   const t = task;
-  startArea({shape:{extent:t.extent, area:t.area||null}, title:"Ret opgavens område", okLabel:"Gem område", hideOutline:true, done:s=>saveArea(t, s)});
+  startArea({shape:{extent:t.extent, area:t.area||null}, codes:t.elements ? null : t.codes, title:"Ret opgavens område", okLabel:"Gem område", hideOutline:true, done:s=>saveArea(t, s)});
 };
 async function saveArea(t, s){
   let patch = {extent:s.extent, area:s.area};
@@ -3183,7 +3323,7 @@ function overNewLabel(){
   $("btnOverNew").textContent = all?.length ? `+ Ny opgave med alle ${all.length} ${name}` : `+ Ny opgave med ${name}${f ? " i " + f.name : ""}`;
   $("btnOverArea").hidden = !all?.length;
 }
-const overArea = () => beginNewTask(over.codes, overFilter ? {...overFilter.shape, place:overFilter.drawn ? null : overFilter.name} : null, null, over.tbl);
+const overArea = () => beginNewTask(over.codes, overFilter ? {...overFilter.shape, place:overFilter.drawn ? null : overFilter.name} : null, null, over.tbl, !overFilter);
 $("btnOverArea").onclick = ()=>{ if(over) overArea(); };
 $("btnOverNew").onclick = ()=>{
   if(!over) return;
