@@ -50,14 +50,18 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0;color:var(--ink)}
 .flip .ic{font-size:19px;line-height:1}
 .flip .tx{font-size:11px;font-weight:600}
-.basemap #btnPin:not([hidden]),.basemap #btnMe{display:flex}
+.basemap #btnMe,.basemap #btnMore:not([hidden]){display:flex}
 #btnMe .ic{font-size:22px;color:#2b6cd4}
-#btnPin[aria-pressed="true"]{background:var(--moss)!important;color:#fff!important;border-color:var(--moss)!important}
-#btnFlaw{position:absolute;top:calc(env(safe-area-inset-top,0px) + 68px);right:12px}
-#btnFlaw[hidden]{display:none}
+/* Phones zoom with two fingers, so +/− only take up map there */
+@media (pointer:coarse) and (max-width:1023px){.ol-zoom{display:none}.basemap{top:calc(env(safe-area-inset-top,0px) + 64px)}}
+/* "⋯ Mere": the rarely used map tools (Meld en fejl, Sæt en pin), each with its words, in a small box beside the button */
+.morewrap{position:relative}
+#moreBox{position:absolute;left:52px;top:0;z-index:6;display:flex;flex-direction:column;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:8px;box-shadow:0 4px 18px #0004;width:max-content;max-width:calc(100vw - 80px)}
+#moreBox .btn{justify-content:flex-start;white-space:nowrap}
+#btnMore.pin{background:var(--moss)!important;color:#fff!important;border-color:var(--moss)!important}
+#btnMore.flaw{background:#b45309!important;color:#fff!important;border-color:#b45309!important}
 .ringbtn{width:100%}
 .ringbtn[aria-pressed="true"]{background:var(--moss);color:#fff;border-color:var(--moss)}
-#btnFlaw[aria-pressed="true"]{background:#b45309!important;color:#fff!important;border-color:#b45309!important}
 /* ⚠️ Kortfejl tab */
 .frow{display:flex;gap:8px;align-items:stretch;border-top:1px solid var(--line);padding:10px 0}
 .frow .fgo{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;font-size:15px;color:var(--ink);line-height:1.35}
@@ -327,15 +331,19 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 <div class="basemap">
   <button class="flip" id="btnFlip"><span class="ic"></span><span class="tx"></span></button>
   <button class="flip" id="btnMe" aria-label="Vis min position" title="Min position"><span class="ic">◎</span><span class="tx">Mig</span></button>
-  <button class="flip" id="btnPin" hidden aria-pressed="false"><span class="ic">📌</span><span class="tx">Pin</span></button>
+  <div class="morewrap">
+    <button class="flip" id="btnMore" hidden aria-expanded="false" aria-label="Flere værktøjer"><span class="ic">⋯</span><span class="tx">Mere</span></button>
+    <div id="moreBox" hidden>
+      <button class="btn" id="btnFlaw" hidden aria-pressed="false">⚠️ Meld en fejl i kortet</button>
+      <button class="btn" id="btnPin" hidden aria-pressed="false">📌 Sæt en pin med en note</button>
+    </div>
+  </div>
   <div class="seg2" role="group" aria-label="Baggrundskort">
     <button data-b="photo" aria-pressed="true">🛰 Luftfoto</button>
     <button data-b="map" aria-pressed="false">🗺 Kort</button>
   </div>
   <span class="credit" id="osmCredit" hidden>© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></span>
 </div>
-<!-- Top right, so a tall bottom sheet (Overblik) can't hide it -->
-<button class="flip" id="btnFlaw" hidden aria-pressed="false" aria-label="Meld en fejl i kommunens kort" title="Kortfejl"><span class="ic">⚠️</span><span class="tx">Fejl</span></button>
 <div class="toast" id="toast" role="status"><span id="toastTxt"></span><button id="toastAct" hidden></button></div>
 
 <div class="sheet" id="sheet">
@@ -3707,7 +3715,7 @@ async function showTaskPhotos(){
     return `${ids.length} steder: ${ns.slice(0,2).join(", ")}${ns.length > 2 ? ` og ${ns.length-2} mere` : ""}`; };
   const goAll = ids => ids.length===1 ? go(ids[0]) : ids.some(i=>elSrc.getFeatureById(i)) ? `<button class="btn go" data-go="${esc(ids.join(","))}">Vis dem på kortet ›</button>` : "";
   L.innerHTML = `<button class="btn primary" id="btnTaskThread">💬 Skriv eller tag billede til hele opgaven</button>`
-    + (pinsOk ? `<p class="muted" style="margin:0">Noget ved et bestemt sted uden element? Tryk 📌 Pin på kortet.</p>` : "")
+    + (pinsOk ? `<p class="muted" style="margin:0">Noget ved et bestemt sted uden element? Tryk ⋯ Mere på kortet og så 📌 Sæt en pin.</p>` : "")
     + (local.length ? `<div class="hist"><div class="when"><b>Ikke sendt endnu</b></div>${local.map(x=>`
         ${names(x.ids) ? `<div>${esc(names(x.ids))}</div>` : ""}<img src="${x.url}" alt="Billede, ikke sendt">${goAll(x.ids)}`).join("")}</div>` : "")
     + (groups.length ? groups.map(r=>`<div class="hist">
@@ -4206,7 +4214,7 @@ async function loadPins(t){
 }
 function pinMode(on){
   pinDrop = on; $("btnPin").setAttribute("aria-pressed", String(on));
-  if(on) toast("Tryk på kortet, hvor pinnen skal stå. Tryk 📌 igen for at lade være.", 6000);
+  if(on) toast("Tryk på kortet, hvor pinnen skal stå. Tryk 📌 Stop for at lade være.", 6000);
 }
 $("btnPin").onclick = ()=>{ if(!task) return; pinMode(!pinDrop); if(!pinDrop) $("toast").classList.remove("show"); };
 function openPin(p){ openThread({key:"pin:"+p.id, title:"📌 " + pinTitle(p), pin:p}); }
@@ -4303,8 +4311,22 @@ async function loadFlaws(){
 }
 function flawMode(on){
   flawDrop = on; $("btnFlaw").setAttribute("aria-pressed", String(on));
-  if(on){ pinMode(false); toast("Tryk på stedet med fejlen. Er fejlen ved et element, så tryk på det. Tryk ⚠️ igen for at lade være.", 7000); }
+  if(on){ pinMode(false); toast("Tryk på stedet med fejlen. Er fejlen ved et element, så tryk på det. Tryk ⚠️ Stop for at lade være.", 7000); }
 }
+// "⋯ Mere" shows when one of its tools is offered here; while a tool waits for a map tap the button turns into "Stop" for it
+function moreOpen(on){ $("moreBox").hidden = !on; $("btnMore").setAttribute("aria-expanded", String(on)); }
+function syncMore(){ const b = $("btnMore"), pin = $("btnPin").getAttribute("aria-pressed")==="true", flaw = $("btnFlaw").getAttribute("aria-pressed")==="true";
+  b.hidden = $("btnPin").hidden && $("btnFlaw").hidden && !pin && !flaw; if(b.hidden && !$("moreBox").hidden) moreOpen(false);
+  b.classList.toggle("pin", pin); b.classList.toggle("flaw", flaw);
+  b.querySelector(".ic").textContent = pin ? "📌" : flaw ? "⚠️" : "⋯"; b.querySelector(".tx").textContent = pin || flaw ? "Stop" : "Mere";
+  b.setAttribute("aria-label", pin || flaw ? "Stop" : "Flere værktøjer"); }
+{ const mo = new MutationObserver(syncMore); ["btnPin","btnFlaw"].forEach(id => mo.observe($(id), {attributes:true, attributeFilter:["hidden","aria-pressed"]})); }
+$("btnMore").onclick = ()=>{
+  if(pinDrop) return $("btnPin").click();
+  if(flawDrop) return $("btnFlaw").click();
+  moreOpen($("moreBox").hidden); };
+$("moreBox").addEventListener("click", e => { if(e.target.closest("button")) moreOpen(false); });
+document.addEventListener("pointerdown", e => { if(!$("moreBox").hidden && !e.target.closest(".morewrap")) moreOpen(false); });
 $("btnFlaw").onclick = ()=>{ flawMode(!flawDrop); if(!flawDrop) $("toast").classList.remove("show"); };
 function dropFlaw(e){
   flawMode(false); $("toast").classList.remove("show");
@@ -4356,7 +4378,7 @@ async function closeFlaw(p){
 // The koordinator's list
 function flawsHtml(){
   if(!flawsOk) return `<p class="muted" style="margin:0">Kortfejl kan ikke hentes lige nu. Tjek forbindelsen.</p>`;
-  if(!flaws.length) return `<p class="muted" style="margin:0">Ingen kortfejl lige nu. Ser nogen en fejl i kommunens kort, trykker de <b>⚠️ Fejl</b> på kortet og så på stedet.</p>`;
+  if(!flaws.length) return `<p class="muted" style="margin:0">Ingen kortfejl lige nu. Ser nogen en fejl i kommunens kort, trykker de <b>⋯ Mere</b> på kortet, så <b>⚠️ Meld en fejl</b> og så på stedet.</p>`;
   const un = flaws.filter(p=>!p.reported);
   return `<div class="row"><span class="grow muted">${flaws.length} ${flaws.length===1 ? "åben" : "åbne"} · ${un.length} ikke sendt</span>
       <button class="btn primary" id="btnFlawSend"${un.length ? "" : " disabled"}>📤 Send ${un.length || ""} til kommunen</button></div>`
@@ -4952,7 +4974,7 @@ window.addEventListener("online", ()=>{ if(autoSend) sendPending(); });
 // back pops it, we press that layer's own close button (so "Stop uden at gemme?" etc. still ask),
 // and put the entry back if something is still open. On the task list back leaves as usual.
 // Top first: the photo, the guide, the questions, the full-screen panels (later in the page = on top), then the sheet.
-const BACK = [["photoView","btnPhotoClose"], ["guide",closeGuide],
+const BACK = [["photoView","btnPhotoClose"], ["guide",closeGuide], [()=>!$("moreBox").hidden, ()=>moreOpen(false)],
   ...[...document.querySelectorAll(".ask")].reverse().map(a=>[a.id, a.querySelector("[id$=No]")]),
   ["pPerson","btnPersonNo","btnPersonCancel"], ["pProfile","btnProfClose"], ["pLogin"],
   ["pFind","btnFindClose"], ["pSearch","btnSearchClose"], ["pNotes","btnNotesClose"], ["pHist","btnHistClose"],
