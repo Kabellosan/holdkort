@@ -37,13 +37,14 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
 .ol-zoom button{width:40px!important;height:40px!important;font-size:22px!important}
 /* Map buttons: see-through frosted backgrounds, so more of the map shows but they still read on the aerial photo */
 .ol-zoom{background:transparent!important;padding:0!important}
-.ol-zoom button,.flip,.basemap .seg2{background:color-mix(in srgb,var(--card) 62%,transparent)!important;-webkit-backdrop-filter:blur(6px) saturate(1.2);backdrop-filter:blur(6px) saturate(1.2);
-  border:1px solid color-mix(in srgb,var(--ink) 18%,transparent)!important;box-shadow:0 1px 4px #0002!important;color:var(--ink)!important}
+.ol-zoom button,.flip,.basemap .seg2{background:#ffffff8c!important;-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);
+  border:1px solid #0000001f!important;box-shadow:0 1px 3px #0000001f!important;color:#1d2b22!important}
 .ol-zoom button{border-radius:10px!important;margin:0 0 4px!important}
 /* Aerial photo / plain map switch, under the zoom buttons. Phones: one small button that flips; computers: both choices side by side. */
 .basemap{position:absolute;top:calc(env(safe-area-inset-top,0px) + 160px);left:12px;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
 .basemap .seg2{display:none;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px;box-shadow:0 2px 10px #0003}
 .seg2 button{border:0;background:transparent;border-radius:999px;min-height:40px;padding:6px 14px;font-size:15px;color:var(--ink2)}
+.basemap .seg2 button{color:#3d4a42}
 .seg2 button[aria-pressed="true"]{background:var(--moss);color:#fff;font-weight:600}
 .flip{width:44px;height:50px;border:1px solid var(--line);border-radius:10px;background:var(--card);box-shadow:0 2px 10px #0003;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0;color:var(--ink)}
@@ -1020,7 +1021,7 @@ function elStyle(f, res){
   const s = shapeStyle(k, selSet.has(f), res > 3.2, k===st ? null : st);
   const p = partStyle(f); // a long element partly done gets its done stretch drawn green on top
   const m = mediaMark(f.getId());
-  return m || p || pin.length ? [...s, ...(p||[]), ...(m ? [badgeStyle(m)] : []), ...pin] : s;
+  return m || p || pin.length ? [...s, ...(p||[]), ...(m ? badgeStyle(m, res) : []), ...pin] : s;
 }
 // While tapping spots: everything the kommune has here, drawn thin and grey so the aerial photo still shows
 const SPOT_OFF = [new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffaa", width:3.5}), image:new ol.style.Circle({radius:7, fill:new ol.style.Fill({color:"#ffffffaa"})})}),
@@ -1035,8 +1036,10 @@ const centerPoint = f => { const g = f.getGeometry(), t = g.getType();
 const OWN_PIN = new ol.style.Style({zIndex:41, text:new ol.style.Text({text:"📍", font:"22px sans-serif", offsetY:-18})});
 // 📝 / 📷 beside elements with a note or a photo, so everyone can see where there's something to read or look at
 const badgeCache = {};
-const badgeStyle = t => badgeCache[t] ||= new ol.style.Style({geometry:centerPoint, zIndex:40,
-  text:new ol.style.Text({text:t, font:"20px sans-serif", offsetY:-22, backgroundFill:new ol.style.Fill({color:"#ffffffdd"}), padding:[2,3,0,3]})});
+// Small and round above the element, so the line itself stays visible; hidden when zoomed far out (res > 3.2), where they'd cover everything
+const badgeStyle = (t, res) => res > 3.2 ? [] : [badgeCache[t] ||= new ol.style.Style({geometry:centerPoint, zIndex:40,
+  image:new ol.style.Circle({radius: t.length > 2 ? 11 : 9, displacement:[0, 17], fill:new ol.style.Fill({color:"#ffffffb3"}), stroke:new ol.style.Stroke({color:"#0000002e", width:1})}),
+  text:new ol.style.Text({text:t, font: t.length > 2 ? "9px sans-serif" : "11px sans-serif", offsetY:-17})})];
 const badgeText = (note, photo) => (note ? "📝" : "") + (photo ? "📷" : "");
 // In the open task: its current note (sent or waiting) and its photos
 const mediaMark = id => badgeText(!!eff(id)?.note?.trim(), hasMedia(id));
@@ -1063,7 +1066,7 @@ function shapeStyle(s, sel, far, st){ // st: the status, when s is a type colour
     }));
     if(s==="blocked" || st==="blocked") styleCache[key].push(new ol.style.Style({ // a roadwork sign in the middle, so blocked stands out from far away too
       geometry: centerPoint,
-      text:new ol.style.Text({text:"🚧", font:`${sel ? 24 : far ? 16 : 20}px sans-serif`}),
+      text:new ol.style.Text({text:"🚧", font:`${sel ? 20 : far ? 12 : 15}px sans-serif`}),
       zIndex: sel ? 33 : 13
     }));
   }
@@ -1080,12 +1083,12 @@ function overStyle(f, res){
   if(place){
     const k = place.mode==="status" ? f.get("_s") || "none" : place.focus && f.get("elementkode")!==place.focus ? "off" : place.tcol?.[f.get("elementkode")] || "none";
     const s = shapeStyle(k, f===place.sel, far);
-    return f.get("_m") ? [...s, badgeStyle(f.get("_m"))] : s;
+    return f.get("_m") ? [...s, ...badgeStyle(f.get("_m"), res)] : s;
   }
   // a package by type: each type its own colour, done ones turn idverde green and blocked keep 🚧, so progress still shows
   const s = over?.mode==="type" && f.get("_s")!=="done" ? shapeStyle(over.tcol?.[f.get("elementkode")] || "none", false, far, f.get("_s"))
     : shapeStyle((over?.mode==="age" ? f.get("_a") : f.get("_s")) || "none", false, far);
-  return f.get("_m") ? [...s, badgeStyle(f.get("_m"))] : s;
+  return f.get("_m") ? [...s, ...badgeStyle(f.get("_m"), res)] : s;
 }
 const overLayer = new ol.layer.Vector({source:overSrc, style:overStyle, renderBuffer:200});
 const areaSrc = new ol.source.Vector();
