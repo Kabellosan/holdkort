@@ -35,6 +35,11 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
 .dot.on{background:var(--done)} .dot.off{background:var(--todo)}
 .ol-zoom{top:calc(env(safe-area-inset-top,0px) + 64px);left:12px}
 .ol-zoom button{width:40px!important;height:40px!important;font-size:22px!important}
+/* Map buttons: see-through frosted backgrounds, so more of the map shows but they still read on the aerial photo */
+.ol-zoom{background:transparent!important;padding:0!important}
+.ol-zoom button,.flip,.basemap .seg2{background:color-mix(in srgb,var(--card) 62%,transparent)!important;-webkit-backdrop-filter:blur(6px) saturate(1.2);backdrop-filter:blur(6px) saturate(1.2);
+  border:1px solid color-mix(in srgb,var(--ink) 18%,transparent)!important;box-shadow:0 1px 4px #0002!important;color:var(--ink)!important}
+.ol-zoom button{border-radius:10px!important;margin:0 0 4px!important}
 /* Aerial photo / plain map switch, under the zoom buttons. Phones: one small button that flips; computers: both choices side by side. */
 .basemap{position:absolute;top:calc(env(safe-area-inset-top,0px) + 160px);left:12px;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
 .basemap .seg2{display:none;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px;box-shadow:0 2px 10px #0003}
@@ -46,10 +51,10 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
 .flip .tx{font-size:11px;font-weight:600}
 .basemap #btnPin:not([hidden]),.basemap #btnMe{display:flex}
 #btnMe .ic{font-size:22px;color:#2b6cd4}
-#btnPin[aria-pressed="true"]{background:var(--moss);color:#fff;border-color:var(--moss)}
+#btnPin[aria-pressed="true"]{background:var(--moss)!important;color:#fff!important;border-color:var(--moss)!important}
 #btnFlaw{position:absolute;top:calc(env(safe-area-inset-top,0px) + 68px);right:12px}
 #btnFlaw[hidden]{display:none}
-#btnFlaw[aria-pressed="true"]{background:#b45309;color:#fff;border-color:#b45309}
+#btnFlaw[aria-pressed="true"]{background:#b45309!important;color:#fff!important;border-color:#b45309!important}
 /* ⚠️ Kortfejl tab */
 .frow{display:flex;gap:8px;align-items:stretch;border-top:1px solid var(--line);padding:10px 0}
 .frow .fgo{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;font-size:15px;color:var(--ink);line-height:1.35}
@@ -68,13 +73,16 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
   padding:6px 0;border:0;background:transparent;color:var(--ink2);font-size:13px;touch-action:none;cursor:grab}
 .grip i{display:block;width:44px;height:5px;border-radius:9px;background:var(--line)}
 .grip span{display:none}
-.sheet:not(.can-fold) .grip{pointer-events:none}
-.sheet.can-fold .grip i{width:52px;height:6px;background:var(--ink2);opacity:.55}
+.grip i{width:52px;height:6px;background:var(--ink2);opacity:.55}
 .sheet.dragging{transition:none}
 .sheet{transition:transform .2s}
 @media (max-width:1023px){
   .sheet.folded .pane>:not([data-keep]){display:none!important}
-  .sheet.folded .grip span{display:block}
+  .sheet.folded .grip span,.sheet.mini .grip span{display:block}
+  /* Folded all the way: only the bar is left, the whole map is free */
+  .sheet.mini{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 4px)}
+  .sheet.mini>:not(.grip){display:none!important}
+  .sheet.mini .grip{margin-bottom:0;min-height:44px}
 }
 .pane{display:flex;flex-direction:column;gap:14px;min-height:0}
 .row{display:flex;gap:10px;align-items:center}
@@ -1157,19 +1165,25 @@ const curPane = () => PANES.find(p=>!$(p).hidden);
 function pane(id){ if(id!==curPane()) fold(false); PANES.forEach(p=>$(p).hidden = p!==id);
   $("sheet").classList.toggle("can-fold", !!$(id).querySelector(":scope>[data-keep]")); showTbl(); showFlawBtn(); }
 // Fold the sheet down to the rows marked data-keep (its main buttons), so more of the map shows
-function fold(on){ const s = $("sheet"); if(!s) return; s.classList.toggle("folded", on);
-  $("grip").setAttribute("aria-expanded", String(!on)); $("grip").setAttribute("aria-label", on ? "Vis hele panelet" : "Gør panelet mindre"); }
-{ // Drag the bar down to fold, up to unfold; a tap flips it
+// on = 2 folds it all the way: only the bar is left ("mini"); panes without data-keep rows go straight there
+function fold(on){ const s = $("sheet"); if(!s) return; const lv = on === 2 || (on && !s.classList.contains("can-fold")) ? 2 : on ? 1 : 0;
+  s.classList.toggle("folded", lv === 1); s.classList.toggle("mini", lv === 2);
+  $("grip").querySelector("span").textContent = lv === 2 ? "▲ Vis menuen" : "▲ Vis mere";
+  $("grip").setAttribute("aria-expanded", String(!lv)); $("grip").setAttribute("aria-label", lv ? "Vis hele panelet" : "Gør panelet mindre"); }
+const foldLv = () => { const s = $("sheet"); return s.classList.contains("mini") ? 2 : s.classList.contains("folded") ? 1 : 0; };
+{ // Drag the bar down to fold (further down: only the bar is left), up to unfold; a tap flips it
   const g = $("grip"), s = $("sheet"); let y0 = null, dy = 0;
-  g.addEventListener("pointerdown", e => { if(wide() || !s.classList.contains("can-fold")) return; y0 = e.clientY; dy = 0; g.setPointerCapture(e.pointerId); s.classList.add("dragging"); });
+  g.addEventListener("pointerdown", e => { if(wide()) return; y0 = e.clientY; dy = 0; g.setPointerCapture(e.pointerId); s.classList.add("dragging"); });
   g.addEventListener("pointermove", e => { if(y0 === null) return; dy = e.clientY - y0;
-    const folded = s.classList.contains("folded"); // follow the finger, only in the direction that does something
-    s.style.transform = `translateY(${folded ? Math.max(dy, -60) / 4 : Math.max(dy, 0)}px)`; });
+    const lv = foldLv(); // follow the finger, only in the direction that does something
+    s.style.transform = `translateY(${lv === 2 ? Math.max(dy, -60) / 4 : lv === 1 ? (dy < 0 ? dy / 4 : dy) : Math.max(dy, 0)}px)`; });
   const end = () => { if(y0 === null) return; y0 = null; s.classList.remove("dragging"); s.style.transform = "";
-    const folded = s.classList.contains("folded");
-    if(Math.abs(dy) < 8) fold(!folded); else if(!folded && dy > 30) fold(true); else if(folded && dy < -20) fold(false); };
+    const lv = foldLv(), can = s.classList.contains("can-fold");
+    if(Math.abs(dy) < 8) fold(lv === 2 ? (can ? 1 : 0) : lv === 1 ? 0 : can ? 1 : 0); // a tap on an open sheet without main buttons does nothing
+    else if(dy > 30) fold(lv === 0 && can && dy < 160 ? 1 : 2);
+    else if(dy < -20) fold(lv === 2 && can && dy > -160 ? 1 : 0); };
   g.addEventListener("pointerup", end); g.addEventListener("pointercancel", end);
-  g.addEventListener("click", e => { if(e.detail === 0 && s.classList.contains("can-fold")) fold(!s.classList.contains("folded")); }); // keyboard
+  g.addEventListener("click", e => { if(e.detail === 0){ const lv = foldLv(); fold(lv ? 0 : s.classList.contains("can-fold") ? 1 : 0); } }); // keyboard
 }
 // Only the day is ever shown, never the clock time
 function ago(ts){ if(!ts) return ""; const d=new Date(ts), t=new Date(); const day=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate());
@@ -4153,7 +4167,7 @@ function wireFlaws(L){
   const byId = id => flaws.find(p=>p.id===id);
   L.querySelectorAll("[data-flaw]").forEach(b=>b.onclick=()=>openFlaw(byId(b.dataset.flaw)));
   L.querySelectorAll("[data-flawmap]").forEach(b=>b.onclick=()=>{ const p = byId(b.dataset.flawmap), v = map.getView(), z = Math.max(v.getZoom(), 9);
-    v.animate({center:[p.x, p.y - sheetH() / 2 * v.getResolutionForZoom(z)], zoom:z}); fold(true); });
+    fold(true); v.animate({center:[p.x, p.y - sheetH() / 2 * v.getResolutionForZoom(z)], zoom:z}); });
   if($("btnFlawSend")) $("btnFlawSend").onclick = sendFlaws;
   if($("btnFlawDone")) $("btnFlawDone").onclick = async ()=>{
     const ids = flawSent; $("btnFlawDone").disabled = true;
