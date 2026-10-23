@@ -68,6 +68,11 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
 .frow .btn{align-self:center}
 .flawask{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px;margin:8px 0}
 .basemap .credit{font-size:10px;background:#ffffffcc;color:#333;border-radius:6px;padding:1px 5px}
+/* Nordpil: only while the map is turned (two fingers); tap turns north up again */
+#btnNorth{position:absolute;top:calc(env(safe-area-inset-top,0px) + 64px);right:12px;width:44px;height:44px;border-radius:50%;padding:0;display:flex;align-items:center;justify-content:center;
+  background:#ffffff8c;-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);border:1px solid #0000001f;box-shadow:0 1px 3px #0000001f}
+#btnNorth[hidden]{display:none}
+#btnNorth svg{width:30px;height:30px;transition:transform .1s linear}
 .basemap .credit a{color:inherit}
 /* Paler street map, so status and task colours stand out on it */
 .osm-base canvas{filter:saturate(.35) brightness(1.04)}
@@ -328,6 +333,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <button class="chip" id="btnSearch" style="margin-left:auto" aria-label="Søg sted">⌕ <span>Søg</span></button>
   <button class="chip help" id="btnHelp" aria-label="Vis vejledning" title="Vejledning" hidden>?</button>
 </div>
+<button id="btnNorth" hidden aria-label="Drej kortet så nord vender op" title="Nord op"><svg viewBox="0 0 30 30" aria-hidden="true"><path d="M15 2 L20 15 L10 15 Z" fill="#d23a2a"/><path d="M15 28 L20 15 L10 15 Z" fill="#f4f4f4" stroke="#8a8a8a" stroke-width="1"/><text x="15" y="12.5" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" font-family="sans-serif">N</text></svg></button>
 <div class="basemap">
   <button class="flip" id="btnFlip"><span class="ic"></span><span class="tx"></span></button>
   <button class="flip" id="btnMe" aria-label="Vis min position" title="Min position"><span class="ic">◎</span><span class="tx">Mig</span></button>
@@ -1141,7 +1147,11 @@ const prevLayer = new ol.layer.Vector({source:prevSrc, style:[
   new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffcc", width:5}), image:new ol.style.Circle({radius:7, fill:new ol.style.Fill({color:"#fff"})})}),
   new ol.style.Style({fill:new ol.style.Fill({color:"#2b6cd466"}), stroke:new ol.style.Stroke({color:EDIT, width:2.5}), image:new ol.style.Circle({radius:5, fill:new ol.style.Fill({color:EDIT})})})]});
 const gpsFeat = new ol.Feature();
-gpsFeat.setStyle(new ol.style.Style({image:new ol.style.Circle({radius:9,fill:new ol.style.Fill({color:"#2b6cd4"}),stroke:new ol.style.Stroke({color:"#fff",width:3})})}));
+const GPS_DOT = new ol.style.Style({image:new ol.style.Circle({radius:9,fill:new ol.style.Fill({color:"#2b6cd4"}),stroke:new ol.style.Stroke({color:"#fff",width:3})})});
+// The way the phone points: a blue fan behind the dot (from the phone's compass), turned with the map
+const GPS_CONE = new ol.style.Style({image:new ol.style.Icon({src:"data:image/svg+xml,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><defs><radialGradient id="g" cx="40" cy="40" r="38" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#2b6cd4" stop-opacity=".75"/><stop offset="1" stop-color="#2b6cd4" stop-opacity="0"/></radialGradient></defs><path d="M40 40 L23 4 A38 38 0 0 1 57 4 Z" fill="url(#g)"/></svg>'), rotateWithView:true, scale:1.3})});
+let heading = null;
+gpsFeat.setStyle(()=>heading == null ? GPS_DOT : (GPS_CONE.getImage().setRotation(heading * Math.PI / 180), [GPS_CONE, GPS_DOT]));
 const gpsLayer = new ol.layer.Vector({source:new ol.source.Vector({features:[gpsFeat]})});
 
 // The overview's "only this town/street" outline
@@ -4556,6 +4566,31 @@ $("btnRoute").onclick = ()=>{
 const geo = new ol.Geolocation({projection:proj, trackingOptions:{enableHighAccuracy:true, maximumAge:10000}});
 geo.on("change:position", ()=>gpsFeat.setGeometry(new ol.geom.Point(geo.getPosition())));
 geo.on("error", ()=>toast("Ingen GPS. Tillad placering for siden i browseren."));
+// Compass: which way the phone points, for the fan on the dot. Android gives "deviceorientationabsolute" (alpha counter-clockwise
+// from north), iPhones give webkitCompassHeading but only after asking (on a tap, see btnMe). Never leaves the phone.
+let headAt = 0, headOn = false;
+function onHeading(e){
+  let h = e.webkitCompassHeading != null ? e.webkitCompassHeading : (e.absolute || e.type === "deviceorientationabsolute") && e.alpha != null ? 360 - e.alpha : null;
+  if(h == null || isNaN(h)) return;
+  h = (h + (screen.orientation?.angle ?? window.orientation ?? 0) + 360) % 360;
+  // Smooth the jitter, the short way round (359° → 1° is 2°, not 358°)
+  if(heading != null){ const d = ((h - heading + 540) % 360) - 180; if(Math.abs(d) < 2) return; h = (heading + d * 0.5 + 360) % 360; }
+  heading = h; headAt = Date.now(); gpsFeat.changed();
+}
+function startHeading(){
+  if(headOn) return; headOn = true;
+  // Both: a plain "deviceorientation" is only used when it says it's absolute (Firefox) or has the iPhone's heading
+  window.addEventListener("deviceorientationabsolute", onHeading); window.addEventListener("deviceorientation", onHeading);
+}
+// No compass reading for a while (the phone has none, or it was put down): no fan, rather than a wrong one
+setInterval(()=>{ if(heading != null && Date.now() - headAt > 8000){ heading = null; gpsFeat.changed(); } }, 4000);
+geo.on("change:tracking", ()=>{ if(geo.getTracking() && !(window.DeviceOrientationEvent?.requestPermission)) startHeading(); });
+// Nordpil: shows while the map is turned, pointing north; a tap turns north up again
+map.getView().on("change:rotation", ()=>{
+  const r = map.getView().getRotation(); $("btnNorth").hidden = Math.abs(r) < 0.01;
+  $("btnNorth").querySelector("svg").style.transform = `rotate(${r}rad)`;
+});
+$("btnNorth").onclick = ()=>map.getView().animate({rotation:0, duration:300});
 // GPS starts when a task is opened, not on the login screen
 function here(){ return geo.getPosition() || (selected && ol.extent.getCenter(selected.getGeometry().getExtent())) || lastAt || map.getView().getCenter(); }
 function distTo(f, p){ const c = f.getGeometry().getClosestPoint(p); return Math.hypot(c[0]-p[0], c[1]-p[1]); }
@@ -4581,6 +4616,8 @@ function goMe(){
   v.animate({center:[p[0], p[1] - dy], zoom:z}); return true;
 }
 $("btnMe").onclick = ()=>{
+  // iPhones only share the compass after asking, and only from a tap
+  if(window.DeviceOrientationEvent?.requestPermission && !headOn) DeviceOrientationEvent.requestPermission().then(r=>{ if(r === "granted") startHeading(); }).catch(()=>{});
   geo.setTracking(true);
   if(goMe()) return;
   toast("Finder din position …", 4000);
