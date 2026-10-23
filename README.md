@@ -113,7 +113,7 @@ alter publication supabase_realtime add table tasks, progress;
 - The name is still trust-based: someone with the crew code can type any name. Switch to per-person Supabase email login before it becomes an official tool.
 
 ## Privacy by design
-- **GPS never leaves the phone.** It's only used to find the nearest element and to show where you are (the blue dot, with a fan for the way the phone points).
+- **GPS never leaves the phone.** It's only used to find the nearest element and to show where you are (the blue dot).
 - **Nothing is sent until the worker presses Send.** "Send automatisk" is opt-in per person.
 - **Only the send day is shown,** never clock times per mark. No routes, no positions, no per-person statistics.
 - **Bosses see progress, not people:** the app hides who marked what from the boss view.
