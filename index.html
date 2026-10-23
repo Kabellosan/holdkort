@@ -1189,12 +1189,13 @@ function setBase(b){
   document.querySelectorAll(".seg2 button").forEach(x=>x.setAttribute("aria-pressed", String(x.dataset.b === b)));
   // The phone button shows what you get by tapping it
   const f = document.getElementById("btnFlip"); f.querySelector(".ic").textContent = b === "map" ? "🛰" : "🗺"; f.querySelector(".tx").textContent = b === "map" ? "Foto" : "Kort";
-  f.setAttribute("aria-label", b === "map" ? "Vis luftfoto" : "Vis kort"); f.onclick = ()=>setBase(b === "map" ? "photo" : "map");
+  f.setAttribute("aria-label", b === "map" ? "Vis luftfoto" : "Vis kort"); f.onclick = ()=>pickBase(b === "map" ? "photo" : "map");
   document.getElementById("osmCredit").hidden = b !== "map";
-  store.set("base", b);
 }
-document.querySelectorAll(".seg2 button").forEach(x=>x.onclick = ()=>setBase(x.dataset.b));
-setBase(store.get("base","photo"));
+// Plain map by default (Captain, 2026-10-23); only a tap is remembered, under a new key, since the old one was saved on every start
+const pickBase = b => { store.set("baseChoice", b); setBase(b); };
+document.querySelectorAll(".seg2 button").forEach(x=>x.onclick = ()=>pickBase(x.dataset.b));
+setBase(store.get("baseChoice","map"));
 // On computer screens the sheet is a sidebar beside the map, so it doesn't cover the bottom of the map
 const wide = () => matchMedia("(min-width:1024px)").matches;
 const sheetH = () => wide() ? 0 : $("sheet").offsetHeight;
@@ -2912,7 +2913,29 @@ const boxI = new ol.interaction.Pointer({
   handleUpEvent(){ if(areaEd) areaEd.drag = null; return false; }
 });
 // Default rectangle: the part of the map you can see above the sheet
+// "Det jeg ser": a frame inside the visible map, with some map around it so you see where it is (Captain, 2026-10-23)
+function frameBox(){
+  const [w,h] = map.getSize(), top = 70, bottom = Math.max(h - sheetH() - 16, top + 80);
+  const mx = Math.max(76, w * .14), my = Math.max(24, (bottom - top) * .1);
+  return [mx, top + my, w - mx, bottom - my];
+}
+// A new area starts over the whole of Ikast (the crew's home town), or over you at the same zoom when GPS is on.
+// The map only has whole zoom steps, so the frame is sized to hold Ikast at that step (Ikast's shape, grown to about 70 % of the free map's width) and then keeps its size on the screen
+const IKAST = (()=>{ const c = ol.proj.fromLonLat([9.158, 56.137], proj); return [c[0]-3000, c[1]-2300, c[0]+3000, c[1]+2300]; })();
+function frameStart(){
+  const v = map.getView(), [x0,y0,x1,y1] = frameBox(), [w,h] = map.getSize();
+  const need = Math.max(ol.extent.getWidth(IKAST) / (x1-x0), ol.extent.getHeight(IKAST) / (y1-y0));
+  const r = [...RES].reverse().find(x=>x >= need) || RES[0];
+  const c = geo.getPosition() || ol.extent.getCenter(IKAST);
+  const mx = (x0+x1)/2, my = (y0+y1)/2, iw = ol.extent.getWidth(IKAST) / r, ih = ol.extent.getHeight(IKAST) / r;
+  const k = Math.min(Math.max(1, (x1-x0) * .7 / iw), (x1-x0) / iw, (y1-y0) / ih), bw = iw * k / 2, bh = ih * k / 2;
+  // put c in the middle of the frame, not of the map
+  v.setResolution(r); v.setCenter([c[0] - (mx - w/2) * r, c[1] + (my - h/2) * r]);
+  return [mx - bw, my - bh, mx + bw, my + bh];
+}
 function defaultExtent(all){
+  if(all){ const [x0,y0,x1,y1] = areaEd?.box || frameBox(), a = map.getCoordinateFromPixel([x0,y0]), b = map.getCoordinateFromPixel([x1,y1]);
+    return [Math.min(a[0],b[0]), Math.min(a[1],b[1]), Math.max(a[0],b[0]), Math.max(a[1],b[1])]; }
   const [w,h] = map.getSize(), top = 70, bottom = Math.max(h - sheetH() - 16, top + 80);
   // a computer screen shows a much bigger map, so a rectangle starts with its middle rather than all of it
   const mx = wide() && !all ? w*.25 : 24, my = wide() && !all ? (bottom-top)*.2 : 0;
@@ -3048,7 +3071,7 @@ function startArea(opts){
   prevSrc.clear();
   if(s?.area) setMode("draw", new ol.geom.Polygon(s.area.coordinates));
   else if(s?.extent) setMode("box", s.extent);
-  else setMode("view");
+  else { areaEd.box = frameStart(); setMode("view"); }
   if(s?.place) placeHint(s.place);
   if(s) map.getView().fit(s.extent, {padding:[80,30,sheetPad(),30], maxZoom:11, duration:300});
 }
