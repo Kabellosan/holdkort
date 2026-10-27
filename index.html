@@ -4578,7 +4578,15 @@ $("btnRoute").onclick = ()=>{
   const f = gps ? fs.reduce((a,b)=>distTo(b,gps)<distTo(a,gps)?b:a) : selected;
   const g = f.getGeometry(), c = g.getClosestPoint(ol.extent.getCenter(g.getExtent()));
   const [lon, lat] = ol.proj.toLonLat(c, proj);
-  window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat.toFixed(6)},${lon.toFixed(6)}`, "_blank", "noopener");
+  const web = `https://www.google.com/maps/dir/?api=1&destination=${lat.toFixed(6)},${lon.toFixed(6)}`;
+  // Android: some browsers (Opera) open https Maps links as a web page, so ask for the Maps app by name;
+  // without the app the browser goes to the web page instead (browser_fallback_url).
+  if(/Android/i.test(navigator.userAgent)){
+    location.href = `intent://${web.slice(8)}#Intent;scheme=https;package=com.google.android.apps.maps;`
+      + `S.browser_fallback_url=${encodeURIComponent(web)};end`;
+    return;
+  }
+  window.open(web, "_blank", "noopener");
 };
 
 // ================= NEXT / LIST / GPS =================
