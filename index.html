@@ -897,9 +897,12 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 
 <script>
 // ================= CONFIG =================
+// Anonymous beta: under /beta/ (or with ?anonym) the app uses its own database, which keeps no names (supabase/anon_beta.sql):
+// login with the code alone, no people, no assigning, no photos. Data is what, where and which day only.
+const ANON = /\/beta\//.test(location.pathname) || new URLSearchParams(location.search).has("anonym");
 // Fill these in to share tasks and progress across phones (see README). Empty = this phone only.
-const SUPABASE_URL = "https://rvfwmmctqndfqvbuuoyi.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_Xzi9Xw8J46eTOXVMEyLmFA_BNWRICGi"; // publishable key: safe to be public
+const SUPABASE_URL = ANON ? "https://lkctygsamscansymqjcn.supabase.co" : "https://rvfwmmctqndfqvbuuoyi.supabase.co";
+const SUPABASE_ANON_KEY = ANON ? "sb_publishable_64C7416ayQot7Rt_w6tApA_8c-x8Lvb" : "sb_publishable_Xzi9Xw8J46eTOXVMEyLmFA_BNWRICGi"; // publishable keys: safe to be public
 // Login codes are checked by Supabase, not by this page: one shared account per role, its password is the code
 // (lowercase, at least 6 characters; see supabase/login.sql). Change a code in the Supabase dashboard.
 const ROLE_EMAIL = {crew:"udfoerende@holdkort.example", boss:"koordinator@holdkort.example", helper:"hjaelper@holdkort.example"};
@@ -1229,7 +1232,9 @@ const flawLayer = new ol.layer.Vector({source:flawSrc, style:f=>f.get("draft") ?
 const map = new ol.Map({target:"map", layers:[ortoLayer, osmLayer, filterLayer, areaLayer, overLayer, elLayer, tblLayer, labelLayer, prevLayer, editLayer, pinLayer, flawLayer, gpsLayer],
   view:new ol.View({projection:proj, center:START_CENTER, zoom:START_ZOOM, resolutions:RES, constrainResolution:true}),
   controls: ol.control.defaults.defaults({attribution:false, rotate:false})});
-const store = {get(k,d){try{const v=localStorage.getItem(k);return v ? (JSON.parse(v) ?? d) : d}catch(e){return d}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+// The anonymous beta shares the site with the real app, so its keys get their own prefix (no real names or tasks leak in)
+const SKEY = k => ANON ? "anon:"+k : k;
+const store = {get(k,d){try{const v=localStorage.getItem(SKEY(k));return v ? (JSON.parse(v) ?? d) : d}catch(e){return d}}, set(k,v){try{localStorage.setItem(SKEY(k),JSON.stringify(v))}catch(e){}}};
 { const v = store.get("view",null); if(v){ map.getView().setCenter(v.c); map.getView().setZoom(v.z); } }
 map.on("moveend",()=>store.set("view",{c:map.getView().getCenter(),z:map.getView().getZoom()}));
 // Aerial photo or plain map, remembered on this phone
@@ -1383,7 +1388,7 @@ const isBoss = () => user?.role === "boss";
 const isHelper = () => user?.role === "helper";
 // Udførende can make tasks for themselves only, and change or close the ones they made (the database checks both)
 const canCreate = () => isBoss() || user?.role === "crew";
-const canManage = t => isBoss() || (user?.role === "crew" && !!t?.made_by_crew && norm(t.created_by||"")===norm(me));
+const canManage = t => isBoss() || (user?.role === "crew" && !!t?.made_by_crew && (ANON || norm(t.created_by||"")===norm(me)));
 const ROLE_NAME = {boss:"Koordinator", crew:"Udførende", helper:"Hjælper"};
 // people.role only knows crew/boss; a helper is on the team like the crew
 const dbRole = r => r==="boss" ? "boss" : "crew";
@@ -1393,7 +1398,7 @@ const savePerson = (name, role) => sb.from("people").upsert({name, role:dbRole(r
 const roleOf = session => Object.keys(ROLE_EMAIL).find(r=>ROLE_EMAIL[r]===session?.user?.email) || null;
 // Tries the code as each role's password; the first that fits is the role
 async function signIn(code){
-  for(const role of ["crew","boss","helper"]){
+  for(const role of ANON ? ["crew","boss"] : ["crew","boss","helper"]){
     const {error} = await sb.auth.signInWithPassword({email:ROLE_EMAIL[role], password:code});
     if(!error) return {role};
     if(error.status===429) return {err:"For mange forsøg. Vent et par minutter og prøv igen."};
@@ -1401,37 +1406,56 @@ async function signIn(code){
   }
   return {err:"Koden passer ikke. Spørg din koordinator."};
 }
+// Anonymous beta: the code alone logs in, the Holdet tab, photos and the name field go, and the texts say what is (not) kept
+if(ANON){
+  $("loginName").hidden = true;
+  $("loginName").previousElementSibling.textContent = "Skriv holdets kode. Koden får du af din koordinator. Testversionen gemmer ingen navne.";
+  document.querySelector('#bossView [data-v="team"]').hidden = true;
+  $("btnNotePhoto").hidden = true; document.querySelector("#pNotes .eyebrow").textContent = "Noter";
+  $("noteIn").placeholder = "Skriv en note til holdet … (ingen navne)";
+  document.querySelector("#pProfile .facts").innerHTML = `
+      <li><i>🕶️</i><span><b>Testversionen gemmer ingen navne.</b> Du logger ind med koden alene. Databasen sletter selv ethvert navn, der sendes, så den kun ved <i>hvad</i>, <i>hvor</i> og <i>hvilken dag</i>.</span></li>
+      <li><i>📍</i><span><b>Din position forlader aldrig telefonen.</b> GPS bruges kun til at finde det nærmeste element.</span></li>
+      <li><i>📤</i><span><b>Intet sendes, før du trykker Send</b> (medmindre du selv slår automatisk til). Det, der sendes: hvilket element, status, en evt. note og <i>dagen</i>.</span></li>
+      <li><i>✍️</i><span><b>Noter kan alle på holdet se.</b> Skriv ikke navne, nummerplader eller andet om personer i dem.</span></li>
+      <li><i>📷</i><span><b>Ingen billeder</b> i testversionen, fordi de kan vise personer og nummerplader.</span></li>
+      <li><i>🗺️</i><span><b>Kort og søgning</b> hentes fra kommunen og OpenStreetMap, og "Vis vej" åbner Google Maps. De ser telefonens netadresse (IP), som ved alle hjemmesider.</span></li>
+      <li><i>🗑️</i><span><b>Når en opgave afsluttes,</b> slettes alle markeringer. Tilbage er kun "færdig, 47 af 47" og hvilken dag hvert sted blev passet.</span></li>`;
+}
 function applyUser(){
   $("whoName").textContent = me || "Navn?";
-  $("seeOwn").innerHTML = isHelper() ? "<b>Du ser kun de opgaver, der har dit navn på.</b> Koordinatorerne kan se, hvem der er sat på hvilke opgaver."
+  if(!ANON) $("seeOwn").innerHTML = isHelper() ? "<b>Du ser kun de opgaver, der har dit navn på.</b> Koordinatorerne kan se, hvem der er sat på hvilke opgaver."
     : "<b>Du ser kun dine egne opgaver</b> og dem, der er til alle. Koordinatorerne kan se, hvem der er sat på hvilke opgaver.";
   $("bossRow").hidden = !canCreate(); $("btnOverview").hidden = !isBoss();
   $("pLogin").hidden = !!user;
   maybeGuide();
 }
 $("btnLogin").onclick = async ()=>{
-  const name = cleanName($("loginName").value), code = $("loginCode").value.trim().toLowerCase();
-  if(!name){ $("loginErr").textContent = "Skriv dit navn"; return; }
+  const code = $("loginCode").value.trim().toLowerCase();
+  let name = cleanName($("loginName").value);
+  if(!name && !ANON){ $("loginErr").textContent = "Skriv dit navn"; return; }
   if(!sb){ $("loginErr").textContent = "Appen er ikke koblet til holdet."; return; }
   $("btnLogin").disabled = true; $("loginErr").textContent = "";
   const r = await signIn(code);
   $("btnLogin").disabled = false;
   if(r.err){ $("loginErr").textContent = r.err; return; }
   const role = r.role;
-  if(role!=="boss" && await isRemoved(name)){ sb.auth.signOut({scope:"local"}); $("loginErr").textContent = "Du er ikke på holdet. Spørg din koordinator."; return; }
+  if(ANON) name = ROLE_NAME[role]; // no names here: the phone shows the role, the database stores nothing
+  if(!ANON && role!=="boss" && await isRemoved(name)){ sb.auth.signOut({scope:"local"}); $("loginErr").textContent = "Du er ikke på holdet. Spørg din koordinator."; return; }
   user = {name, role}; me = name; store.set("user", user);
-  if(sb) savePerson(name, role);
+  if(sb && !ANON) savePerson(name, role);
   bossView = "tasks";
   applyUser(); loadTasks();
 };
 $("loginCode").onkeydown = e=>{ if(e.key==="Enter") $("btnLogin").click(); };
 $("who").onclick = ()=>{
   $("profName").textContent = me;
-  $("profRole").textContent = isBoss() ? "Koordinator: kan oprette og fordele opgaver."
+  $("profRole").textContent = ANON ? (isBoss() ? "Koordinator: kan oprette og afslutte opgaver." : "Udførende: ser alle opgaver og kan lave nye.") + " Testversion uden navne."
+    : isBoss() ? "Koordinator: kan oprette og fordele opgaver."
     : isHelper() ? "Hjælper: ser kun de opgaver, der har dit navn på." : "Udførende: ser dine egne opgaver og dem, der er til alle, og kan lave opgaver til dig selv.";
   $("autoSend").checked = autoSend;
-  $("profHonest").textContent = sb
-    ? "Koden tjekkes af databasen: uden kode kan ingen se eller ændre noget, og kun koordinatorer kan oprette, ændre og afslutte opgaver. Navnet er tillidsbaseret: appen kan ikke se, om du skriver dit eget. Ved officiel brug bør login skiftes til e-mail."
+  $("profHonest").textContent = ANON ? "Koden tjekkes af databasen: uden kode kan ingen se eller ændre noget. Testversionen har sin egen database, adskilt fra den rigtige app."
+    : sb ? "Koden tjekkes af databasen: uden kode kan ingen se eller ændre noget, og kun koordinatorer kan oprette, ændre og afslutte opgaver. Navnet er tillidsbaseret: appen kan ikke se, om du skriver dit eget. Ved officiel brug bør login skiftes til e-mail."
     : "Appen er ikke koblet til en fælles database endnu, så alt bliver på denne telefon.";
   $("pProfile").hidden = false;
 };
@@ -1477,6 +1501,13 @@ const GUIDES = {
     {ic:"📜", t:"Historik", h:`<p>Tryk på et sted og så <b>Historik</b> for at se, hvornår det sidst blev passet, og hvem der gjorde det.</p>`},
     HELP_STEP]
 };
+// The anonymous beta has no Holdet and no names in the history
+if(ANON){
+  GUIDES.boss = GUIDES.boss.filter(s=>s.ic!=="👥").map(s=>s.ic==="📜" ? {...s, h:`<p>Tryk på et sted og så <b>Historik</b> for at se, hvornår det sidst blev passet.</p>`}
+    : s.ic==="👋" ? {...s, h:`<p>Du laver opgaverne. Holdet markerer på kortet, hvad de har lavet, så du kan følge med. Testversionen gemmer ingen navne.</p>`} : s);
+  GUIDES.crew = GUIDES.crew.map(s=>s.ic==="📋" ? {...s, h:`<p>Tryk på en opgave i listen. Kortet viser så de steder, der hører til.</p>`}
+    : s.ic==="➕" ? {...s, h:`<p>Tryk <b>+ Ny opgave</b>. Vælg hvor og hvad, eller tryk på de enkelte steder på kortet.</p><p>Opgaver lavet med holdets kode kan alle på holdet afslutte.</p>`} : s);
+}
 let guideAt = 0;
 const guideSteps = () => GUIDES[user?.role] || GUIDES.crew;
 function showGuide(){ guideAt = 0; $("guide").hidden = false; renderGuide(); $("guideNext").focus(); }
@@ -1512,6 +1543,8 @@ let autoSend = store.get("autoSend", false);
 const eff = id => (task && pending.get(task.id+"|"+id)) || progress.get(id);
 const statusOf = id => eff(id)?.status || "todo";
 const pendingCount = () => pending.size;
+const sentAt = new Map(); // anonymous beta: what this phone sent lately (task|element|status → time)
+const justSent = r => Date.now() - (sentAt.get(r.task_id+"|"+r.element_id+"|"+r.status) || 0) < 15000;
 let outboxLater = false; // "Send senere" folds the bar into a small chip at the top until it's tapped
 function renderOutbox(){
   const n = pending.size;
@@ -1542,7 +1575,7 @@ async function sendPending(){
       store.set("prog:"+tid, [...m.values()]);
     }
   }
-  rows.forEach(r=>{ if(task && r.task_id===task.id) progress.set(r.element_id, r); });
+  rows.forEach(r=>{ if(task && r.task_id===task.id) progress.set(r.element_id, r); if(ANON) sentAt.set(r.task_id+"|"+r.element_id+"|"+r.status, Date.now()); });
   all.forEach(r=>(r._photos||[]).forEach(photoDel));
   pending.clear(); store.set("pending", []);
   renderOutbox(); refresh();
@@ -1571,7 +1604,7 @@ async function loadTasks(){
     else { tasks = data; store.set("tasks",tasks); }
   } else tasks = store.get("tasks",[]);
   renderTasks();
-  if(isBoss()) loadCrew();
+  if(isBoss() && !ANON) loadCrew();
   loadPacks().then(renderTasks);
   loadFlaws();
 }
@@ -1617,7 +1650,7 @@ function setStatus(ids, status, note, reason, photo, parts){
     const notes = [...(pending.get(key)?._notes || [])], nt = (note ?? "").trim();
     if(nt && nt!==(prev.note||"").trim()) notes.push(nt);
     // _fields are for the log only: what the team had before, the element's type, photos waiting to be sent
-    const r = {task_id:task.id, element_id:id, status: status ?? prev.status ?? "todo", note: note ?? prev.note ?? "", worker:me,
+    const r = {task_id:task.id, element_id:id, status: status ?? prev.status ?? "todo", note: note ?? prev.note ?? "", worker:ANON ? "" : me,
       _was: base.status==="done", _st0: base.status||"todo", _reason0: base.reason||null, _note0: base.note||"", _code: elSrc.getFeatureById(id)?.get("elementkode") || null, _photos: photos, _notes: notes};
     // The reason only belongs to "blocked"; any other status clears it
     r.reason = r.status==="blocked" ? (reason ?? prev.reason ?? "Andet") : null;
@@ -1640,7 +1673,8 @@ if(sb){
       if(place && !task){ clearTimeout(place.t); place.t = setTimeout(placePaint, 1500); return; }
       if(!task || !r || r.task_id!==task.id) return;
       progress.set(r.element_id, r); refresh();
-      if(norm(r.worker) !== norm(me)){ const f = elSrc.getFeatureById(r.element_id);
+      // The anonymous beta has no names, so its own marks coming back are told apart by what was just sent
+      if(ANON ? !justSent(r) : norm(r.worker) !== norm(me)){ const f = elSrc.getFeatureById(r.element_id);
         const k = r.worker + r.updated_at; remoteBatch[k] = (remoteBatch[k]||0) + 1; const n = remoteBatch[k];
         toast(`${isBoss() ? "Opdateret" : (r.worker||"Nogen")}: ${LABEL[r.status]}${n>1 ? ` · ${n} elementer` : f ? " · " + titleOf(f) : ""}`); }
     })
@@ -1869,6 +1903,7 @@ function renderTasks(){
   $("bossView").hidden = !user || !isBoss();
   document.querySelectorAll("#bossView [data-v]").forEach(b=>b.classList.toggle("on", b.dataset.v===bossView));
   if(!user){ L.innerHTML = ""; return; }
+  if(ANON && bossView==="team") bossView = "tasks"; // no people in the anonymous beta
   if(isBoss() && bossView==="team") L.innerHTML = teamHtml();
   else if(isBoss() && bossView==="flaws"){ L.innerHTML = flawsHtml(); wireFlaws(L); }
   else if(!tasks.length) L.innerHTML = isBoss()
@@ -2704,8 +2739,8 @@ function peopleChips(el, set){
 // A koordinator changes who an open task is for
 let whoSet = null;
 function showWho(t){
-  $("workWho").textContent = "👥 " + whoFor(t);
-  $("btnWho").hidden = !isBoss();
+  $("workWho").textContent = "👥 " + whoFor(t); $("workWho").parentElement.hidden = ANON;
+  $("btnWho").hidden = !isBoss() || ANON;
 }
 $("btnWho").onclick = ()=>{
   whoSet = new Set((task.assignees||[]).map(cleanName));
@@ -2912,8 +2947,8 @@ function showNewPanel(){
     renderCodes(); renderChosen();
   }
   $("pNew").hidden = false;
-  $("assignWho").hidden = $("assignList").hidden = !isBoss(); $("assignSelf").hidden = isBoss();
-  if(isBoss()){ renderAssign(); loadPeople().then(renderAssign); }
+  $("assignWho").hidden = $("assignList").hidden = !isBoss() || ANON; $("assignSelf").hidden = isBoss() || ANON;
+  if(isBoss() && !ANON){ renderAssign(); loadPeople().then(renderAssign); }
   if(!sp) loadPacks();
 }
 // "+ Ny opgave": a whole area of some types, or the spots tapped one by one
@@ -2934,7 +2969,7 @@ $("btnCreate").onclick = async ()=>{
   if(newSpots){
     const sp = spotsOf(newSpots), keep = newSpots.keep;
     const t = {id:uuid(), name:$("taskTitle").value.trim() || autoTitle(), codes:[...picked], extent:spotsExtent(sp), area:null,
-      elements:sp.map(s=>s.id), spots:sp, assignees:isBoss() ? [...assignees] : [me], created_by:me, created_at:new Date().toISOString(), archived:false};
+      elements:sp.map(s=>s.id), spots:sp, assignees:ANON ? [] : isBoss() ? [...assignees] : [me], created_by:me, created_at:new Date().toISOString(), archived:false};
     if(!await saveTask(t)) return;
     t.made_by_crew = !isBoss(); newSpots = null; $("pNew").hidden = true;
     await elCachePut(t.id, keep, areaKey(t)); // what was tapped is already on the phone
@@ -2945,7 +2980,7 @@ $("btnCreate").onclick = async ()=>{
   if(!await sizeOk()) return;
   if(newTbl){ await createTblTask(); return; }
   const t = {id:uuid(), name:$("taskTitle").value.trim() || autoTitle(), codes:[...picked],
-    extent:newShape.extent, area:newShape.area, assignees:isBoss() ? [...assignees] : [me], created_by:me, created_at:new Date().toISOString(), archived:false};
+    extent:newShape.extent, area:newShape.area, assignees:ANON ? [] : isBoss() ? [...assignees] : [me], created_by:me, created_at:new Date().toISOString(), archived:false};
   const sm = surfaceFor(picked); if(sm) t.surface = sm; // e.g. "16.3a": only beton and granit
   if(await saveTask(t)){ t.made_by_crew = !isBoss(); $("pNew").hidden = true; await openTask(t); if($("newPick").checked) startPick(t, true); }
 };
@@ -2997,7 +3032,7 @@ async function createTblTask(){
   if(!r.hit.length){ toast(`${tblLabel(l)} har ingen elementer i området (${r.sh.fills.length} flader og ${r.sh.strokes.length} streger fra kortet, ${r.all.length} elementer)`, 8000); return; }
   const codes = [...new Set(r.hit.map(f=>f.get("elementkode")).filter(Boolean))];
   const t = {id:uuid(), name:$("taskTitle").value.trim() || autoTitle(), codes, extent:newShape.extent, area:newShape.area,
-    elements:r.hit.map(f=>f.getId()), assignees:isBoss() ? [...assignees] : [me], created_by:me, created_at:new Date().toISOString(), archived:false};
+    elements:r.hit.map(f=>f.getId()), assignees:ANON ? [] : isBoss() ? [...assignees] : [me], created_by:me, created_at:new Date().toISOString(), archived:false};
   if(!await saveTask(t)) return;
   t.made_by_crew = !isBoss(); $("pNew").hidden = true;
   const cs = new Set(codes), keep = r.all.filter(f=>cs.has(f.get("elementkode")));
@@ -3717,7 +3752,7 @@ function showTended(fs){
   $("btnHist").hidden = fs.length !== 1 || !sb || !logOk;
   const pics = fs.length===1 ? (taskMedia.get(ids[0])||0) + (pending.get(task?.id+"|"+ids[0])?._photos?.length||0) : 0;
   $("noteN").hidden = !pics; $("noteN").textContent = pics ? `📷 ${pics}` : ""; // the photos are in the note screen
-  $("btnPhoto").hidden = !sb || !logOk;
+  $("btnPhoto").hidden = !sb || !logOk || ANON; // the anonymous beta takes no photos (they can show people and number plates)
   if(!sb || !logOk){ el.textContent = ""; el.classList.remove("warn"); return; }
   if(fs.length===1){
     const d = lastTended.get(ids[0]);
@@ -4155,7 +4190,7 @@ function showEl(zoom){
   const unsent = fs.some(g=>pending.has(task.id+"|"+g.getId()));
   const latest = fs.map(g=>progress.get(g.getId())).filter(Boolean).sort((a,b)=>a.updated_at<b.updated_at?1:-1)[0];
   $("elMeta").textContent = unsent ? "Ikke sendt endnu"
-    : latest ? (isBoss() ? `Sendt ${ago(latest.updated_at)}` : `${latest.worker||"?"} · ${ago(latest.updated_at)}`)
+    : latest ? (isBoss() ? `Sendt ${ago(latest.updated_at)}` : (ANON ? `Sendt ${ago(latest.updated_at)}` : `${latest.worker||"?"} · ${ago(latest.updated_at)}`))
     : (n>1 ? "Ingen har rørt dem endnu" : "Ingen har rørt den endnu");
   showTended(fs);
   if(zoom){
@@ -4326,8 +4361,8 @@ async function showNotes(){
 const taskKey = t => "opgave:" + t.id;
 function msgHtml(msgs, curAt=-1){
   const taskName = tid => tid===task?.id || !tid && noteCtx?.flaw ? "" : tasks.find(t=>t.id===tid)?.name || "en tidligere opgave";
-  return msgs.length ? msgs.map((m,i)=>`<div class="msg${norm(m.who)===norm(me) ? " mine" : ""}${m.wait ? " wait" : ""}">
-        <div class="by"><b>${esc(m.who || "Ukendt")}</b> · ${m.wait ? "ikke sendt endnu" : m.day ? sinceText(m.day) + (daysSince(m.day) > 1 ? ` (${esc(longDate(m.day))})` : "") : ""}${taskName(m.tid) ? ` · ${esc(taskName(m.tid))}` : ""}${m.places > 1 ? ` · på ${m.places} steder` : ""}</div>
+  return msgs.length ? msgs.map((m,i)=>`<div class="msg${(ANON ? m.wait : norm(m.who)===norm(me)) ? " mine" : ""}${m.wait ? " wait" : ""}">
+        <div class="by">${ANON ? (m.wait ? "Dig" : "Holdet") : `<b>${esc(m.who || "Ukendt")}</b>`} · ${m.wait ? "ikke sendt endnu" : m.day ? sinceText(m.day) + (daysSince(m.day) > 1 ? ` (${esc(longDate(m.day))})` : "") : ""}${taskName(m.tid) ? ` · ${esc(taskName(m.tid))}` : ""}${m.places > 1 ? ` · på ${m.places} steder` : ""}</div>
         ${m.note ? `<div class="txt">${esc(m.note)}${m.edited ? ` <span class="muted" style="font-size:13px">(rettet)</span>` : ""}</div>` : ""}
         ${m.note && (canEditNote(m) || canDelNote(m)) ? `<button class="btn ghost ednote" data-ed="${i}">${canEditNote(m) ? "✏️ Ret" : "🗑 Slet"}</button>` : ""}
         ${m.pics.length ? `<div class="pics">${m.pics.map(p=>`<span class="pic"><img src="${esc(p.url)}" alt="Billede" data-i="${notePics.indexOf(p)}">${canDelPic(p) ? `<button class="del" data-del="${notePics.indexOf(p)}" aria-label="Slet billedet">🗑</button>` : ""}</span>`).join("")}</div>` : ""}
@@ -4394,7 +4429,7 @@ function openThread(ctx){ noteCtx = ctx; $("noteIn").value = ""; $("pNotes").hid
 async function showThread(){
   const c = noteCtx, L = $("notesList"), first = $("pNotes").hidden; if(!c) return;
   $("pNotes").hidden = false; $("notesTitle").textContent = c.title; $("btnNote").textContent = "Send";
-  const head = c.flaw ? flawHead(c) : c.pin && !c.pin.draft ? `<div class="pinhead">📌 Sat af ${esc(c.pin.worker || "?")} ${sinceText(c.pin.day)}<button class="btn ghost" data-close>✓ Klaret, fjern pinnen</button></div>` : "";
+  const head = c.flaw ? flawHead(c) : c.pin && !c.pin.draft ? `<div class="pinhead">📌 Sat ${ANON ? "" : `af ${esc(c.pin.worker || "?")} `}${sinceText(c.pin.day)}<button class="btn ghost" data-close>✓ Klaret, fjern pinnen</button></div>` : "";
   if(!c.key && c.flaw){ L.innerHTML = head; wireFlawHead(L, c); return; }
   if(!c.key){ L.innerHTML = `<p class="muted">Skriv hvad pinnen handler om, eller tag et billede. Holdet og koordinatoren kan se den på kortet, når du trykker Send.</p>`; $("noteIn").focus(); return; }
   if(first) L.innerHTML = `<p class="muted"><span class="spin"></span> Henter …</p>`;
@@ -4412,7 +4447,7 @@ async function showThread(){
 async function ensurePin(c, first){
   if(!c.pin?.draft) return true;
   if(c.flaw) return ensureFlaw(c, first);
-  const {data, error} = await sb.from("pins").insert({task_id:task.id, x:c.pin.x, y:c.pin.y, worker:me, title: first ? first.slice(0, 60) : null}).select().single();
+  const {data, error} = await sb.from("pins").insert({task_id:task.id, x:c.pin.x, y:c.pin.y, worker:ANON ? null : me, title: first ? first.slice(0, 60) : null}).select().single();
   if(error){ console.error(error); return false; }
   if(c.feat) pinSrc.removeFeature(c.feat);
   c.pin = data; c.key = "pin:" + data.id; c.title = "📌 " + pinTitle(data); c.feat = null;
@@ -4420,7 +4455,7 @@ async function ensurePin(c, first){
   return true;
 }
 // A kortfejl's conversation belongs to no task (it outlives them and isn't one of the task's notes)
-const threadLine = (c, extra) => ({element_id:c.key, code:null, task_id:c.flaw ? null : task.id, day:today(), done:false, worker:me, status:null, reason:null, note:null, photo:null, ...extra});
+const threadLine = (c, extra) => ({element_id:c.key, code:null, task_id:c.flaw ? null : task.id, day:today(), done:false, worker:ANON ? null : me, status:null, reason:null, note:null, photo:null, ...extra});
 async function threadSend(text){
   const c = noteCtx, btn = $("btnNote");
   if(!flawKindOk(c)) return;
@@ -4511,10 +4546,10 @@ function flawHead(c){
     <div class="people" id="flawKinds">${FLAWS.map(k=>`<button data-k="${esc(k)}" class="${p.flaw===k ? "on" : ""}">${esc(k)}</button>`).join("")}</div>
     ${p.element ? `<div class="pinhead" style="margin-top:10px">Om: <b>${esc(flawWhat(p))}</b><button class="btn ghost" data-unel>✕ Ikke om det</button></div>`
       : `<p class="muted">Ikke ved et bestemt element.</p>`}
-    <p class="muted">Skriv hvad der er galt, eller tag et billede. Koordinatoren samler kortfejlene og sender dem til kommunen.</p>`;
-  const mine = isBoss() || norm(p.worker)===norm(me);
+    <p class="muted">Skriv hvad der er galt${ANON ? "" : ", eller tag et billede"}. Koordinatoren samler kortfejlene og sender dem til kommunen.</p>`;
+  const mine = isBoss() || ANON || norm(p.worker)===norm(me);
   return `<div class="pinhead" style="display:block"><div>⚠️ <b>${esc(p.flaw)}</b>${p.code ? ` · ${esc(flawWhat(p))}` : ""}</div>
-    <div>Sat af ${esc(p.worker || "?")} ${sinceText(p.day)} · ${p.reported ? `sendt til kommunen ${esc(longDate(p.reported))}` : "ikke sendt til kommunen endnu"}</div>
+    <div>Sat ${ANON ? "" : `af ${esc(p.worker || "?")} `}${sinceText(p.day)} · ${p.reported ? `sendt til kommunen ${esc(longDate(p.reported))}` : "ikke sendt til kommunen endnu"}</div>
     ${mine ? `<button class="btn ghost" data-fixed style="margin-top:6px">✓ Rettet, fjern den</button>` : ""}</div>`;
 }
 function wireFlawHead(L, c){
@@ -4528,7 +4563,7 @@ function flawKindOk(c){
 }
 async function ensureFlaw(c, first){
   const p = c.pin;
-  const {data, error} = await sb.from("pins").insert({task_id:p.task_id, x:p.x, y:p.y, worker:me, flaw:p.flaw, element:p.element, code:p.code, what:p.what,
+  const {data, error} = await sb.from("pins").insert({task_id:p.task_id, x:p.x, y:p.y, worker:ANON ? null : me, flaw:p.flaw, element:p.element, code:p.code, what:p.what,
     title: first ? first.slice(0, 60) : null}).select().single();
   if(error){ console.error(error); return false; }
   if(c.feat) flawSrc.removeFeature(c.feat);
@@ -4551,7 +4586,7 @@ function flawsHtml(){
     + (flawSent ? `<div class="flawask"><b>Har du sendt dem til kommunen?</b><div class="row" style="margin-top:8px">
         <button class="btn primary" id="btnFlawDone">✓ Ja, markér ${flawSent.length} som sendt</button><button class="btn ghost" id="btnFlawNot">Ikke endnu</button></div></div>` : "")
     + flaws.map(p=>`<div class="frow"><button class="fgo" data-flaw="${esc(p.id)}"><b>⚠️ ${esc(p.flaw)}</b>${p.code ? ` · ${esc(flawWhat(p))}` : ""}
-        ${p.title ? `<br><span>${esc(p.title)}</span>` : ""}<br><small class="muted">${esc(p.worker || "?")} ${sinceText(p.day)} · ${p.reported ? "sendt " + esc(longDate(p.reported)) : "ikke sendt"}</small></button>
+        ${p.title ? `<br><span>${esc(p.title)}</span>` : ""}<br><small class="muted">${ANON ? "Sat" : esc(p.worker || "?")} ${sinceText(p.day)} · ${p.reported ? "sendt " + esc(longDate(p.reported)) : "ikke sendt"}</small></button>
         <button class="btn" data-flawmap="${esc(p.id)}">Vis</button></div>`).join("");
 }
 function wireFlaws(L){
@@ -5134,6 +5169,7 @@ if(user && sb) sb.auth.getSession().then(({data, error})=>{
     return;
   }
   if(role!==user.role){ user.role = role; store.set("user", user); applyUser(); renderTasks(); }
+  if(ANON) return;
   savePerson(me, user.role);
   // Someone a boss took off the team is logged out, once nothing they marked is waiting to be sent
   if(!isBoss()) isRemoved(me).then(gone=>{
