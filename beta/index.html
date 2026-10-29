@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Holdkort · testversion</title>
+<style>body{font:17px system-ui,sans-serif;margin:0;padding:40px 20px;color:#1d2b22;background:#f4f4ef}</style>
+</head>
+<body>
+<p id="msg">Henter testversionen …</p>
+<script>
+// Testversion of Holdkort: loads index.html from a branch on GitHub, so a new design can be tried on a phone
+// while the real app (the main branch, one folder up) stays as it is. Same login and same database as the real app.
+// ?b=<branch> picks another branch. The branch's own pushes show up here within a few minutes.
+(async () => {
+  const b = new URLSearchParams(location.search).get("b") || "claude/project-thread-t48ry3";
+  const url = `https://raw.githubusercontent.com/Kabellosan/holdkort/${b}/index.html?t=${Date.now()}`;
+  try {
+    const r = await fetch(url, {cache: "no-store"});
+    if (!r.ok) throw new Error(r.status);
+    const tag = `<div style="position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 2px);z-index:99;pointer-events:none;background:#b45309;color:#fff;font:600 11px system-ui,sans-serif;padding:2px 8px;border-radius:999px">TESTVERSION</div>`;
+    const html = (await r.text()).replace("</body>", tag + "</body>");
+    document.open(); document.write(html); document.close();
+  } catch (e) {
+    document.getElementById("msg").textContent = "Testversionen kunne ikke hentes (" + e.message + "). Prøv igen om lidt, eller brug den rigtige app.";
+  }
+})();
+</script>
+</body>
+</html>
