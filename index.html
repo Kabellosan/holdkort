@@ -72,6 +72,18 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
 #btnNorth{position:absolute;top:calc(env(safe-area-inset-top,0px) + 64px);right:12px;width:44px;height:44px;border-radius:50%;padding:0;display:flex;align-items:center;justify-content:center;
   background:#ffffff8c;-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);border:1px solid #0000001f;box-shadow:0 1px 3px #0000001f}
 #btnNorth[hidden]{display:none}
+/* "🗂 Lag": the layer menu from the right, like the old kommune map (Captain 2026-10-29), so you can just look without making a task */
+#btnLayers{position:absolute;top:calc(env(safe-area-inset-top,0px) + 64px);right:12px;width:56px}
+#btnLayers[hidden]{display:none}
+#btnLayers.on{background:var(--moss)!important;color:#fff!important;border-color:var(--moss)!important}
+#btnLayers:not([hidden])~#btnNorth{top:calc(env(safe-area-inset-top,0px) + 124px)}
+#layersScrim{position:absolute;inset:0;background:#0004;z-index:10}
+#layersScrim[hidden]{display:none}
+#pLayers{left:auto;right:0;width:min(88vw,400px);border-left:1px solid var(--line);box-shadow:-6px 0 24px #0004;z-index:11;animation:layersIn .2s ease-out}
+@keyframes layersIn{from{transform:translateX(100%)}to{transform:none}}
+#pLayers .allrow{width:100%;justify-content:flex-start;font-size:17px;min-height:56px}
+#pLayers .allrow.on{background:var(--moss);color:#fff;border-color:var(--moss)}
+#pBrowse .twobtn{display:flex;gap:8px}#pBrowse .twobtn .btn{flex:1}
 #btnNorth svg{width:30px;height:30px;transition:transform .1s linear}
 .basemap .credit a{color:inherit}
 /* Paler street map, so status and task colours stand out on it */
@@ -319,6 +331,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   #pNew .list{grid-column:1;grid-row:2;min-height:0}
   #pNew footer{grid-column:2;grid-row:1/3;align-content:start;justify-content:flex-start;border-top:0;border-left:1px solid var(--line);max-height:none;overflow-y:auto;padding-top:calc(env(safe-area-inset-top,0px) + 14px)}
   #pLogin{right:0;width:auto}
+  #pLayers{right:0;left:auto;width:400px;border-right:0}
   #pLogin .body{max-width:440px;width:100%;margin:0 auto}
   .ask>div{max-width:420px}
 }
@@ -333,6 +346,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <button class="chip" id="btnSearch" style="margin-left:auto" aria-label="Søg sted">⌕ <span>Søg</span></button>
   <button class="chip help" id="btnHelp" aria-label="Vis vejledning" title="Vejledning" hidden>?</button>
 </div>
+<button class="flip" id="btnLayers" hidden aria-label="Vælg hvad kortet viser" title="Kortlag"><span class="ic">🗂</span><span class="tx">Lag</span></button>
 <button id="btnNorth" hidden aria-label="Drej kortet så nord vender op" title="Nord op"><svg viewBox="0 0 30 30" aria-hidden="true"><path d="M15 2 L20 15 L10 15 Z" fill="#d23a2a"/><path d="M15 28 L20 15 L10 15 Z" fill="#f4f4f4" stroke="#8a8a8a" stroke-width="1"/><text x="15" y="12.5" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" font-family="sans-serif">N</text></svg></button>
 <div class="basemap">
   <button class="flip" id="btnFlip"><span class="ic"></span><span class="tx"></span></button>
@@ -476,6 +490,18 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="row" data-keep>
       <button class="btn" id="btnPickCancel">Annullér</button>
       <button class="btn primary fill" id="btnPickOk">Gem steder</button>
+    </div>
+  </div>
+
+  <!-- Just looking: the kommune's elements on the map, chosen in the layer menu, no task -->
+  <div class="pane" id="pBrowse" hidden>
+    <div class="row" data-keep><div class="grow"><div class="eyebrow">Kortet viser</div><h2 id="browseWhat">Alt</h2></div><button class="btn ghost" id="btnBrowseClose">✕ Luk</button></div>
+    <div class="muted" id="browseHint"></div>
+    <div class="legend" id="browseLegend" hidden></div>
+    <button class="btn primary" id="btnBrowseLayers" data-keep>🗂 Vælg hvad kortet viser</button>
+    <div class="twobtn" id="browseNew" hidden>
+      <button class="btn" id="btnBrowseSpots">☝ Vælg steder til en opgave</button>
+      <button class="btn" id="btnBrowseTask">+ Opgave med det jeg ser</button>
     </div>
   </div>
 
@@ -767,6 +793,29 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   </footer>
 </div>
 
+<!-- "🗂 Lag": what the map shows while just looking, switched on and off like on the old kommune map; it shows at once -->
+<div id="layersScrim" hidden></div>
+<div class="panel" id="pLayers" hidden role="dialog" aria-labelledby="layersQ">
+  <header>
+    <div class="row"><h2 class="grow" id="layersQ">Hvad skal kortet vise?</h2><button class="btn ghost" id="btnLayersClose">✕ Luk</button></div>
+    <button class="btn allrow" id="layersAll" aria-pressed="true">✓ Vis alt</button>
+    <input type="search" id="layersSearch" placeholder="Søg type: pur, fortov, bænk, 16.3 …" autocomplete="off">
+  </header>
+  <div class="list">
+    <div class="packbox" id="layersPackBox">
+      <div class="row tblrow"><span class="grow" id="browseTbl">📋 Tilbudsliste: <span class="muted">ingen</span></span><button class="btn" data-tbl>Vis</button></div>
+      <div class="section">Pakker</div>
+      <div class="packs" id="layersPacks"></div>
+      <div class="section">Typer</div>
+    </div>
+    <div class="codes" id="layersList"></div>
+  </div>
+  <footer>
+    <div class="chosen" id="layersChosen"></div>
+    <button class="btn primary" id="btnLayersOk">Se kortet</button>
+  </footer>
+</div>
+
 <!-- One element's log: when it was tended, notes and photos -->
 <div class="panel" id="pHist" hidden>
   <header><div class="row"><div class="grow"><div class="eyebrow" id="histEyebrow">Historik</div><h2 id="histTitle"></h2></div><button class="btn ghost" id="btnHistClose">Luk</button></div></header>
@@ -1029,7 +1078,7 @@ function elStyle(f, res){
     const far = res > 3.2, ty = pick.tcol?.get(pickKey(f)), on = pick.ids.has(f.getId());
     // picking in a task's area, where most are usually in: the ones in keep their type colour, the rest go grey
     if(!pick.spots) return shapeStyle(on ? ty || "pick" : "off", false, far);
-    return [...(on ? shapeStyle("pick", true, far) : ty ? shapeStyle(ty, false, far) : SPOT_OFF), ...pin];
+    return [...(on || f===pick.sel ? shapeStyle("pick", true, far) : ty ? shapeStyle(ty, false, far) : SPOT_OFF), ...pin];
   }
   const st = statusOf(f.getId()), k = byTypeNow() && st!=="done" ? tcol[f.get("elementkode")] || "none" : st;
   const s = shapeStyle(k, selSet.has(f), res > 3.2, k===st ? null : st);
@@ -1208,10 +1257,10 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;
 function toast(t, ms=2600, act){const el=$("toast"), b=$("toastAct"); $("toastTxt").textContent=t;
   b.hidden=!act; el.classList.toggle("act", !!act); b.onclick = act ? ()=>{ el.classList.remove("show"); b.onclick=null; act.fn(); } : null; if(act) b.textContent=act.label;
   el.classList.add("show"); clearTimeout(toast.t); toast.t=setTimeout(()=>{ el.classList.remove("show"); b.onclick=null; },ms);}
-const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick","pPlace","pPart","pSpots"];
+const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick","pPlace","pPart","pSpots","pBrowse"];
 const curPane = () => PANES.find(p=>!$(p).hidden);
 function pane(id){ if(id!==curPane()) fold(false); if(ringOn && id!=="pPick" && id!=="pSpots") ringMode(false); PANES.forEach(p=>$(p).hidden = p!==id);
-  $("sheet").classList.toggle("can-fold", !!$(id).querySelector(":scope>[data-keep]")); showTbl(); showFlawBtn(); }
+  $("sheet").classList.toggle("can-fold", !!$(id).querySelector(":scope>[data-keep]")); showTbl(); showFlawBtn(); showLayersBtn(); }
 // Fold the sheet down to the rows marked data-keep (its main buttons), so more of the map shows
 // on = 2 folds it all the way: only the bar is left ("mini"); panes without data-keep rows go straight there
 function fold(on){ const s = $("sheet"); if(!s) return; const lv = on === 2 || (on && !s.classList.contains("can-fold")) ? 2 : on ? 1 : 0;
@@ -2091,6 +2140,7 @@ function startSpots(t, from, show = null){
   spotLoad();
 }
 function spotsCount(){
+  if(pick.browse){ browseCount(); return; }
   const p = pick, n = p.ids.size;
   $("spotsCount").textContent = n; $("spotsOf").textContent = `${n===1 ? "sted" : "steder"} valgt`;
   $("btnSpotsOwn").textContent = p.own ? "✕ Intet punkt" : "📍 Eget punkt";
@@ -2323,13 +2373,99 @@ $("btnSpotsOk").onclick = async ()=>{
   endSpots(); toast(`${sp.length} ${sp.length===1 ? "sted" : "steder"} gemt`); openTask(t);
 };
 
+// ================= JUST LOOKING (🗂 LAG) =================
+// Captain 2026-10-29: people mostly made a new task and picked Vis alt only to see what's where. "🗂 Lag" (right side,
+// on the task list) shows the kommune's elements straight away, with a menu from the right like the old kommune map
+// where types, packages and a tilbudsliste line are switched on and off. It reuses Tryk på stederne's map (pick with
+// browse:true: same fetching per view, colours and type filter), but a tap only says what the thing is.
+// From there the same view can become a task: tap the spots, or take what's on the screen as the area.
+// The choice is kept per phone (localStorage layerShow, null = Vis alt).
+let layerSet = new Set(), layerOpen = {open:null};
+function showLayersBtn(){
+  const p = curPane(), on = !!user && (p==="pTasks" || p==="pBrowse");
+  $("btnLayers").hidden = !on; $("btnLayers").classList.toggle("on", p==="pBrowse");
+}
+function startBrowse(){
+  const keep = store.get("layerShow", null), show = keep?.length ? new Set(keep.filter(c=>CODES[c])) : null;
+  closeOverview(); clearTimeout(refreshTimer);
+  pick = {spots:true, browse:true, t:null, ids:new Set(), info:new Map(), got:[], busy:0, own:false, show: show?.size ? show : null, sel:null};
+  selected = null; selSet.clear(); elSrc.clear(); areaSrc.clear();
+  $("browseNew").hidden = !canCreate();
+  pane("pBrowse"); spotColors(); spotsCount(); spotLoad();
+}
+function endBrowse(){ pick = null; clearTimeout(spotT); elSrc.clear(); layersOpen(false); pane("pTasks"); }
+function browseCount(){
+  const p = pick, v = map.getView().calculateExtent(map.getSize());
+  $("browseWhat").textContent = p.show ? shortCodes([...p.show]) : "Alt";
+  $("browseHint").innerHTML = p.busy ? `<span class="spin"></span> Henter kommunens elementer her …`
+    : ol.extent.getArea(v) > spotView(p) ? (p.show ? "Zoom lidt ind for at se dem." : "Zoom ind for at se kommunens elementer. Vælger du nogle typer under <b>🗂</b>, kan du se længere ud.")
+    : "Tryk på noget for at se, hvad det er.";
+  pickLegend($("browseLegend"));
+  elLayer.changed();
+}
+function browseTap(e){
+  const hits = underFinger(e, f=>!spotHidden(f));
+  const say = f=>{ pick.sel = f; elLayer.changed();
+    const t = `${titleOf(f)}${subOf(f) ? " · " + subOf(f) : ""}`;
+    toast(t, 6000, f.get("elementkode") && sb && logOk ? {label:"📜 Historik", fn:()=>showHistory(f)} : null); };
+  if(!hits.length){ pick.sel = null; elLayer.changed(); return; }
+  say(hits[0]);
+  if(hits.length > 1) toast(`${titleOf(hits[0])} · ${hits.length} ting her`, 6000, {label:"Vælg ▾", fn:()=>openOverlap(hits, say)});
+}
+function layersOpen(on){
+  $("pLayers").hidden = $("layersScrim").hidden = !on;
+  if(!on) return;
+  layerSet = new Set(pick?.show || []); layerOpen.open = null; $("layersSearch").value = "";
+  renderLayers(); loadPacks().then(()=>{ if(!$("pLayers").hidden) renderLayers(); });
+}
+function renderLayers(){
+  const q = $("layersSearch").value;
+  codeChecks($("layersList"), q, layerSet, layersChanged);
+  $("layersPackBox").hidden = !!q.trim(); // while searching, the hits come first
+  layersFoot();
+}
+function layersFoot(){
+  const n = layerSet.size;
+  packChips($("layersPacks"), layerSet, layerOpen, ()=>{ renderLayers(); layersApply(); });
+  $("layersAll").classList.toggle("on", !n); $("layersAll").setAttribute("aria-pressed", String(!n));
+  $("layersAll").textContent = n ? "Vis alt i stedet" : "✓ Vis alt";
+  $("layersChosen").innerHTML = n ? packNames([...layerSet]).map(x=>`<span>${esc(isPackName(x) ? "📦 " + x : x)}</span>`).join("")
+    : `<span class="muted" style="background:none;color:var(--ink2);padding:0">Viser alt. Tryk på en pakke eller sæt flueben for kun at se nogle typer.</span>`;
+  $("btnLayersOk").textContent = n ? `Se kortet (${n===1 ? "1 type" : n + " typer"})` : "Se kortet";
+}
+function layersChanged(){ layersFoot(); layersApply(); }
+// The map changes at once, behind the menu, like on the old map
+function layersApply(){
+  const show = layerSet.size ? new Set(layerSet) : null;
+  store.set("layerShow", show ? [...show] : null);
+  if(!pick?.browse) return;
+  pick.show = show; pick.tcol = null; pick.sel = null; spotColors(); spotsCount();
+  clearTimeout(spotT); spotT = setTimeout(spotLoad, 300);
+}
+$("btnLayers").onclick = ()=>{ if(!pick?.browse) startBrowse(); layersOpen(true); };
+$("btnBrowseLayers").onclick = ()=>layersOpen(true);
+$("btnLayersClose").onclick = $("btnLayersOk").onclick = $("layersScrim").onclick = ()=>layersOpen(false);
+$("layersAll").onclick = ()=>{ layerSet.clear(); layerOpen.open = null; renderLayers(); layersApply(); };
+$("layersSearch").oninput = renderLayers;
+$("btnBrowseClose").onclick = endBrowse;
+// Make a task of what you're looking at: tap the spots (Tryk på stederne, same map), or take the screen as the area
+$("btnBrowseSpots").onclick = ()=>{
+  const p = pick; p.browse = false; p.sel = null;
+  $("spotsName").textContent = "Ny opgave"; $("btnSpotsOk").textContent = "Videre ▸";
+  pane("pSpots"); spotColors(); spotsCount();
+};
+$("btnBrowseTask").onclick = ()=>{
+  const codes = pick.show ? [...pick.show] : null, ext = defaultExtent(true).map(Math.round);
+  endBrowse(); beginNewTask(codes, {extent:ext, area:null});
+};
+
 // ================= TILBUDSLISTEN ON THE MAP =================
 // The kommune's WMS has one picture layer per price-list line (title "16.3 a Ukrudtsbekæmpelse…", legend "TBL 16_3_a").
 // Their names are read from the WMS capabilities (once a month per phone), so nothing here guesses them.
 // Shown under the element layers in Tryk på stederne, Vælg steder and Overblik, so a koordinator can tap exactly
 // the places the kommune has in that line. Not checked against the live server (blocked from the cloud container).
 // var: pane() calls showTbl() and may run before this line
-var TBL_PANES = ["pSpots","pPick","pOver"];
+var TBL_PANES = ["pSpots","pPick","pOver","pBrowse"];
 var TBL = {list:null, on:null}; // on: the shown line, kept per phone (localStorage tblOn)
 function tblParse(xml){
   const doc = new DOMParser().parseFromString(xml, "text/xml"), out = [];
@@ -4048,6 +4184,7 @@ map.on("singleclick", e=>{
   if(partEd){ partTap(e.coordinate); return; }
   const flawHit = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===flawLayer, hitTolerance:14}).find(f=>f.get("pin"));
   if(flawHit){ openFlaw(flawHit.get("pin")); return; }
+  if(pick?.browse){ browseTap(e); return; }
   if(pick?.spots){ spotTap(e); return; }
   if(pick){ // tapping a spot puts it in the task or takes it out
     const hits = underFinger(e), tog = f=>{ const id = f.getId(); pick.ids.has(id) ? pick.ids.delete(id) : pick.ids.add(id); pickCount(); };
@@ -4322,7 +4459,7 @@ async function closePin(p){
 // a tap on an element ties it to that element), also outside a task. A koordinator sends the open ones to the
 // kommune from the "⚠️ Kortfejl" tab and marks them sent; "✓ Rettet" takes one off the map. supabase/kortfejl.sql.
 const FLAWS = ["Mangler på kortet","Forkert type","Ligger forkert","Findes ikke mere","Passer ikke med tilbudslisten","Andet"];
-var FLAW_PANES = ["pWork","pEl","pList","pOver","pPlace","pPick","pSpots"];
+var FLAW_PANES = ["pWork","pEl","pList","pOver","pPlace","pPick","pSpots","pBrowse"];
 var flaws = [], flawsOk = false, flawDrop = false, flawSent = null; // var: pane() asks before this runs
 function showFlawBtn(){
   const on = flawsOk && !!user && FLAW_PANES.includes(curPane());
@@ -5021,10 +5158,10 @@ const BACK = [["photoView","btnPhotoClose"], ["guide",closeGuide], [()=>!$("more
   ...[...document.querySelectorAll(".ask")].reverse().map(a=>[a.id, a.querySelector("[id$=No]")]),
   ["pPerson","btnPersonNo","btnPersonCancel"], ["pProfile","btnProfClose"], ["pLogin"],
   ["pFind","btnFindClose"], ["pSearch","btnSearchClose"], ["pNotes","btnNotesClose"], ["pHist","btnHistClose"],
-  ["pShow","btnShowClose"], ["pType","btnTypeClose"], ["pPack","btnPackClose"], ["pNew","btnNewCancel"],
+  ["pLayers","btnLayersClose"], ["pShow","btnShowClose"], ["pType","btnTypeClose"], ["pPack","btnPackClose"], ["pNew","btnNewCancel"],
   [()=>pinDrop, "btnPin"], [()=>ringOn, ()=>ringMode(false)], [()=>flawDrop, "btnFlaw"],
   ["pEl","btnElClose"], ["pList","btnListClose"], ["pPart","btnPartCancel"], ["pPick","btnPickCancel"],
-  ["pSpots","btnSpotsCancel"], ["pArea","btnAreaCancel"], ["pPlace","btnPlaceBack"], ["pOver","btnOverBack"], ["pWork","btnBack"]];
+  ["pSpots","btnSpotsCancel"], ["pBrowse","btnBrowseClose"], ["pArea","btnAreaCancel"], ["pPlace","btnPlaceBack"], ["pOver","btnOverBack"], ["pWork","btnBack"]];
 const backTop = () => BACK.find(([w]) => typeof w==="function" ? w() : $(w) && !$(w).hidden);
 function backClose(){
   const l = backTop(); if(!l) return false;
