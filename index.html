@@ -1927,6 +1927,8 @@ const EL_CACHE = "elements-v1", DAY = 864e5;
 const elKey = id => new Request("https://holdkort.cache/elements/" + encodeURIComponent(id));
 // Data stored before the æøå fix (2026-10-29) with broken letters (� or "Ã¦") counts as missing, so it's fetched again
 // once. Only older data: if the kommune's own data holds a �, refetching wouldn't help and would load its server.
+// The tilbudsliste list is one small request, so a broken one is always fetched again (an older copy of the app, such
+// as a test version on the same address, may still save one).
 const TEXT_FIX_AT = Date.UTC(2026, 9, 29, 11), badText = (s, at) => at < TEXT_FIX_AT && /\uFFFD|Ã[\x80-\xbf]/.test(s);
 async function elCacheGet(id){ try{ const r = await (await caches.open(EL_CACHE)).match(elKey(id)); if(!r) return null; const j = await r.json(); return badText(j.geojson || "", j.saved) ? null : j; }catch(e){ return null; } }
 async function elCachePut(id, feats, key){ try{ await (await caches.open(EL_CACHE)).put(elKey(id), new Response(JSON.stringify({saved:Date.now(), key, geojson:fmt.writeFeatures(feats)}))); }catch(e){} }
@@ -2365,7 +2367,7 @@ function tblParse(xml){
 }
 async function tblLoad(force){
   const c = store.get("tblCaps", null);
-  if(!force && c?.list?.length && Date.now()-c.at < 30*864e5 && !badText(JSON.stringify(c.list), c.at)) return TBL.list = c.list;
+  if(!force && c?.list?.length && Date.now()-c.at < 30*864e5 && !badText(JSON.stringify(c.list), 0)) return TBL.list = c.list;
   const url = `${WMS_URL}?SERVICENAME=${WMS_SERVICE}&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetCapabilities`;
   const r = await fetch(url, {signal:AbortSignal.timeout?.(20000)});
   if(!r.ok) throw new Error("HTTP " + r.status);
