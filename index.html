@@ -2857,7 +2857,7 @@ $("btnCreate").onclick = async ()=>{
 // The real limit is how many elements every phone must fetch and draw, so count them (the area editor may have already)
 async function sizeOk(){
   const s = newShape, big = ol.extent.getArea(s.extent) > MAX_AREA;
-  let n = null;
+  let n = null, up = false;
   if(newTbl){
     const row = tblSaved?.has(newTbl.name) && await tblRow(newTbl.name);
     if(!row){
@@ -2868,8 +2868,8 @@ async function sizeOk(){
     n = tblInArea(row, s).length;
   } else {
     const ck = [...picked].join(",");
-    if(newCount?.key===areaKey(s) && newCount.c===ck) n = newCount.n;
-    else {
+    if(newCount?.key===areaKey(s) && newCount.c===ck){ n = newCount.n; up = !!newCount.upTo; }
+    else { up = true;
       const b = $("btnCreate"), was = b.textContent; b.disabled = true; b.innerHTML = `<span class="spin"></span> Tæller steder …`;
       try{ n = await countIn([...picked], s.extent); }catch(e){ console.error(e); }
       b.disabled = false; b.textContent = was;
@@ -2877,7 +2877,8 @@ async function sizeOk(){
   }
   if(n==null) return !big || askBig(`Jeg kunne ikke tælle stederne i området (${fmtArea(shapeGeom(s).getArea())}). Er der mange, kan kortet blive langsomt på telefonerne.`);
   if(n > HUGE_TASK){ toast(`${n.toLocaleString("da-DK")} steder er for mange til én opgave. Vælg færre typer eller et mindre område.`, 6000); return false; }
-  if(n > BIG_TASK) return askBig(`Opgaven får ${n.toLocaleString("da-DK")} steder. Det er mange, så kortet kan blive langsomt på telefonerne. Del den gerne op i flere opgaver.`);
+  // with a package rule the server's number counts every tree, not just those with a bag: don't warn on that
+  if(n > BIG_TASK && !(up && surfaceFor(picked))) return askBig(`Opgaven får ${n.toLocaleString("da-DK")} steder. Det er mange, så kortet kan blive langsomt på telefonerne. Del den gerne op i flere opgaver.`);
   return true;
 }
 function askBig(txt){
@@ -3083,6 +3084,9 @@ async function areaCount(s, txt){
     if(areaEd!==a || a.key!==key) return;
     if(n==null){ show(""); return; }
     a.count = {key, n, upTo:!!(s.area || sm), c:a.codes.join(",")};
+    // a package rule ("kun med vanding") can leave a few hundred of thousands of trees: fetch them and count exactly,
+    // instead of warning about all of them (Captain, 2026-11-12: 4.480 trees, 376 with a bag)
+    if(sm && n <= HUGE_TASK){ show(`<span class="spin"></span> tæller dem ${esc(surfText(sm))} …`); areaPreview(a, s.extent); return; }
     show(countMsg(n, a.count.upTo));
     if(n <= PREVIEW_MAX) areaPreview(a, s.extent);
   }, 700);
@@ -3094,7 +3098,8 @@ async function areaPreview(a, ext){
     const fs = await fetchLayers([`${codeIn(a.codes)} AND BBOX(wkb_geometry,${e.join(",")})`], g=>g.intersectsExtent(e));
     if(areaEd!==a) return;
     (a.got ||= []).push(e);
-    fs.forEach(f=>{ if(!prevSrc.getFeatureById(f.getId())) prevSrc.addFeature(f); });
+    const sm = surfaceFor(new Set(a.codes)); // only draw what the task will hold
+    fs.forEach(f=>{ if(surfOk(sm, f) && !prevSrc.getFeatureById(f.getId())) prevSrc.addFeature(f); });
     areaChanged();
   }catch(e){ console.error(e); }
 }
