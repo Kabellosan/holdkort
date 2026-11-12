@@ -1267,17 +1267,20 @@ let packs = store.get("packs", []); // saved groups of types, see PACKAGES
 // (all of Fast belægning means every fortov). Tasks keep the result in tasks.surface, {code: [surfaces]}.
 // Areas carry their belægning in attribut_1/attribut_2 (the plads at Hanningvej shows "asfalt" there), roads in belaegningstype
 const surfOf = f => ["belaegningstype", "attribut_1", "attribut_2"].map(k=>f.get(k)).filter(Boolean).join(" ").trim();
-// rulePick: the package last tapped. Several packages may have the same types and different rules ("Træer med
-// vandingspose" / "… med etableringsvanding", Captain 2026-11-12); the ticked types can't tell them apart, so the tapped one wins.
+// rulePick: the package last tapped. Several packages may have the same types ("Træer" and "Træer med vandingspose",
+// Captain 2026-11-12); the ticked types can't tell them apart, so the tapped one decides. A rule package with the same
+// types as a package without a rule only applies when it was the one tapped.
 let rulePick = null;
-const pickRule = p => { if(p?.surface?.length) rulePick = p.id; };
+const pickRule = p => { if(p) rulePick = p.id; };
 const codeKey = p => [...p.codes].sort().join(",");
 function surfaceFor(set){
   const m = {}, full = p => p.codes.length && p.codes.every(c=>set.has(c));
-  const rs = packs.filter(p=>p.surface?.length && full(p)), win = new Map();
-  rs.forEach(p=>{ const k = codeKey(p); if(!win.has(k) || p.id===rulePick) win.set(k, p); });
-  [...win.values()].forEach(p=>Object.entries(packSurf(p)).forEach(([c, v])=>{ m[c] = v; }));
-  packs.filter(p=>!p.surface?.length && full(p)).forEach(p=>p.codes.forEach(c=>delete m[c]));
+  const rs = packs.filter(p=>p.surface?.length && full(p)), plain = packs.filter(p=>!p.surface?.length && full(p));
+  const plainKeys = new Set(plain.map(codeKey)), win = new Map(), picked = new Set();
+  rs.forEach(p=>{ const k = codeKey(p); if(p.id===rulePick){ win.set(k, p); picked.add(k); } else if(!win.has(k)) win.set(k, p); });
+  win.forEach((p, k)=>{ if(plainKeys.has(k) && !picked.has(k)) return;
+    Object.entries(packSurf(p)).forEach(([c, v])=>{ m[c] = v; }); });
+  plain.filter(p=>!picked.has(codeKey(p))).forEach(p=>p.codes.forEach(c=>delete m[c]));
   return Object.keys(m).length ? m : null;
 }
 // packages.surface: "beton" applies to every type in the package, "FB2a:beton" only to that type
