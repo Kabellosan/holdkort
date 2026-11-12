@@ -450,7 +450,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <div class="grow"><div class="eyebrow" id="workCodes"></div><h2 id="workName"></h2></div>
       <div style="text-align:right"><div class="big num" id="workCount">–</div><div class="muted">færdige</div></div>
     </div>
-    <div class="row"><span class="grow" id="workWho"></span><button class="btn ghost" id="btnWho" hidden>Ret hvem</button></div>
+    <div class="row"><span class="grow" id="workWho"></span><button class="btn ghost" id="btnName" hidden>Ret navn</button><button class="btn ghost" id="btnWho" hidden>Ret hvem</button></div>
     <div class="bar" id="bar"></div>
     <div class="seg" id="workMode" role="group" aria-label="Farver" hidden>
       <button data-o="status">Status</button>
@@ -603,6 +603,15 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   </div>
 </div>
 <!-- A koordinator changes who an existing task is for -->
+<div class="ask" id="askName" hidden role="dialog" aria-modal="true" aria-labelledby="askNameQ">
+  <div>
+    <h2 id="askNameQ">Opgavens navn</h2>
+    <input type="text" id="nameIn" maxlength="120" autocomplete="off" placeholder="Navn, fx 'Pur i Brande, uge 41'">
+    <p class="muted" style="margin:0">Alle på holdet ser det nye navn.</p>
+    <button class="btn primary" id="askNameOk">Gem</button>
+    <button class="btn" id="askNameNo">Annullér</button>
+  </div>
+</div>
 <div class="ask" id="askWho" hidden role="dialog" aria-modal="true" aria-labelledby="askWhoQ">
   <div>
     <h2 id="askWhoQ">Hvem skal lave opgaven?</h2>
@@ -2602,7 +2611,25 @@ let whoSet = null;
 function showWho(t){
   $("workWho").textContent = "👥 " + whoFor(t);
   $("btnWho").hidden = !isBoss();
+  $("btnName").hidden = !canManage(t);
 }
+// Rename an open task (koordinator, or Udførende for a task made with that login; Captain, 2026-11-12)
+$("btnName").onclick = ()=>{ $("nameIn").value = task.name; $("askName").hidden = false; $("nameIn").focus(); $("nameIn").select(); };
+$("askNameNo").onclick = ()=>{ $("askName").hidden = true; };
+$("nameIn").onkeydown = e=>{ if(e.key==="Enter") $("askNameOk").click(); };
+$("askNameOk").onclick = async ()=>{
+  const t = task, name = $("nameIn").value.trim().slice(0, 120);
+  if(!name){ toast("Skriv et navn"); $("nameIn").focus(); return; }
+  if(name !== t.name && sb){
+    $("askNameOk").disabled = true;
+    const {error} = await sb.from("tasks").update({name}).eq("id", t.id);
+    $("askNameOk").disabled = false;
+    if(error){ toast("Det blev ikke gemt: " + error.message, 4000); return; }
+  }
+  t.name = name; store.set("tasks", tasks);
+  $("askName").hidden = true; if(task === t) $("workName").textContent = name;
+  toast("Navnet er gemt");
+};
 $("btnWho").onclick = ()=>{
   whoSet = new Set((task.assignees||[]).map(cleanName));
   peopleChips($("whoList"), whoSet); $("askWho").hidden = false; $("askWhoOk").focus();
