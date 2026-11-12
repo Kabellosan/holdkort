@@ -1037,19 +1037,20 @@ function elStyle(f, res){
   if(pick){ // picking: each type (or with Vis alt, each group) its own colour
     const far = res > 3.2, ty = pick.tcol?.get(pickKey(f)), on = pick.ids.has(f.getId());
     // picking in a task's area, where most are usually in: the ones in keep their type colour, the rest go grey
-    if(!pick.spots) return shapeStyle(on ? ty || "pick" : "off", false, far);
-    return [...(on ? shapeStyle("pick", true, far) : ty ? shapeStyle(ty, false, far) : SPOT_OFF), ...pin];
+    if(!pick.spots) return shapeStyle(on ? ty || "pick" : "off", false, res);
+    return [...(on ? shapeStyle("pick", true, res) : ty ? shapeStyle(ty, false, res) : spotOff(res)), ...pin];
   }
   const st = statusOf(f.getId()), k = byTypeNow() && st!=="done" ? tcol[f.get("elementkode")] || "none" : st;
-  const s = shapeStyle(k, selSet.has(f), res > 3.2, k===st ? null : st);
+  const s = shapeStyle(k, selSet.has(f), res, k===st ? null : st);
   const p = partStyle(f); // a long element partly done gets its done stretch drawn green on top
   const m = mediaMark(f.getId());
   return m || p || pin.length ? [...s, ...(p||[]), ...(m ? badgeStyle(m, res) : []), ...pin] : s;
 }
 // While tapping spots: everything the kommune has here, drawn thin and grey so the aerial photo still shows
-const SPOT_OFF = [new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffaa", width:3.5}), image:new ol.style.Circle({radius:7, fill:new ol.style.Fill({color:"#ffffffaa"})})}),
+const SPOT_OFF = {}, spotOff = res => { const r = dotR(res, false);
+  return SPOT_OFF[r] ||= [new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffaa", width:3.5}), image:new ol.style.Circle({radius:r + 1.5, fill:new ol.style.Fill({color:"#ffffffaa"})})}),
   new ol.style.Style({stroke:new ol.style.Stroke({color:"#5f6368", width:1.5}), fill:new ol.style.Fill({color:"#9aa0a633"}),
-    image:new ol.style.Circle({radius:5, fill:new ol.style.Fill({color:"#9aa0a6"}), stroke:new ol.style.Stroke({color:"#5f6368", width:1.5})})})];
+    image:new ol.style.Circle({radius:r, fill:new ol.style.Fill({color:"#9aa0a6"}), stroke:new ol.style.Stroke({color:"#5f6368", width:1})})})]; };
 const centerPoint = f => { const g = f.getGeometry(), t = g.getType();
   if(t==="Point") return g;
   if(t==="Polygon") return g.getInteriorPoint();
@@ -1066,25 +1067,29 @@ const badgeStyle = (t, res) => res > 3.2 ? [] : [badgeCache[t] ||= new ol.style.
 const badgeText = (note, photo) => (note ? "📝" : "") + (photo ? "📷" : "");
 // In the open task: its current note (sent or waiting) and its photos
 const mediaMark = id => badgeText(!!eff(id)?.note?.trim(), hasMedia(id));
-function shapeStyle(s, sel, far, st){ // st: the status, when s is a type colour
-  const key = s + sel + (far ? "far" : "near") + (st || "");
+// Dots (trees, benches and the dot on far-away shapes) shrink as you zoom out, so trees 8–10 m apart along a street
+// stay separate dots instead of one fat line (Captain 2026-11-12); taps still reach them, underFinger has 12 px slack
+const dotR = (res, sel) => Math.round(2 * Math.min(7, Math.max(2, 4.5 / res))) / 2 + (sel ? 2.5 : 0);
+function shapeStyle(s, sel, res, st){ // res: the map resolution (m per pixel); st: the status, when s is a type colour
+  const far = res > 3.2, r = dotR(res, sel);
+  const key = s + sel + (far ? "far" : "near") + r + (st || "");
   if(!styleCache[key]){
     const c = COLORS[s], done = s==="done", low = done || s==="off" || st==="done"; // done and not-picked sit underneath
     styleCache[key] = [
       new ol.style.Style({ // white halo so shapes pop on the aerial photo; done gets a dark edge so the lime reads on the pale map too
         stroke:new ol.style.Stroke({color: done ? DONE_EDGE : "#ffffffcc", width: sel ? 9 : far ? 6 : 5}),
-        image:new ol.style.Circle({radius: sel?13:10, fill:new ol.style.Fill({color: done ? DONE_EDGE : "#fff"})}),
+        image:new ol.style.Circle({radius: r + (r < 4 ? 1 : 1.5), fill:new ol.style.Fill({color: done ? DONE_EDGE : "#fff"})}),
         zIndex: sel ? 30 : low ? 0 : 10
       }),
       new ol.style.Style({
         fill:new ol.style.Fill({color: c + (sel || done ? "cc" : st==="done" ? "33" : low ? "66" : "99")}),
         stroke:new ol.style.Stroke({color: st==="done" && !sel ? c + "99" : c, width: sel ? 5 : far ? 4 : 3}),
-        image:new ol.style.Circle({radius: sel?10:7, fill:new ol.style.Fill({color:c})}),
+        image:new ol.style.Circle({radius: r, fill:new ol.style.Fill({color:c})}),
         zIndex: sel ? 31 : low ? 1 : 11
       })];
     if(far) styleCache[key].push(new ol.style.Style({ // a dot on every element so small hedges are findable zoomed out
       geometry: f => { const g = f.getGeometry(); return g.getType()==="Point" ? null : new ol.geom.Point(ol.extent.getCenter(g.getExtent())); },
-      image:new ol.style.Circle({radius: sel?9:6, fill:new ol.style.Fill({color:c}), stroke:new ol.style.Stroke({color: done ? DONE_EDGE : "#fff",width:2})}),
+      image:new ol.style.Circle({radius: r, fill:new ol.style.Fill({color:c}), stroke:new ol.style.Stroke({color: done ? DONE_EDGE : "#fff",width:1.5})}),
       zIndex: sel ? 32 : low ? 2 : 12
     }));
     if(s==="blocked" || st==="blocked") styleCache[key].push(new ol.style.Style({ // a roadwork sign in the middle, so blocked stands out from far away too
@@ -1105,12 +1110,12 @@ function overStyle(f, res){
   const far = res > 3.2;
   if(place){
     const k = place.mode==="status" ? f.get("_s") || "none" : place.focus && f.get("elementkode")!==place.focus ? "off" : place.tcol?.[f.get("elementkode")] || "none";
-    const s = shapeStyle(k, f===place.sel, far);
+    const s = shapeStyle(k, f===place.sel, res);
     return f.get("_m") ? [...s, ...badgeStyle(f.get("_m"), res)] : s;
   }
   // a package by type: each type its own colour, done ones turn idverde green and blocked keep 🚧, so progress still shows
-  const s = over?.mode==="type" && f.get("_s")!=="done" ? shapeStyle(over.tcol?.[f.get("elementkode")] || "none", false, far, f.get("_s"))
-    : shapeStyle((over?.mode==="age" ? f.get("_a") : f.get("_s")) || "none", false, far);
+  const s = over?.mode==="type" && f.get("_s")!=="done" ? shapeStyle(over.tcol?.[f.get("elementkode")] || "none", false, res, f.get("_s"))
+    : shapeStyle((over?.mode==="age" ? f.get("_a") : f.get("_s")) || "none", false, res);
   return f.get("_m") ? [...s, ...badgeStyle(f.get("_m"), res)] : s;
 }
 const overLayer = new ol.layer.Vector({source:overSrc, style:overStyle, renderBuffer:200});
