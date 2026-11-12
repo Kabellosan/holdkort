@@ -464,7 +464,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <div class="grow"><div class="eyebrow" id="workCodes"></div><h2 id="workName"></h2></div>
       <div style="text-align:right"><div class="big num" id="workCount">–</div><div class="muted">færdige</div></div>
     </div>
-    <div class="row"><span class="grow" id="workWho"></span><button class="btn ghost" id="btnWho" hidden>Ret hvem</button></div>
+    <div class="row"><span class="grow" id="workWho"></span><button class="btn ghost" id="btnName" hidden>Ret navn</button><button class="btn ghost" id="btnWho" hidden>Ret hvem</button></div>
     <div class="bar" id="bar"></div>
     <div class="seg" id="workMode" role="group" aria-label="Farver" hidden>
       <button data-o="status">Status</button>
@@ -629,6 +629,15 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   </div>
 </div>
 <!-- A koordinator changes who an existing task is for -->
+<div class="ask" id="askName" hidden role="dialog" aria-modal="true" aria-labelledby="askNameQ">
+  <div>
+    <h2 id="askNameQ">Opgavens navn</h2>
+    <input type="text" id="nameIn" maxlength="120" autocomplete="off" placeholder="Navn, fx 'Pur i Brande, uge 41'">
+    <p class="muted" style="margin:0">Alle på holdet ser det nye navn.</p>
+    <button class="btn primary" id="askNameOk">Gem</button>
+    <button class="btn" id="askNameNo">Annullér</button>
+  </div>
+</div>
 <div class="ask" id="askWho" hidden role="dialog" aria-modal="true" aria-labelledby="askWhoQ">
   <div>
     <h2 id="askWhoQ">Hvem skal lave opgaven?</h2>
@@ -1077,19 +1086,20 @@ function elStyle(f, res){
   if(pick){ // picking: each type (or with Vis alt, each group) its own colour
     const far = res > 3.2, ty = pick.tcol?.get(pickKey(f)), on = pick.ids.has(f.getId());
     // picking in a task's area, where most are usually in: the ones in keep their type colour, the rest go grey
-    if(!pick.spots) return shapeStyle(on ? ty || "pick" : "off", false, far);
-    return [...(on || f===pick.sel ? shapeStyle("pick", true, far) : ty ? shapeStyle(ty, false, far) : SPOT_OFF), ...pin];
+    if(!pick.spots) return shapeStyle(on ? ty || "pick" : "off", false, res);
+    return [...(on || f===pick.sel ? shapeStyle("pick", true, res) : ty ? shapeStyle(ty, false, res) : spotOff(res)), ...pin];
   }
   const st = statusOf(f.getId()), k = byTypeNow() && st!=="done" ? tcol[f.get("elementkode")] || "none" : st;
-  const s = shapeStyle(k, selSet.has(f), res > 3.2, k===st ? null : st);
+  const s = shapeStyle(k, selSet.has(f), res, k===st ? null : st);
   const p = partStyle(f); // a long element partly done gets its done stretch drawn green on top
   const m = mediaMark(f.getId());
   return m || p || pin.length ? [...s, ...(p||[]), ...(m ? badgeStyle(m, res) : []), ...pin] : s;
 }
 // While tapping spots: everything the kommune has here, drawn thin and grey so the aerial photo still shows
-const SPOT_OFF = [new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffaa", width:3.5}), image:new ol.style.Circle({radius:7, fill:new ol.style.Fill({color:"#ffffffaa"})})}),
+const SPOT_OFF = {}, spotOff = res => { const r = dotR(res, false);
+  return SPOT_OFF[r] ||= [new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffaa", width:3.5}), image:new ol.style.Circle({radius:r + 1.5, fill:new ol.style.Fill({color:"#ffffffaa"})})}),
   new ol.style.Style({stroke:new ol.style.Stroke({color:"#5f6368", width:1.5}), fill:new ol.style.Fill({color:"#9aa0a633"}),
-    image:new ol.style.Circle({radius:5, fill:new ol.style.Fill({color:"#9aa0a6"}), stroke:new ol.style.Stroke({color:"#5f6368", width:1.5})})})];
+    image:new ol.style.Circle({radius:r, fill:new ol.style.Fill({color:"#9aa0a6"}), stroke:new ol.style.Stroke({color:"#5f6368", width:1})})})]; };
 const centerPoint = f => { const g = f.getGeometry(), t = g.getType();
   if(t==="Point") return g;
   if(t==="Polygon") return g.getInteriorPoint();
@@ -1106,25 +1116,29 @@ const badgeStyle = (t, res) => res > 3.2 ? [] : [badgeCache[t] ||= new ol.style.
 const badgeText = (note, photo) => (note ? "📝" : "") + (photo ? "📷" : "");
 // In the open task: its current note (sent or waiting) and its photos
 const mediaMark = id => badgeText(!!eff(id)?.note?.trim(), hasMedia(id));
-function shapeStyle(s, sel, far, st){ // st: the status, when s is a type colour
-  const key = s + sel + (far ? "far" : "near") + (st || "");
+// Dots (trees, benches and the dot on far-away shapes) shrink as you zoom out, so trees 8–10 m apart along a street
+// stay separate dots instead of one fat line (Captain 2026-11-12); taps still reach them, underFinger has 12 px slack
+const dotR = (res, sel) => Math.round(2 * Math.min(7, Math.max(2, 4.5 / res))) / 2 + (sel ? 2.5 : 0);
+function shapeStyle(s, sel, res, st){ // res: the map resolution (m per pixel); st: the status, when s is a type colour
+  const far = res > 3.2, r = dotR(res, sel);
+  const key = s + sel + (far ? "far" : "near") + r + (st || "");
   if(!styleCache[key]){
     const c = COLORS[s], done = s==="done", low = done || s==="off" || st==="done"; // done and not-picked sit underneath
     styleCache[key] = [
       new ol.style.Style({ // white halo so shapes pop on the aerial photo; done gets a dark edge so the lime reads on the pale map too
         stroke:new ol.style.Stroke({color: done ? DONE_EDGE : "#ffffffcc", width: sel ? 9 : far ? 6 : 5}),
-        image:new ol.style.Circle({radius: sel?13:10, fill:new ol.style.Fill({color: done ? DONE_EDGE : "#fff"})}),
+        image:new ol.style.Circle({radius: r + (r < 4 ? 1 : 1.5), fill:new ol.style.Fill({color: done ? DONE_EDGE : "#fff"})}),
         zIndex: sel ? 30 : low ? 0 : 10
       }),
       new ol.style.Style({
         fill:new ol.style.Fill({color: c + (sel || done ? "cc" : st==="done" ? "33" : low ? "66" : "99")}),
         stroke:new ol.style.Stroke({color: st==="done" && !sel ? c + "99" : c, width: sel ? 5 : far ? 4 : 3}),
-        image:new ol.style.Circle({radius: sel?10:7, fill:new ol.style.Fill({color:c})}),
+        image:new ol.style.Circle({radius: r, fill:new ol.style.Fill({color:c})}),
         zIndex: sel ? 31 : low ? 1 : 11
       })];
     if(far) styleCache[key].push(new ol.style.Style({ // a dot on every element so small hedges are findable zoomed out
       geometry: f => { const g = f.getGeometry(); return g.getType()==="Point" ? null : new ol.geom.Point(ol.extent.getCenter(g.getExtent())); },
-      image:new ol.style.Circle({radius: sel?9:6, fill:new ol.style.Fill({color:c}), stroke:new ol.style.Stroke({color: done ? DONE_EDGE : "#fff",width:2})}),
+      image:new ol.style.Circle({radius: r, fill:new ol.style.Fill({color:c}), stroke:new ol.style.Stroke({color: done ? DONE_EDGE : "#fff",width:1.5})}),
       zIndex: sel ? 32 : low ? 2 : 12
     }));
     if(s==="blocked" || st==="blocked") styleCache[key].push(new ol.style.Style({ // a roadwork sign in the middle, so blocked stands out from far away too
@@ -1145,12 +1159,12 @@ function overStyle(f, res){
   const far = res > 3.2;
   if(place){
     const k = place.mode==="status" ? f.get("_s") || "none" : place.focus && f.get("elementkode")!==place.focus ? "off" : place.tcol?.[f.get("elementkode")] || "none";
-    const s = shapeStyle(k, f===place.sel, far);
+    const s = shapeStyle(k, f===place.sel, res);
     return f.get("_m") ? [...s, ...badgeStyle(f.get("_m"), res)] : s;
   }
   // a package by type: each type its own colour, done ones turn idverde green and blocked keep 🚧, so progress still shows
-  const s = over?.mode==="type" && f.get("_s")!=="done" ? shapeStyle(over.tcol?.[f.get("elementkode")] || "none", false, far, f.get("_s"))
-    : shapeStyle((over?.mode==="age" ? f.get("_a") : f.get("_s")) || "none", false, far);
+  const s = over?.mode==="type" && f.get("_s")!=="done" ? shapeStyle(over.tcol?.[f.get("elementkode")] || "none", false, res, f.get("_s"))
+    : shapeStyle((over?.mode==="age" ? f.get("_a") : f.get("_s")) || "none", false, res);
   return f.get("_m") ? [...s, ...badgeStyle(f.get("_m"), res)] : s;
 }
 const overLayer = new ol.layer.Vector({source:overSrc, style:overStyle, renderBuffer:200});
@@ -1302,9 +1316,16 @@ let packs = store.get("packs", []); // saved groups of types, see PACKAGES
 // (all of Fast belægning means every fortov). Tasks keep the result in tasks.surface, {code: [surfaces]}.
 // Areas carry their belægning in attribut_1/attribut_2 (the plads at Hanningvej shows "asfalt" there), roads in belaegningstype
 const surfOf = f => ["belaegningstype", "attribut_1", "attribut_2"].map(k=>f.get(k)).filter(Boolean).join(" ").trim();
+// rulePick: the package last tapped. Several packages may have the same types and different rules ("Træer med
+// vandingspose" / "… med etableringsvanding", Captain 2026-11-12); the ticked types can't tell them apart, so the tapped one wins.
+let rulePick = null;
+const pickRule = p => { if(p?.surface?.length) rulePick = p.id; };
+const codeKey = p => [...p.codes].sort().join(",");
 function surfaceFor(set){
   const m = {}, full = p => p.codes.length && p.codes.every(c=>set.has(c));
-  packs.filter(p=>p.surface?.length && full(p)).forEach(p=>Object.entries(packSurf(p)).forEach(([c, v])=>{ m[c] = v; }));
+  const rs = packs.filter(p=>p.surface?.length && full(p)), win = new Map();
+  rs.forEach(p=>{ const k = codeKey(p); if(!win.has(k) || p.id===rulePick) win.set(k, p); });
+  [...win.values()].forEach(p=>Object.entries(packSurf(p)).forEach(([c, v])=>{ m[c] = v; }));
   packs.filter(p=>!p.surface?.length && full(p)).forEach(p=>p.codes.forEach(c=>delete m[c]));
   return Object.keys(m).length ? m : null;
 }
@@ -1321,18 +1342,21 @@ const surfOk = (m, f) => { const s = m?.[f.get("elementkode")]; if(!s) return tr
   const v = surfOf(f).toLowerCase(), has = a => v.includes(a.replace(/^!/, "").toLowerCase());
   const yes = s.filter(a=>!a.startsWith("!")), no = s.filter(a=>a.startsWith("!"));
   return (!yes.length || yes.some(has)) && !no.some(has); };
+const SURF_WORDS = /beton|granit|asfalt|grus|flise|sten|belæg/i;
 const surfText = m => { if(!m) return "";
   const say = v => { const yes = v.filter(a=>!a.startsWith("!")), no = v.filter(a=>a.startsWith("!")).map(a=>a.slice(1));
-    return [yes.length ? "kun i " + yes.join(" og ") : "", no.length ? "ikke " + no.join(" eller ") : ""].filter(Boolean).join(", "); };
+    // belægning reads "kun i beton", anything else (a tree's vandingspose in attribut_2) "kun med vandingspose"
+    const pre = yes.some(a=>!SURF_WORDS.test(a)) ? "kun med " : "kun i ";
+    return [yes.length ? pre + yes.join(" og ") : "", no.length ? "ikke " + no.join(" eller ") : ""].filter(Boolean).join(", "); };
   const all = Object.values(m).map(say), same = all.every(x=>x===all[0]);
   return same && Object.keys(m).length > 1 ? all[0] : Object.entries(m).map(([c, v])=>`${(CODES[c] || c).toLowerCase()} ${say(v)}`).join(", "); };
 // Types named by the packages they fill (biggest first), then any other types: "Fast belægning + Pur"
 function packNames(codes){
   const left = new Set(codes), names = [];
-  [...packs].sort((a,b)=>b.codes.length-a.codes.length).forEach(p=>{
+  [...packs].sort((a,b)=>b.codes.length-a.codes.length || (b.id===rulePick) - (a.id===rulePick)).forEach(p=>{
     if(p.codes.length > 1 && p.codes.every(c=>left.has(c))){ names.push(p.name); p.codes.forEach(c=>left.delete(c)); } });
   // a package with one or two of its types taken out: "Fast belægning uden kantsten"
-  [...packs].sort((a,b)=>b.codes.length-a.codes.length).forEach(p=>{
+  [...packs].sort((a,b)=>b.codes.length-a.codes.length || (b.id===rulePick) - (a.id===rulePick)).forEach(p=>{
     const has = p.codes.filter(c=>left.has(c)), out = p.codes.filter(c=>!left.has(c) && !codes.includes(c));
     if(p.codes.length >= 4 && out.length && out.length <= 2 && has.length + out.length === p.codes.length){
       names.push(`${p.name} uden ${out.map(c=>{ const n = CODES[c]||c; return n[0].toLowerCase() + n.slice(1); }).join(" og ")}`);
@@ -1349,7 +1373,7 @@ function packChips(el, set, st, changed, extra = ""){
   const n = p => p.codes.filter(c=>set.has(c)).length;
   el.innerHTML = packs.map(p=>{
     const k = n(p), all = p.codes.length, open = st.open===p.id;
-    const chip = `<button data-k="${esc(p.id)}" class="${k && k===all ? "on" : k ? "part" : ""}${open ? " open" : ""}" aria-expanded="${open}">📦 ${esc(p.name)}${p.surface?.length ? ` · ${esc(surfText(packSurf(p)))}` : ""}${k && k<all ? ` · ${k} af ${all}` : ""} ${open ? "▴" : k ? "▾" : ""}</button>`;
+    const chip = `<button data-k="${esc(p.id)}" class="${k && k===all ? "on" : k ? "part" : ""}${open ? " open" : ""}" aria-expanded="${open}">📦 ${esc(p.name)}${p.surface?.length && !p.surface.some(w=>p.name.toLowerCase().includes(w.replace(/^!/,"").toLowerCase())) ? ` · ${esc(surfText(packSurf(p)))}` : ""}${k && k<all ? ` · ${k} af ${all}` : ""} ${open ? "▴" : k ? "▾" : ""}</button>`;
     if(!open) return chip;
     return chip + `<div class="packopen"><div class="muted">Tag flueben af ved det, der ikke skal med</div>`
       + p.codes.map(c=>`<label class="code-item ${set.has(c)?"on":""}"><input type="checkbox" value="${esc(c)}" ${set.has(c)?"checked":""}><span class="grow">${esc(CODES[c]||c)}</span><span class="code">${esc(c)}</span></label>`).join("")
@@ -1358,7 +1382,7 @@ function packChips(el, set, st, changed, extra = ""){
   el.querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{
     const p = packs.find(x=>x.id===b.dataset.k);
     if(st.open===p.id) st.open = null;
-    else { if(!n(p)) p.codes.forEach(c=>set.add(c)); st.open = p.id; }
+    else { if(!n(p)) p.codes.forEach(c=>set.add(c)); st.open = p.id; pickRule(p); }
     changed();
   });
   const box = el.querySelector(".packopen"); if(!box) return;
@@ -2728,7 +2752,25 @@ let whoSet = null;
 function showWho(t){
   $("workWho").textContent = "👥 " + whoFor(t);
   $("btnWho").hidden = !isBoss();
+  $("btnName").hidden = !canManage(t);
 }
+// Rename an open task (koordinator, or Udførende for a task made with that login; Captain, 2026-11-12)
+$("btnName").onclick = ()=>{ $("nameIn").value = task.name; $("askName").hidden = false; $("nameIn").focus(); $("nameIn").select(); };
+$("askNameNo").onclick = ()=>{ $("askName").hidden = true; };
+$("nameIn").onkeydown = e=>{ if(e.key==="Enter") $("askNameOk").click(); };
+$("askNameOk").onclick = async ()=>{
+  const t = task, name = $("nameIn").value.trim().slice(0, 120);
+  if(!name){ toast("Skriv et navn"); $("nameIn").focus(); return; }
+  if(name !== t.name && sb){
+    $("askNameOk").disabled = true;
+    const {error} = await sb.from("tasks").update({name}).eq("id", t.id);
+    $("askNameOk").disabled = false;
+    if(error){ toast("Det blev ikke gemt: " + error.message, 4000); return; }
+  }
+  t.name = name; store.set("tasks", tasks);
+  $("askName").hidden = true; if(task === t) $("workName").textContent = name;
+  toast("Navnet er gemt");
+};
 $("btnWho").onclick = ()=>{
   whoSet = new Set((task.assignees||[]).map(cleanName));
   peopleChips($("whoList"), whoSet); $("askWho").hidden = false; $("askWhoOk").focus();
@@ -2747,13 +2789,28 @@ $("askWhoOk").onclick = async ()=>{
   $("askWho").hidden = true; if(task === t) showWho(t);
   toast(list.length ? "Opgaven er nu til " + list.join(", ") : "Opgaven er nu til alle");
 };
+// Packages found by search, loosely: every word typed starts a word of the name (or its rule), or a long word of the
+// name starts what was typed, so "vandingsposer" finds "Træer med vanding (pose og etablering)" (Captain, 2026-11-12)
+const words = t => String(t||"").toLowerCase().split(/[^0-9a-zæøå.]+/).filter(Boolean);
+const packHit = (p, q) => { const qs = words(q), ws = words(p.name + " " + (p.surface||[]).filter(w=>!String(w).startsWith("!")).join(" "));
+  return !!qs.length && qs.every(a=>ws.some(w=>w.startsWith(a) || (w.length >= 5 && a.startsWith(w)))); };
+const packHits = q => q ? packs.filter(p=>p.codes.length && packHit(p, q)).slice(0, 4) : [];
+const packRow = (p, attr, on) => `<button class="code-item tblrow ${on ? "on" : ""}" ${attr}="${esc(p.id)}"><span class="grow">📦 <b>${esc(p.name)}</b><br><span class="muted">pakke · ${p.codes.length} ${p.codes.length===1 ? "type" : "typer"}</span></span></button>`;
 // A checklist of every type; set holds the ticked codes
 function codeChecks(el, q, set, changed, here){
   q = q.trim().toLowerCase();
-  const list = Object.entries(CODES).filter(([k,v])=>typeHit(k, v, q));
+  const list = Object.entries(CODES).filter(([k,v])=>typeHit(k, v, q)), ph = packHits(q);
   if(here) list.sort((a,b)=>(here[b[0]]||0) - (here[a[0]]||0));
   el.innerHTML = list.map(([k,v])=>`<label class="code-item ${set.has(k)?"on":""}"><input type="checkbox" value="${k}" ${set.has(k)?"checked":""}><span class="grow">${esc(v)}${groupNote(k, v, q)}${here?.[k] ? ` <span class="muted">· ${here[k]} her</span>` : ""}</span><span class="code">${k}</span></label>`).join("")
-    || `<p class="muted">Ingen typer matcher "${esc(q)}"</p>`;
+    || (ph.length ? "" : `<p class="muted">Ingen typer matcher "${esc(q)}"</p>`);
+  // matching packages first; a tap puts the whole package in (or takes it out again)
+  el.insertAdjacentHTML("afterbegin", ph.map(p=>packRow(p, "data-pk", p.codes.every(c=>set.has(c)))).join(""));
+  el.querySelectorAll("[data-pk]").forEach(b=>b.onclick=()=>{
+    const p = packs.find(x=>x.id===b.dataset.pk), all = p.codes.every(c=>set.has(c));
+    p.codes.forEach(c=>all ? set.delete(c) : set.add(c));
+    if(!all){ pickRule(p); toast(`📦 ${p.name} er valgt`); }
+    codeChecks(el, q, set, changed, here); changed();
+  });
   el.querySelectorAll("input").forEach(i=>i.onchange=()=>{
     i.checked ? set.add(i.value) : set.delete(i.value);
     i.closest(".code-item").classList.toggle("on", i.checked);
@@ -2975,7 +3032,7 @@ $("btnCreate").onclick = async ()=>{
 // The real limit is how many elements every phone must fetch and draw, so count them (the area editor may have already)
 async function sizeOk(){
   const s = newShape, big = ol.extent.getArea(s.extent) > MAX_AREA;
-  let n = null;
+  let n = null, up = false;
   if(newTbl){
     const row = tblSaved?.has(newTbl.name) && await tblRow(newTbl.name);
     if(!row){
@@ -2986,8 +3043,8 @@ async function sizeOk(){
     n = tblInArea(row, s).length;
   } else {
     const ck = [...picked].join(",");
-    if(newCount?.key===areaKey(s) && newCount.c===ck) n = newCount.n;
-    else {
+    if(newCount?.key===areaKey(s) && newCount.c===ck){ n = newCount.n; up = !!newCount.upTo; }
+    else { up = true;
       const b = $("btnCreate"), was = b.textContent; b.disabled = true; b.innerHTML = `<span class="spin"></span> Tæller steder …`;
       try{ n = await countIn([...picked], s.extent); }catch(e){ console.error(e); }
       b.disabled = false; b.textContent = was;
@@ -2995,7 +3052,8 @@ async function sizeOk(){
   }
   if(n==null) return !big || askBig(`Jeg kunne ikke tælle stederne i området (${fmtArea(shapeGeom(s).getArea())}). Er der mange, kan kortet blive langsomt på telefonerne.`);
   if(n > HUGE_TASK){ toast(`${n.toLocaleString("da-DK")} steder er for mange til én opgave. Vælg færre typer eller et mindre område.`, 6000); return false; }
-  if(n > BIG_TASK) return askBig(`Opgaven får ${n.toLocaleString("da-DK")} steder. Det er mange, så kortet kan blive langsomt på telefonerne. Del den gerne op i flere opgaver.`);
+  // with a package rule the server's number counts every tree, not just those with a bag: don't warn on that
+  if(n > BIG_TASK && !(up && surfaceFor(picked))) return askBig(`Opgaven får ${n.toLocaleString("da-DK")} steder. Det er mange, så kortet kan blive langsomt på telefonerne. Del den gerne op i flere opgaver.`);
   return true;
 }
 function askBig(txt){
@@ -3201,6 +3259,9 @@ async function areaCount(s, txt){
     if(areaEd!==a || a.key!==key) return;
     if(n==null){ show(""); return; }
     a.count = {key, n, upTo:!!(s.area || sm), c:a.codes.join(",")};
+    // a package rule ("kun med vanding") can leave a few hundred of thousands of trees: fetch them and count exactly,
+    // instead of warning about all of them (Captain, 2026-11-12: 4.480 trees, 376 with a bag)
+    if(sm && n <= HUGE_TASK){ show(`<span class="spin"></span> tæller dem ${esc(surfText(sm))} …`); areaPreview(a, s.extent); return; }
     show(countMsg(n, a.count.upTo));
     if(n <= PREVIEW_MAX) areaPreview(a, s.extent);
   }, 700);
@@ -3212,7 +3273,8 @@ async function areaPreview(a, ext){
     const fs = await fetchLayers([`${codeIn(a.codes)} AND BBOX(wkb_geometry,${e.join(",")})`], g=>g.intersectsExtent(e));
     if(areaEd!==a) return;
     (a.got ||= []).push(e);
-    fs.forEach(f=>{ if(!prevSrc.getFeatureById(f.getId())) prevSrc.addFeature(f); });
+    const sm = surfaceFor(new Set(a.codes)); // only draw what the task will hold
+    fs.forEach(f=>{ if(surfOk(sm, f) && !prevSrc.getFeatureById(f.getId())) prevSrc.addFeature(f); });
     areaChanged();
   }catch(e){ console.error(e); }
 }
@@ -3291,14 +3353,17 @@ function renderTypes(){
   $("typePackBox").hidden = !!q || !ps.length;
   $("typePacks").innerHTML = ps.map(p=>`<button data-p="${esc(p.id)}">📦 ${esc(p.name)} <span class="muted">· ${p.codes.length} ${p.codes.length===1 ? "type" : "typer"}</span></button>`).join("");
   $("typePacks").querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{
-    const p = packs.find(x=>x.id===b.dataset.p); $("pType").hidden = true; openOverview(p.codes, p.name); });
+    const p = packs.find(x=>x.id===b.dataset.p); $("pType").hidden = true; pickRule(p); openOverview(p.codes, p.name); });
   typeTblChips();
   const used = {}; tasks.forEach(t=>(t.codes||[]).forEach(c=>used[c]=(used[c]||0)+1));
   const list = Object.entries(CODES).filter(([k,v])=>typeHit(k, v, q))
     .sort((a,b)=>(used[b[0]]||0)-(used[a[0]]||0));
   $("typeList").innerHTML = list.map(([k,v])=>`<button class="item" data-c="${k}"><div class="grow"><div class="t">${esc(v)}${groupNote(k, v, q)}</div>
     ${used[k] ? `<div class="s">${used[k]} ${used[k]===1?"aktiv opgave":"aktive opgaver"}</div>` : ""}</div><span class="code">${k}</span></button>`).join("")
-    || `<p class="muted">Ingen typer matcher "${esc(q)}"</p>`;
+    || (packHits(q).length ? "" : `<p class="muted">Ingen typer matcher "${esc(q)}"</p>`);
+  $("typeList").insertAdjacentHTML("afterbegin", packHits(q).map(p=>packRow(p, "data-tp", false)).join(""));
+  $("typeList").querySelectorAll("[data-tp]").forEach(b=>b.onclick=()=>{
+    const p = packs.find(x=>x.id===b.dataset.tp); $("pType").hidden = true; pickRule(p); openOverview(p.codes, p.name); });
   $("typeList").querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{ $("pType").hidden = true; openOverview(b.dataset.c); });
 }
 // Tilbudsliste lines in Overblik: a saved line opens at once; one not saved yet is saved first (a minute or so)
@@ -3338,7 +3403,8 @@ async function openOverview(codes, pack, tbl){ // tbl: {l: a tilbudsliste line, 
   closeOverview();
   codes = [...new Set([].concat(codes))];
   let mode = store.get("overMode","status"); if(mode==="type" && codes.length < 2) mode = "status";
-  const o = over = {codes, pack: codes.length > 1 || tbl ? pack || null : null, mode, tbl:tbl?.l || null, ids:tbl ? new Set(tbl.ids) : null};
+  const o = over = {codes, pack: codes.length > 1 || tbl ? pack || null : null, mode, tbl:tbl?.l || null, ids:tbl ? new Set(tbl.ids) : null,
+    rule: packs.find(p=>p.name===pack && p.surface?.length) || null}; // the package's own rule, even if another has the same types
   const name = overName(o);
   $("overCode").textContent = codes.length > 1 ? `${codes.length} typer` : codes[0];
   $("btnOverByType").hidden = codes.length < 2;
@@ -3371,7 +3437,7 @@ async function openOverview(codes, pack, tbl){ // tbl: {l: a tilbudsliste line, 
 // What the overview shows of the fetched types: a package's belægning rule ("16.3a"), or a tilbudsliste line's elements
 function overKeep(o, feats){
   if(o.ids) return feats.filter(f=>o.ids.has(f.getId()));
-  const sm = surfaceFor(new Set(o.codes));
+  const sm = o.rule ? packSurf(o.rule) : surfaceFor(new Set(o.codes));
   return sm ? feats.filter(f=>surfOk(sm, f)) : feats;
 }
 // "Only Brande": the overview counts and shows only what lies in one town or along one street. Kept when switching type.
