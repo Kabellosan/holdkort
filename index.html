@@ -4788,8 +4788,15 @@ function inSearchArea(f){
   return SEARCH_AREAS.some(({box:b})=>x>=b[0] && x<=b[2] && y>=b[1] && y<=b[3]);
 }
 async function photon(q, extra, signal){
-  const u = PHOTON + "?" + new URLSearchParams({q, ...near(), limit:"12", location_bias_scale:"0.8", zoom:"13", bbox:SEARCH_BBOX, ...extra});
-  return ((await getJSON(u, {}, 8000, signal)).features || []).filter(inSearchArea);
+  const ask = ps => getJSON(PHOTON + "?" + new URLSearchParams(ps), {}, 8000, signal);
+  const ps = {q, ...near(), limit:"12", location_bias_scale:"0.8", zoom:"13", bbox:SEARCH_BBOX, ...extra};
+  let r;
+  try{ r = await ask(ps); }
+  catch(e){ // if Photon refuses the box, ask once without it; inSearchArea still keeps only the two kommuner
+    if(signal?.aborted || extra?.bbox) throw e;
+    delete ps.bbox; r = await ask({...ps, limit:"30"});
+  }
+  return (r.features || []).filter(inSearchArea);
 }
 // Nominatim (only on Enter, per its usage policy) is better at stations and house numbers
 async function nominatim(q, signal){
@@ -4821,14 +4828,18 @@ async function searchPlaces(q, deep, pickTown){
       const jobs = [photon(q, {}, sig)];
       const st = q.match(/^(.*?)\s*(station|st\.?|banegård)$/i);
       if(st && st[1]) jobs.unshift(photon(st[1], {osm_tag:"railway:station"}, sig));
-      if(deep) jobs.unshift(nominatim(q, sig).catch(()=>[]));
+      if(deep) jobs.unshift(nominatim(q, sig));
       const seen = new Set(); fs = [];
-      for(const list of await Promise.all(jobs)) for(const f of list){ const k = fkey(f); if(!seen.has(k)){ seen.add(k); fs.push(f); } }
-      fs = fs.slice(0,12); memoPut(key, fs);
+      const got = await Promise.allSettled(jobs); // one service down (e.g. Photon) mustn't hide the other's answers
+      if(got.every(g=>g.status==="rejected")) throw got[0].reason;
+      for(const list of got.map(g=>g.value || [])) for(const f of list){ const k = fkey(f); if(!seen.has(k)){ seen.add(k); fs.push(f); } }
+      fs = fs.slice(0,12); if(got.every(g=>g.status==="fulfilled")) memoPut(key, fs);
     }catch(e){
       if(sig.aborted) return; // a newer search took over
-      $("searchList").innerHTML = `<p class="muted">Søgningen svarer ikke lige nu. Måske er nettet væk et øjeblik.</p><button class="btn" id="btnSearchRetry">Prøv igen</button>`;
+      $("searchList").innerHTML = `<p class="muted">Søgningen svarer ikke lige nu. Måske er nettet væk et øjeblik.</p><button class="btn" id="btnSearchRetry">Prøv igen</button>`
+        + (deep ? "" : `<button class="btn ghost" id="btnSearchDeep">Prøv den anden søgetjeneste</button>`);
       $("btnSearchRetry").onclick = ()=>searchPlaces(q, deep, pickTown);
+      if(!deep) $("btnSearchDeep").onclick = ()=>searchPlaces(q, true, pickTown);
       return;
     }
   }
