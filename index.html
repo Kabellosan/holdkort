@@ -463,6 +463,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button class="btn" id="btnList">Liste</button>
       <button class="btn" id="btnTaskPhotos" hidden>💬 <span id="taskPhotoN">Noter</span></button>
     </div>
+    <button class="btn ringbtn" data-ring data-keep aria-pressed="false">◯ Tegn en ring om flere</button>
   </div>
 
   <!-- A boss picks which elements of the area belong to the task -->
@@ -519,7 +520,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button data-s="done"><i style="background:var(--done);box-shadow:0 0 0 2px var(--done-edge)"></i><span>Færdig</span></button>
       <button data-s="blocked"><i style="background:var(--blocked);outline:2px solid #fff;outline-offset:-1px"></i><span>🚧 Blokeret</span></button>
     </div>
-    <div class="row" data-keep><span class="muted grow" id="elMeta"></span><button class="btn primary" id="btnNext2">Næste ▸</button></div>
+    <div class="row" data-keep><span class="muted grow" id="elMeta"></span><button class="btn" data-ring="short" aria-pressed="false">◯ Ring</button><button class="btn primary" id="btnNext2">Næste ▸</button></div>
     <div class="blockinfo" id="elBlock" hidden></div>
     <div id="partRow" hidden><span id="elPart"></span></div>
     <!-- The less used actions, one row of big icon buttons so the panel fits a small phone -->
@@ -1224,7 +1225,7 @@ function toast(t, ms=2600, act){const el=$("toast"), b=$("toastAct"); $("toastTx
   el.classList.add("show"); clearTimeout(toast.t); toast.t=setTimeout(()=>{ el.classList.remove("show"); b.onclick=null; },ms);}
 const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick","pPlace","pPart","pSpots"];
 const curPane = () => PANES.find(p=>!$(p).hidden);
-function pane(id){ if(id!==curPane()) fold(false); if(ringOn && id!=="pPick" && id!=="pSpots") ringMode(false); PANES.forEach(p=>$(p).hidden = p!==id);
+function pane(id){ if(id!==curPane()) fold(false); if(ringOn && !["pPick","pSpots","pWork","pEl"].includes(id)) ringMode(false); PANES.forEach(p=>$(p).hidden = p!==id);
   $("sheet").classList.toggle("can-fold", !!$(id).querySelector(":scope>[data-keep]")); showTbl(); showFlawBtn(); }
 // Fold the sheet down to the rows marked data-keep (its main buttons), so more of the map shows
 // on = 2 folds it all the way: only the bar is left ("mini"); panes without data-keep rows go straight there
@@ -1429,7 +1430,7 @@ const COLOR_STEP = {ic:"🎨", t:"Farverne på kortet", h:`<div class="gcol">
   ${dotC("var(--doing)")}<span><b>Gul</b> = i gang</span>
   ${dotC("var(--done)")}<span><b>Grøn</b> = færdig</span>
   ${dotC("var(--blocked)")}<span><b>Sort</b> = blokeret, fx en bil holder der</span></div>`};
-const MARK_STEP = {ic:"👆", t:"Marker et sted", h:`<p>Tryk på et sted på kortet. Tryk så <b>Færdig</b>, <b>I gang</b>, <b>Mangler</b> eller <b>🚧 Blokeret</b>. Markeringen forsvinder af sig selv; trykkede du forkert, så tryk <b>↶ Fortryd</b>.</p>
+const MARK_STEP = {ic:"👆", t:"Marker et sted", h:`<p>Tryk på et sted på kortet. Tryk så <b>Færdig</b>, <b>I gang</b>, <b>Mangler</b> eller <b>🚧 Blokeret</b>. Markeringen forsvinder af sig selv; trykkede du forkert, så tryk <b>↶ Fortryd</b>.</p><p>Mange på én gang: tryk <b>◯ Tegn en ring om flere</b> og tegn med én finger en ring rundt om dem.</p>
   <p>Tryk på flere steder for at markere dem på én gang. <b>Næste ▸</b> viser det nærmeste sted, der mangler.</p>
   <p>Kun nået et stykke af en lang hæk eller sti? Tryk <b>📏 Stykke</b>, og tryk så, hvor du startede, og hvor du stoppede.</p>`};
 const SEND_STEP = {ic:"📤", t:"Husk at sende", h:`<p>Det, du markerer, bliver på telefonen, til du trykker <b>Send</b>. Så kan du vente, til du har forbindelse.</p>
@@ -2241,25 +2242,30 @@ $("askOverlapNo").onclick = ()=>{ $("askOverlap").hidden = true; };
 // still slow): with "◯ Tegn en ring om flere" on, one finger draws a ring instead of moving the map; two fingers
 // still move and zoom it, and a plain tap still takes one thing in or out. Everything whose middle (onPoint) is
 // inside the ring comes in; if all of it was in already, the ring takes it out instead. The toast says how many,
-// with "↶ Fortryd". The mode stays on for the next ring until the button is pressed again
+// with "↶ Fortryd". The mode stays on for the next ring until the button is pressed again.
+// In a task (Captain 2026-11-12: "mark several at once in the normal app too") the ring marks what's inside,
+// like tapping more elements, and the element pane opens for all of them. There it's one ring per press,
+// so the crew isn't left with a map that won't move; "◯ Ring" in the element pane draws one more
 var ringOn = false, ringPts = null; // var: pane() asks before this runs
 const ringSrc = new ol.source.Vector(), ringFeat = new ol.Feature();
 map.addLayer(new ol.layer.Vector({source:ringSrc, zIndex:60,
   style:new ol.style.Style({stroke:new ol.style.Stroke({color:"#2b6cd4", width:3, lineDash:[8,6]}), fill:new ol.style.Fill({color:"#2b6cd422"})})}));
 function ringMode(on){
-  ringOn = !!on && !!pick; ringPts = null; ringSrc.clear();
-  document.querySelectorAll("[data-ring]").forEach(b=>{ b.setAttribute("aria-pressed", String(ringOn)); b.textContent = ringOn ? "✓ Færdig med ringe" : "◯ Tegn en ring om flere"; });
+  ringOn = !!on && !!(pick || task); ringPts = null; ringSrc.clear();
+  document.querySelectorAll("[data-ring]").forEach(b=>{ b.setAttribute("aria-pressed", String(ringOn));
+    b.textContent = b.dataset.ring==="short" ? (ringOn ? "✕ Ingen ring" : "◯ Ring") : !ringOn ? "◯ Tegn en ring om flere" : pick ? "✓ Færdig med ringe" : "✕ Ingen ring alligevel"; });
   if(pick) pick.spots ? spotsCount() : pickCount();
 }
 document.querySelectorAll("[data-ring]").forEach(b=>b.onclick=()=>{
   ringMode(!ringOn);
   if(ringOn && !wide() && !foldLv()) fold(true); // more map to draw on; the button stays on the folded sheet
-  if(ringOn) toast("Tegn en ring med én finger rundt om det, der skal med. Flyt kortet med to fingre."
+  if(ringOn) toast(pick ? "Tegn en ring med én finger rundt om det, der skal med. Flyt kortet med to fingre."
+    : "Tegn en ring med én finger rundt om de steder, du vil markere. Flyt kortet med to fingre."
     + (pick?.spots && !pick.show ? " Ringen tager alt, der vises: vælg typer under Skift, så tager den kun dem." : ""), 6000);
 });
 map.addInteraction(new (class extends ol.interaction.Interaction{
   handleEvent(e){
-    if(!ringOn || !pick || pinDrop || flawDrop || pick.own) return true;
+    if(!ringOn || !(pick || task) || pinDrop || flawDrop || pick?.own || partEd) return true;
     const n = e.activePointers?.length || 0;
     if(e.type==="pointerdown"){ ringPts = n===1 ? [e.coordinate] : null; ringSrc.clear(); return true; }
     if(e.type==="pointerdrag" && ringPts){
@@ -2274,9 +2280,10 @@ map.addInteraction(new (class extends ol.interaction.Interaction{
   }
 })());
 function ringDone(pts){
-  const p = pick; if(!p) return;
+  const p = pick; if(!p && !task) return;
   const g = new ol.geom.Polygon([[...pts, pts[0]]]);
   if(g.getArea() < Math.pow(map.getView().getResolution() * 20, 2)){ toast("Tegn ringen lidt større, rundt om det, der skal med"); return; }
+  if(!p){ ringMark(g); return; }
   const inside = elSrc.getFeatures().filter(f=>{
     if(f.get("_own")!=null || (p.spots ? spotHidden(f) || !f.get("elementkode") : false)) return false;
     const c = f.getGeometry() && onPoint(f.getGeometry()); return !!c && g.intersectsCoordinate(c);
@@ -2290,6 +2297,20 @@ function ringDone(pts){
   const n = take.length;
   toast(add.length ? `${n} ting taget med` : `${n} ting taget ud (de var allerede med)`, 6000,
     {label:"↶ Fortryd", fn:()=>{ if(pick!==p) return; p.ids = was.ids; if(was.info) p.info = was.info; redraw(); }});
+}
+// In a task: mark what's inside the ring (or, if all of it was marked, unmark it) and show the element pane
+function ringMark(g){
+  ringMode(false);
+  const t = task, inside = elSrc.getFeatures().filter(f=>{ const c = f.getGeometry() && onPoint(f.getGeometry()); return !!c && g.intersectsCoordinate(c); });
+  if(!inside.length){ toast("Der er ikke noget inden i ringen. Tegn den rundt om midten af stederne.", 4000); return; }
+  const was = {set:new Set(selSet), sel:selected};
+  const add = inside.filter(f=>!selSet.has(f));
+  if(add.length) add.forEach(f=>selSet.add(f)); else inside.forEach(f=>selSet.delete(f));
+  const show = ()=>{ if(!selSet.size){ select(null); return; } if(!selSet.has(selected)) selected = [...selSet][0]; elLayer.changed(); showEl(false); };
+  show();
+  const n = add.length || inside.length;
+  toast(add.length ? `${n} ${n===1 ? "sted" : "steder"} markeret · ${selSet.size} i alt` : `${n} ${n===1 ? "sted" : "steder"} fjernet fra markeringen`, 6000,
+    {label:"↶ Fortryd", fn:()=>{ if(task!==t) return; selSet = new Set([...was.set].filter(f=>elSrc.hasFeature(f))); selected = selSet.has(was.sel) ? was.sel : [...selSet][0] || null; show(); }});
 }
 // While picking, every type gets a type colour in the order it turns up on the map, kept while panning, so you
 // see at once what things are. With Vis alt there are too many types for that, so each group gets one instead
