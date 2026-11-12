@@ -2614,13 +2614,28 @@ $("askWhoOk").onclick = async ()=>{
   $("askWho").hidden = true; if(task === t) showWho(t);
   toast(list.length ? "Opgaven er nu til " + list.join(", ") : "Opgaven er nu til alle");
 };
+// Packages found by search, loosely: every word typed starts a word of the name (or its rule), or a long word of the
+// name starts what was typed, so "vandingsposer" finds "Træer med vanding (pose og etablering)" (Captain, 2026-11-12)
+const words = t => String(t||"").toLowerCase().split(/[^0-9a-zæøå.]+/).filter(Boolean);
+const packHit = (p, q) => { const qs = words(q), ws = words(p.name + " " + (p.surface||[]).filter(w=>!String(w).startsWith("!")).join(" "));
+  return !!qs.length && qs.every(a=>ws.some(w=>w.startsWith(a) || (w.length >= 5 && a.startsWith(w)))); };
+const packHits = q => q ? packs.filter(p=>p.codes.length && packHit(p, q)).slice(0, 4) : [];
+const packRow = (p, attr, on) => `<button class="code-item tblrow ${on ? "on" : ""}" ${attr}="${esc(p.id)}"><span class="grow">📦 <b>${esc(p.name)}</b><br><span class="muted">pakke · ${p.codes.length} ${p.codes.length===1 ? "type" : "typer"}</span></span></button>`;
 // A checklist of every type; set holds the ticked codes
 function codeChecks(el, q, set, changed, here){
   q = q.trim().toLowerCase();
-  const list = Object.entries(CODES).filter(([k,v])=>typeHit(k, v, q));
+  const list = Object.entries(CODES).filter(([k,v])=>typeHit(k, v, q)), ph = packHits(q);
   if(here) list.sort((a,b)=>(here[b[0]]||0) - (here[a[0]]||0));
   el.innerHTML = list.map(([k,v])=>`<label class="code-item ${set.has(k)?"on":""}"><input type="checkbox" value="${k}" ${set.has(k)?"checked":""}><span class="grow">${esc(v)}${groupNote(k, v, q)}${here?.[k] ? ` <span class="muted">· ${here[k]} her</span>` : ""}</span><span class="code">${k}</span></label>`).join("")
-    || `<p class="muted">Ingen typer matcher "${esc(q)}"</p>`;
+    || (ph.length ? "" : `<p class="muted">Ingen typer matcher "${esc(q)}"</p>`);
+  // matching packages first; a tap puts the whole package in (or takes it out again)
+  el.insertAdjacentHTML("afterbegin", ph.map(p=>packRow(p, "data-pk", p.codes.every(c=>set.has(c)))).join(""));
+  el.querySelectorAll("[data-pk]").forEach(b=>b.onclick=()=>{
+    const p = packs.find(x=>x.id===b.dataset.pk), all = p.codes.every(c=>set.has(c));
+    p.codes.forEach(c=>all ? set.delete(c) : set.add(c));
+    if(!all) toast(`📦 ${p.name} er valgt`);
+    codeChecks(el, q, set, changed, here); changed();
+  });
   el.querySelectorAll("input").forEach(i=>i.onchange=()=>{
     i.checked ? set.add(i.value) : set.delete(i.value);
     i.closest(".code-item").classList.toggle("on", i.checked);
@@ -3165,7 +3180,10 @@ function renderTypes(){
     .sort((a,b)=>(used[b[0]]||0)-(used[a[0]]||0));
   $("typeList").innerHTML = list.map(([k,v])=>`<button class="item" data-c="${k}"><div class="grow"><div class="t">${esc(v)}${groupNote(k, v, q)}</div>
     ${used[k] ? `<div class="s">${used[k]} ${used[k]===1?"aktiv opgave":"aktive opgaver"}</div>` : ""}</div><span class="code">${k}</span></button>`).join("")
-    || `<p class="muted">Ingen typer matcher "${esc(q)}"</p>`;
+    || (packHits(q).length ? "" : `<p class="muted">Ingen typer matcher "${esc(q)}"</p>`);
+  $("typeList").insertAdjacentHTML("afterbegin", packHits(q).map(p=>packRow(p, "data-tp", false)).join(""));
+  $("typeList").querySelectorAll("[data-tp]").forEach(b=>b.onclick=()=>{
+    const p = packs.find(x=>x.id===b.dataset.tp); $("pType").hidden = true; openOverview(p.codes, p.name); });
   $("typeList").querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{ $("pType").hidden = true; openOverview(b.dataset.c); });
 }
 // Tilbudsliste lines in Overblik: a saved line opens at once; one not saved yet is saved first (a minute or so)
