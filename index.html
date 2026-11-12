@@ -795,7 +795,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 <!-- Place search, full screen -->
 <div class="panel" id="pSearch" hidden>
   <header>
-    <div class="row"><input type="search" id="placeQ" class="grow" placeholder="By, vej, adresse, station …" autocomplete="off" enterkeyhint="search"><button class="btn ghost" id="btnSearchClose">Luk</button></div>
+    <div class="row"><input type="search" id="placeQ" class="grow" placeholder="By, vej, adresse i Ikast-Brande eller Aarhus …" autocomplete="off" enterkeyhint="search"><button class="btn ghost" id="btnSearchClose">Luk</button></div>
   </header>
   <div class="list" id="searchList"></div>
   <footer><div class="muted" style="font-size:12px">Søgning: Photon og Nominatim · data © OpenStreetMap-bidragydere</div></footer>
@@ -4775,19 +4775,31 @@ function memoPut(k, fs){
   const ks = Object.keys(searchMemo); if(ks.length > SEARCH_MEMO) ks.sort((a,b)=>searchMemo[a].t - searchMemo[b].t).slice(0, ks.length - SEARCH_MEMO).forEach(x=>delete searchMemo[x]);
   store.set("searchMemo", searchMemo);
 }
+// Search only finds places in Ikast-Brande and Aarhus Kommune (Captain, 2026-11-12: no Østre Anlæg in Aalborg).
+// The servers get one box around both; then each answer is checked: a kommune name in the answer decides,
+// else its point must lie in one of the two kommuners' own boxes (so Silkeborg between them is left out).
+const SEARCH_AREAS = [{name:"ikast-brande", box:[8.85,55.84,9.60,56.27]}, {name:"aarhus", alt:"århus", box:[9.98,56.03,10.36,56.32]}];
+const SEARCH_BBOX = "8.85,55.84,10.36,56.32"; // both, lon/lat
+function inSearchArea(f){
+  const p = f.properties || {};
+  const txt = [p.county, p.municipality, p.district, p.state].filter(Boolean).join(" ").toLowerCase();
+  if(/kommune/.test(txt)) return SEARCH_AREAS.some(a=>txt.includes(a.name + " kommune") || (a.alt && txt.includes(a.alt + " kommune")));
+  const [x, y] = f.geometry?.coordinates || [];
+  return SEARCH_AREAS.some(({box:b})=>x>=b[0] && x<=b[2] && y>=b[1] && y<=b[3]);
+}
 async function photon(q, extra, signal){
-  const u = PHOTON + "?" + new URLSearchParams({q, ...near(), limit:"8", location_bias_scale:"0.8", zoom:"13", bbox:"8.0,54.5,15.3,57.8", ...extra});
-  return (await getJSON(u, {}, 8000, signal)).features || [];
+  const u = PHOTON + "?" + new URLSearchParams({q, ...near(), limit:"12", location_bias_scale:"0.8", zoom:"13", bbox:SEARCH_BBOX, ...extra});
+  return ((await getJSON(u, {}, 8000, signal)).features || []).filter(inSearchArea);
 }
 // Nominatim (only on Enter, per its usage policy) is better at stations and house numbers
 async function nominatim(q, signal){
-  const u = NOMINATIM + "?" + new URLSearchParams({q, format:"jsonv2", limit:"6", countrycodes:"dk", viewbox:"8.8,56.35,9.7,55.75", addressdetails:"1"});
+  const u = NOMINATIM + "?" + new URLSearchParams({q, format:"jsonv2", limit:"6", countrycodes:"dk", viewbox:SEARCH_BBOX, bounded:"1", addressdetails:"1"});
   const rs = await getJSON(u, {}, 10000, signal);
   return rs.map(r=>{ const a = r.address||{};
     const bb = r.boundingbox ? [+r.boundingbox[2], +r.boundingbox[1], +r.boundingbox[3], +r.boundingbox[0]] : null;
     return {geometry:{coordinates:[+r.lon, +r.lat]}, properties:{name:r.name || [a.road,a.house_number].filter(Boolean).join(" "),
-      street:a.road, housenumber:a.house_number, postcode:a.postcode, city:a.town||a.city||a.village||a.hamlet,
-      osm_key:r.category, osm_value:r.type, extent: (r.type==="town"||r.type==="city"||r.type==="village") ? bb : null}}; });
+      street:a.road, housenumber:a.house_number, postcode:a.postcode, city:a.town||a.city||a.village||a.hamlet, municipality:a.municipality,
+      osm_key:r.category, osm_value:r.type, extent: (r.type==="town"||r.type==="city"||r.type==="village") ? bb : null}}; }).filter(inSearchArea);
 }
 const fkey = f => f.geometry.coordinates.map(x=>x.toFixed(3)).join(",") + (f.properties.name||"");
 const townChips = () => `<div class="section">Byer i kommunen</div><div class="people">${TOWNS.map(n=>`<button data-town="${esc(n)}">${esc(n)}</button>`).join("")}</div>`;
@@ -4800,7 +4812,7 @@ async function searchPlaces(q, deep, pickTown){
   if(searchCtl) searchCtl.abort();
   clearTimeout(searchT);
   if(q.length < 2){ searchStart(); return; }
-  const key = (deep ? "+" : "") + q.toLowerCase();
+  const key = "ia:" + (deep ? "+" : "") + q.toLowerCase(); // "ia:" = Ikast-Brande + Aarhus only
   let fs = memoGet(key);
   if(!fs){
     searchCtl = new AbortController(); const sig = searchCtl.signal;
@@ -4823,7 +4835,7 @@ async function searchPlaces(q, deep, pickTown){
   if(pickTown){ const t = fs.find(f=>f.properties.osm_key==="place" && norm(f.properties.name)===norm(q)); if(t){ goPlace(t); return; } }
   $("searchList").innerHTML = (fs.length ? fs.map((f,i)=>{ const l = placeLabel(f.properties);
     return `<button class="item" data-i="${i}"><div class="grow"><div class="t">${esc(l.name)}</div><div class="s">${esc(l.sub)}</div></div><span class="code">${esc(l.kind)}</span></button>`; }).join("")
-    : `<p class="muted">Ingen steder fundet for "${esc(q)}".</p>`)
+    : `<p class="muted">Ingen steder fundet for "${esc(q)}" i Ikast-Brande eller Aarhus Kommune.</p>`)
     + (deep ? "" : `<button class="btn ghost" id="btnDeep">Find ikke det rigtige? Søg grundigere</button>`);
   $("searchList").querySelectorAll("[data-i]").forEach(b=>b.onclick=()=>goPlace(fs[+b.dataset.i]));
   if(!deep) $("btnDeep").onclick = ()=>searchPlaces(q, true);
@@ -5029,7 +5041,7 @@ async function findSearch(q, pickTown){
   if(findCtl) findCtl.abort();
   clearTimeout(findT);
   if(q.length < 2){ findStart(); return; }
-  const key = "find:" + q.toLowerCase();
+  const key = "find2:" + q.toLowerCase();
   let items = memoGet(key);
   if(!items){
     findCtl = new AbortController(); const sig = findCtl.signal;

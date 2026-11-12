@@ -42,7 +42,7 @@ Sidewalks (`FB2a`) come split into stretches by street and station, so you can m
 ## Where the data comes from
 - **Elements:** the kommune's open GeoServer, workspace `entreprenoer_udbud` (`element_arealer_distribution`, `element_arealer_vej_sti_distribution`, lines, points, curbs).
 - **Aerial photo:** the kommune's WMS (`theme-ortofoto2024`).
-- **Search:** Photon (OpenStreetMap). It gives up after 8 seconds with a **Prøv igen** button, and remembers answers on the phone.
+- **Search:** Photon (OpenStreetMap). It gives up after 8 seconds with a **Prøv igen** button, and remembers answers on the phone. It only finds places in Ikast-Brande and Aarhus Kommune.
 - **Town and street outlines:** towns from OpenStreetMap buildings (Overpass API), streets from the kommune's road lines (OpenStreetMap if the kommune doesn't have the name). Worked out on the phone and remembered there for 30 days.
 - **Plain map:** OpenStreetMap tiles, shown paler so the status colours stand out. The button under the zoom buttons switches between them (on phones a small "Kort" / "Foto" button, on computers "Luftfoto / Kort"); each phone remembers its choice.
 
