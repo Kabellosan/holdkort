@@ -463,7 +463,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button class="btn" id="btnList">Liste</button>
       <button class="btn" id="btnTaskPhotos" hidden>💬 <span id="taskPhotoN">Noter</span></button>
     </div>
-    <button class="btn ringbtn" data-ring data-keep aria-pressed="false">◯ Tegn en ring om flere</button>
+    <button class="btn ringbtn" data-multi data-keep aria-pressed="false">☰ Markér flere</button>
   </div>
 
   <!-- A boss picks which elements of the area belong to the task -->
@@ -473,7 +473,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="legend" id="pickLegend" hidden></div>
     <div class="row tblrow"><span class="grow" id="pickTbl">📋 Tilbudsliste: <span class="muted">ingen</span></span><button class="btn" data-tbl>Vis</button></div>
     <div class="row" data-keep><span class="grow"><b class="num" id="pickCount">0</b> <span class="muted" id="pickOf"></span></span><button class="btn" id="btnPickAll">Hele området</button></div>
-    <button class="btn ringbtn" data-ring data-keep aria-pressed="false">◯ Tegn en ring om flere</button>
+    <button class="btn ringbtn" data-multi data-keep aria-pressed="false">☰ Markér flere</button>
     <div class="row" data-keep>
       <button class="btn" id="btnPickCancel">Annullér</button>
       <button class="btn primary fill" id="btnPickOk">Gem steder</button>
@@ -491,7 +491,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <span class="grow"><b class="num" id="spotsCount">0</b> <span class="muted" id="spotsOf">steder valgt</span></span>
       <button class="btn" id="btnSpotsOwn">📍 Eget punkt</button>
     </div>
-    <button class="btn ringbtn" data-ring data-keep aria-pressed="false">◯ Tegn en ring om flere</button>
+    <button class="btn ringbtn" data-multi data-keep aria-pressed="false">☰ Markér flere</button>
     <button class="btn primary" id="btnSpotsOk" data-keep>Videre ▸</button>
   </div>
 
@@ -520,7 +520,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button data-s="done"><i style="background:var(--done);box-shadow:0 0 0 2px var(--done-edge)"></i><span>Færdig</span></button>
       <button data-s="blocked"><i style="background:var(--blocked);outline:2px solid #fff;outline-offset:-1px"></i><span>🚧 Blokeret</span></button>
     </div>
-    <div class="row" data-keep><span class="muted grow" id="elMeta"></span><button class="btn" data-ring="short" aria-pressed="false">◯ Ring</button><button class="btn primary" id="btnNext2">Næste ▸</button></div>
+    <div class="row" data-keep><span class="muted grow" id="elMeta"></span><button class="btn" data-multi="short" aria-pressed="false">☰ Flere</button><button class="btn primary" id="btnNext2">Næste ▸</button></div>
     <div class="blockinfo" id="elBlock" hidden></div>
     <div id="partRow" hidden><span id="elPart"></span></div>
     <!-- The less used actions, one row of big icon buttons so the panel fits a small phone -->
@@ -620,6 +620,17 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <p class="muted" style="margin:0">Tryk på et navn for at tage det med eller fjerne det. "Alle" er hele holdet, men ikke hjælpere: de ser kun opgaver med deres eget navn.</p>
     <button class="btn primary" id="askWhoOk">Gem</button>
     <button class="btn" id="askWhoNo">Annullér</button>
+  </div>
+</div>
+<div class="ask" id="askMulti" hidden role="dialog" aria-modal="true" aria-labelledby="askMultiQ">
+  <div>
+    <h2 id="askMultiQ">Markér flere på én gang</h2>
+    <div class="tbllist multilist">
+      <button id="multiHold"><b>👆 Hold og stryg</b><br><span class="muted">Hold fingeren på et sted, til telefonen summer, og stryg hen over de andre. Virker altid, også uden denne menu.</span></button>
+      <button id="multiRing"><b>◯ Tegn en ring</b><br><span class="muted">Tegn med én finger en ring rundt om dem.</span></button>
+      <button id="multiSee"><b>▭ Alt jeg kan se på kortet</b><br><span class="muted">Zoom først, så kun det, du vil have, er på skærmen.</span></button>
+    </div>
+    <button class="btn" id="askMultiNo">Annullér</button>
   </div>
 </div>
 <div class="ask" id="askOverlap" hidden role="dialog" aria-modal="true" aria-labelledby="askOverlapQ">
@@ -1430,7 +1441,7 @@ const COLOR_STEP = {ic:"🎨", t:"Farverne på kortet", h:`<div class="gcol">
   ${dotC("var(--doing)")}<span><b>Gul</b> = i gang</span>
   ${dotC("var(--done)")}<span><b>Grøn</b> = færdig</span>
   ${dotC("var(--blocked)")}<span><b>Sort</b> = blokeret, fx en bil holder der</span></div>`};
-const MARK_STEP = {ic:"👆", t:"Marker et sted", h:`<p>Tryk på et sted på kortet. Tryk så <b>Færdig</b>, <b>I gang</b>, <b>Mangler</b> eller <b>🚧 Blokeret</b>. Markeringen forsvinder af sig selv; trykkede du forkert, så tryk <b>↶ Fortryd</b>.</p><p>Mange på én gang: tryk <b>◯ Tegn en ring om flere</b> og tegn med én finger en ring rundt om dem.</p>
+const MARK_STEP = {ic:"👆", t:"Marker et sted", h:`<p>Tryk på et sted på kortet. Tryk så <b>Færdig</b>, <b>I gang</b>, <b>Mangler</b> eller <b>🚧 Blokeret</b>. Markeringen forsvinder af sig selv; trykkede du forkert, så tryk <b>↶ Fortryd</b>.</p><p>Mange på én gang: hold fingeren på et sted, til telefonen summer, og stryg hen over de andre. Flere måder under <b>☰ Markér flere</b>.</p>
   <p>Tryk på flere steder for at markere dem på én gang. <b>Næste ▸</b> viser det nærmeste sted, der mangler.</p>
   <p>Kun nået et stykke af en lang hæk eller sti? Tryk <b>📏 Stykke</b>, og tryk så, hvor du startede, og hvor du stoppede.</p>`};
 const SEND_STEP = {ic:"📤", t:"Husk at sende", h:`<p>Det, du markerer, bliver på telefonen, til du trykker <b>Send</b>. Så kan du vente, til du har forbindelse.</p>
@@ -2080,7 +2091,7 @@ function pickCount(){
   $("pickOf").textContent = `valgt af ${taskAll.length} i området`;
   pickLegend($("pickLegend"));
   $("pickHint").textContent = (ringOn ? "Tegn en ring med én finger om det, der skal med. Ring om noget, der er med, for at tage det ud. Flyt kortet med to fingre. "
-    : "Tryk på de steder, holdet skal tage. Tryk igen for at fjerne et sted. ") + (pick.tcol?.size ? "Farvet er med, grå er ikke." : "Blå er med, grå er ikke.");
+    : "Tryk på de steder, holdet skal tage. Tryk igen for at fjerne et sted. Hold fingeren på et sted og stryg for at tage flere. ") + (pick.tcol?.size ? "Farvet er med, grå er ikke." : "Blå er med, grå er ikke.");
   elLayer.changed();
 }
 function endPick(){
@@ -2152,7 +2163,7 @@ function spotsCount(){
     : p.busy ? `<span class="spin"></span> Henter kommunens elementer her …`
     : ol.extent.getArea(v) > spotView(p) ? "Zoom ind på kortet for at se kommunens elementer. Brug <b>⌕ Søg</b> for at finde en by eller vej."
     : ringOn ? "Tegn en ring med én finger om det, der skal med. Ring om noget, der er med, for at tage det ud. Flyt kortet med <b>to fingre</b>."
-    : "Tryk på de steder, der skal med. Tryk igen for at fjerne et. <b>Blå</b> er med.";
+    : "Tryk på de steder, der skal med. Tryk igen for at fjerne et. Hold fingeren på et sted og stryg for at tage flere. <b>Blå</b> er med.";
   elLayer.changed();
 }
 // Ask the kommune for every element (or only the types shown) around the view, once per place: only when zoomed in, and a bit wider than the screen
@@ -2238,80 +2249,155 @@ function openOverlap(hits, onPick, isOn){
   render(); $("askOverlap").hidden = false;
 }
 $("askOverlapNo").onclick = ()=>{ $("askOverlap").hidden = true; };
-// A ring around several things (Captain 2026-10-22: tapping each little pur and ticking the rest in "Vælg ▾" was
-// still slow): with "◯ Tegn en ring om flere" on, one finger draws a ring instead of moving the map; two fingers
-// still move and zoom it, and a plain tap still takes one thing in or out. Everything whose middle (onPoint) is
-// inside the ring comes in; if all of it was in already, the ring takes it out instead. The toast says how many,
-// with "↶ Fortryd". The mode stays on for the next ring until the button is pressed again.
-// In a task (Captain 2026-11-12: "mark several at once in the normal app too") the ring marks what's inside,
-// like tapping more elements, and the element pane opens for all of them. There it's one ring per press,
-// so the crew isn't left with a map that won't move; "◯ Ring" in the element pane draws one more
+// ================= MARKING SEVERAL AT ONCE =================
+// "☰ Markér flere" (Captain 2026-11-13: the ring alone was fiddly; "a little menu with a few tools") in Vælg steder,
+// Tryk på stederne and a task's own view. The tools, all ending in a toast with "↶ Fortryd":
+// - Hold og stryg (Captain's favourite, works any time without the menu): hold a finger still on a place for a
+//   moment, then stroke over the others. If the first place wasn't marked, everything stroked over is marked;
+//   if it was, they're unmarked. The map doesn't move while stroking.
+// - Ring (2026-10-22): one finger draws a ring, everything whose middle is inside is marked (all marked already →
+//   unmarked). Picking spots keeps it on for the next ring; in a task it's one ring per pick from the menu.
+// - Alt jeg kan se: everything whose middle is on the part of the map above the bottom sheet.
+// Two fingers always still move and zoom the map, and a plain tap still takes one thing in or out.
+// In a task "marked" is selSet (the element pane opens for all of them); picking, it's pick.ids
+const MULTI_PANES = ["pPick","pSpots","pWork","pEl"];
+const multiOk = () => !!(pick || task) && MULTI_PANES.includes(curPane()) && !areaEd && !partEd && !pinDrop && !flawDrop && !pick?.own;
+const canMulti = f => pick ? f.get("_own")==null && (!pick.spots || (!spotHidden(f) && !!f.get("elementkode"))) : elSrc.hasFeature(f);
+const isOn = f => pick ? pick.ids.has(f.getId()) : selSet.has(f);
+function setOn(f, on){
+  if(isOn(f)===on) return;
+  if(pick?.spots) spotToggle(f);
+  else if(pick) on ? pick.ids.add(f.getId()) : pick.ids.delete(f.getId());
+  else on ? selSet.add(f) : selSet.delete(f);
+}
+function multiShow(){
+  if(pick){ pick.spots ? spotsCount() : pickCount(); return; }
+  if(!selSet.size){ select(null); return; }
+  if(!selSet.has(selected)) selected = [...selSet][0];
+  elLayer.changed(); showEl(false);
+}
+// what's marked now, to put back with Fortryd
+function multiSnap(){
+  const p = pick, t = task;
+  if(p){ const ids = new Set(p.ids), info = p.info && new Map(p.info); return ()=>{ if(pick!==p) return; p.ids = ids; if(info) p.info = info; multiShow(); }; }
+  const was = new Set(selSet), sel = selected;
+  return ()=>{ if(task!==t || pick) return; selSet = new Set([...was].filter(f=>elSrc.hasFeature(f))); selected = selSet.has(sel) ? sel : [...selSet][0] || null; multiShow(); };
+}
+function multiToast(n, on, undo){
+  const word = pick ? "ting" : n===1 ? "sted" : "steder";
+  toast(pick ? `${n} ting ${on ? "taget med" : "taget ud"}` : on ? `${n} ${word} markeret · ${selSet.size} i alt` : `${n} ${word} fjernet fra markeringen`, 6000, {label:"↶ Fortryd", fn:undo});
+}
+// Mark (or, if every one is marked already, unmark) the things whose middle passes test
+function multiBy(test, none){
+  const fs = elSrc.getFeatures().filter(f=>{ if(!canMulti(f)) return false; const c = f.getGeometry() && onPoint(f.getGeometry()); return !!c && test(c); });
+  if(!fs.length){ toast(none, 4000); return; }
+  const undo = multiSnap(), add = fs.filter(f=>!isOn(f)), take = add.length ? add : fs;
+  take.forEach(f=>setOn(f, !!add.length));
+  multiShow(); multiToast(take.length, !!add.length, undo);
+}
+
+// ---- The menu ----
+function multiBtns(){
+  document.querySelectorAll("[data-multi]").forEach(b=>{ b.setAttribute("aria-pressed", String(ringOn));
+    b.textContent = ringOn ? (b.dataset.multi==="short" ? "✕ Stop ring" : pick ? "✓ Færdig med ringe" : "✕ Ingen ring alligevel") : b.dataset.multi==="short" ? "☰ Flere" : "☰ Markér flere"; });
+}
+document.querySelectorAll("[data-multi]").forEach(b=>b.onclick=()=>{
+  if(ringOn){ ringMode(false); return; }
+  $("askMulti").hidden = false;
+});
+$("askMultiNo").onclick = ()=>{ $("askMulti").hidden = true; };
+$("multiHold").onclick = ()=>{ $("askMulti").hidden = true;
+  toast("Hold fingeren stille på et sted et øjeblik, til telefonen summer. Stryg så hen over de andre. Det virker altid, også uden menuen.", 7000); };
+$("multiRing").onclick = ()=>{ $("askMulti").hidden = true; ringMode(true);
+  if(!wide() && !foldLv()) fold(true); // more map to draw on; the button stays on the folded sheet
+  toast((pick ? "Tegn en ring med én finger rundt om det, der skal med." : "Tegn en ring med én finger rundt om de steder, du vil markere.") + " Flyt kortet med to fingre."
+    + (pick?.spots && !pick.show ? " Ringen tager alt, der vises: vælg typer under Skift, så tager den kun dem." : ""), 6000); };
+$("multiSee").onclick = ()=>{ $("askMulti").hidden = true;
+  const top = map.getTargetElement().getBoundingClientRect(), h = map.getSize()[1] - (wide() ? 0 : Math.max(0, top.bottom - $("sheet").getBoundingClientRect().top));
+  multiBy(c=>{ const [x, y] = map.getPixelFromCoordinate(c); return x >= 0 && y >= 0 && x <= map.getSize()[0] && y <= h; },
+    "Der er ikke noget på kortet her. Flyt eller zoom kortet, så det, du vil have, er på skærmen.");
+};
+
+// ---- Ring ----
 var ringOn = false, ringPts = null; // var: pane() asks before this runs
 const ringSrc = new ol.source.Vector(), ringFeat = new ol.Feature();
 map.addLayer(new ol.layer.Vector({source:ringSrc, zIndex:60,
   style:new ol.style.Style({stroke:new ol.style.Stroke({color:"#2b6cd4", width:3, lineDash:[8,6]}), fill:new ol.style.Fill({color:"#2b6cd422"})})}));
 function ringMode(on){
   ringOn = !!on && !!(pick || task); ringPts = null; ringSrc.clear();
-  document.querySelectorAll("[data-ring]").forEach(b=>{ b.setAttribute("aria-pressed", String(ringOn));
-    b.textContent = b.dataset.ring==="short" ? (ringOn ? "✕ Ingen ring" : "◯ Ring") : !ringOn ? "◯ Tegn en ring om flere" : pick ? "✓ Færdig med ringe" : "✕ Ingen ring alligevel"; });
+  multiBtns();
   if(pick) pick.spots ? spotsCount() : pickCount();
 }
-document.querySelectorAll("[data-ring]").forEach(b=>b.onclick=()=>{
-  ringMode(!ringOn);
-  if(ringOn && !wide() && !foldLv()) fold(true); // more map to draw on; the button stays on the folded sheet
-  if(ringOn) toast(pick ? "Tegn en ring med én finger rundt om det, der skal med. Flyt kortet med to fingre."
-    : "Tegn en ring med én finger rundt om de steder, du vil markere. Flyt kortet med to fingre."
-    + (pick?.spots && !pick.show ? " Ringen tager alt, der vises: vælg typer under Skift, så tager den kun dem." : ""), 6000);
-});
+function ringDone(pts){
+  const g = new ol.geom.Polygon([[...pts, pts[0]]]);
+  if(g.getArea() < Math.pow(map.getView().getResolution() * 20, 2)){ toast("Tegn ringen lidt større, rundt om det, der skal med"); return; }
+  if(!pick) ringMode(false); // in a task: one ring per pick from the menu
+  multiBy(c=>g.intersectsCoordinate(c), "Der er ikke noget inden i ringen. Tegn den rundt om midten af tingene.");
+}
+
+// ---- Hold og stryg ----
+const HOLD_MS = 450, HOLD_SLOP = 10; // how long to hold still, and how far the finger may wander meanwhile (px)
+let hold = null, brush = null, brushEnd = 0; // hold: waiting for the finger to stay; brush: stroking
+const nearPx = (a, b) => Math.hypot(a[0]-b[0], a[1]-b[1]);
+const hitsAt = px => map.getFeaturesAtPixel(px, {layerFilter:l=>l===elLayer, hitTolerance:10}).filter(canMulti);
+function brushAt(px){
+  const b = brush, from = b.px; b.px = px;
+  const steps = Math.max(1, Math.ceil(nearPx(from, px) / 8)); // a quick stroke mustn't jump over small things
+  for(let i = 1; i <= steps; i++){
+    const q = [from[0] + (px[0]-from[0])*i/steps, from[1] + (px[1]-from[1])*i/steps];
+    hitsAt(q).forEach(f=>{ if(b.seen.has(f)) return; b.seen.add(f); if(isOn(f)!==b.on){ setOn(f, b.on); b.n++; } });
+  }
+  pick ? (pick.spots ? spotsCount() : pickCount()) : elLayer.changed();
+}
+function holdFire(){
+  const h = hold; hold = null; if(!h || !multiOk()) return;
+  const f = hitsAt(h.px).sort((a,b)=>spotSize(a) - spotSize(b))[0]; if(!f) return; // only from a place, so a long press on empty map does nothing
+  brush = {on:!isOn(f), seen:new Set(), n:0, px:h.px, undo:multiSnap()};
+  navigator.vibrate?.(30);
+  brushAt(h.px);
+  toast(brush.on ? "Stryg hen over dem, der skal med" : "Stryg hen over dem, der skal ud", 3000);
+}
+// One interaction for both: it sees every event before the map moves (added after the others)
 map.addInteraction(new (class extends ol.interaction.Interaction{
   handleEvent(e){
-    if(!ringOn || !(pick || task) || pinDrop || flawDrop || pick?.own || partEd) return true;
-    const n = e.activePointers?.length || 0;
-    if(e.type==="pointerdown"){ ringPts = n===1 ? [e.coordinate] : null; ringSrc.clear(); return true; }
-    if(e.type==="pointerdrag" && ringPts){
-      if(n > 1){ ringPts = null; ringSrc.clear(); return true; } // a second finger: move or zoom the map instead
-      ringPts.push(e.coordinate);
-      ringFeat.setGeometry(new ol.geom.LineString(ringPts)); if(!ringSrc.getFeatures().length) ringSrc.addFeature(ringFeat);
-      e.originalEvent.preventDefault();
-      return false; // the map doesn't move under the ring
+    if(!multiOk()){ hold = null; brush = null; ringPts = null; return true; }
+    const n = e.activePointers?.length || 0, t = e.type;
+    if(ringOn){
+      if(t==="pointerdown"){ ringPts = n===1 ? [e.coordinate] : null; ringSrc.clear(); return true; }
+      if(t==="pointerdrag" && ringPts){
+        if(n > 1){ ringPts = null; ringSrc.clear(); return true; } // a second finger: move or zoom the map instead
+        ringPts.push(e.coordinate);
+        ringFeat.setGeometry(new ol.geom.LineString(ringPts)); if(!ringSrc.getFeatures().length) ringSrc.addFeature(ringFeat);
+        e.originalEvent.preventDefault();
+        return false; // the map doesn't move under the ring
+      }
+      if(t==="pointerup" && ringPts){ const pts = ringPts; ringPts = null; ringSrc.clear(); if(pts.length > 4) ringDone(pts); }
+      return true;
     }
-    if(e.type==="pointerup" && ringPts){ const pts = ringPts; ringPts = null; ringSrc.clear(); if(pts.length > 4) ringDone(pts); }
+    if(t==="pointerdown"){
+      clearTimeout(hold?.timer); hold = null;
+      if(brush || n!==1) { brush = null; return true; }
+      hold = {px:e.pixel, timer:setTimeout(holdFire, HOLD_MS)};
+      return true;
+    }
+    if(t==="pointerdrag"){
+      if(brush){
+        if(n > 1){ brush = null; return true; }
+        brushAt(e.pixel); e.originalEvent.preventDefault(); return false;
+      }
+      if(hold && (n > 1 || nearPx(hold.px, e.pixel) > HOLD_SLOP)){ clearTimeout(hold.timer); hold = null; } // it's a pan
+      return true;
+    }
+    if(t==="pointerup"){
+      if(hold){ clearTimeout(hold.timer); hold = null; }
+      if(brush){ const b = brush; brush = null; brushEnd = Date.now();
+        if(b.n){ multiShow(); multiToast(b.n, b.on, b.undo); } else if(!pick) multiShow(); }
+    }
     return true;
   }
 })());
-function ringDone(pts){
-  const p = pick; if(!p && !task) return;
-  const g = new ol.geom.Polygon([[...pts, pts[0]]]);
-  if(g.getArea() < Math.pow(map.getView().getResolution() * 20, 2)){ toast("Tegn ringen lidt større, rundt om det, der skal med"); return; }
-  if(!p){ ringMark(g); return; }
-  const inside = elSrc.getFeatures().filter(f=>{
-    if(f.get("_own")!=null || (p.spots ? spotHidden(f) || !f.get("elementkode") : false)) return false;
-    const c = f.getGeometry() && onPoint(f.getGeometry()); return !!c && g.intersectsCoordinate(c);
-  });
-  if(!inside.length){ toast("Der er ikke noget inden i ringen. Tegn den rundt om midten af tingene."); return; }
-  const was = {ids:new Set(p.ids), info:p.info && new Map(p.info)};
-  const add = inside.filter(f=>!p.ids.has(f.getId())), take = add.length ? add : inside;
-  take.forEach(f=>{ if(p.spots) spotToggle(f); else p.ids.has(f.getId()) ? p.ids.delete(f.getId()) : p.ids.add(f.getId()); });
-  const redraw = ()=>p.spots ? spotsCount() : pickCount();
-  redraw();
-  const n = take.length;
-  toast(add.length ? `${n} ting taget med` : `${n} ting taget ud (de var allerede med)`, 6000,
-    {label:"↶ Fortryd", fn:()=>{ if(pick!==p) return; p.ids = was.ids; if(was.info) p.info = was.info; redraw(); }});
-}
-// In a task: mark what's inside the ring (or, if all of it was marked, unmark it) and show the element pane
-function ringMark(g){
-  ringMode(false);
-  const t = task, inside = elSrc.getFeatures().filter(f=>{ const c = f.getGeometry() && onPoint(f.getGeometry()); return !!c && g.intersectsCoordinate(c); });
-  if(!inside.length){ toast("Der er ikke noget inden i ringen. Tegn den rundt om midten af stederne.", 4000); return; }
-  const was = {set:new Set(selSet), sel:selected};
-  const add = inside.filter(f=>!selSet.has(f));
-  if(add.length) add.forEach(f=>selSet.add(f)); else inside.forEach(f=>selSet.delete(f));
-  const show = ()=>{ if(!selSet.size){ select(null); return; } if(!selSet.has(selected)) selected = [...selSet][0]; elLayer.changed(); showEl(false); };
-  show();
-  const n = add.length || inside.length;
-  toast(add.length ? `${n} ${n===1 ? "sted" : "steder"} markeret · ${selSet.size} i alt` : `${n} ${n===1 ? "sted" : "steder"} fjernet fra markeringen`, 6000,
-    {label:"↶ Fortryd", fn:()=>{ if(task!==t) return; selSet = new Set([...was.set].filter(f=>elSrc.hasFeature(f))); selected = selSet.has(was.sel) ? was.sel : [...selSet][0] || null; show(); }});
-}
+// a long press isn't a tap, and Android shouldn't open its own menu for it
+map.getViewport().addEventListener("contextmenu", e=>{ if(multiOk()) e.preventDefault(); });
 // While picking, every type gets a type colour in the order it turns up on the map, kept while panning, so you
 // see at once what things are. With Vis alt there are too many types for that, so each group gets one instead
 // (Græs, Hæk og pur, Fast belægning …, the kommune map's folders). One type alone stays grey.
@@ -4155,6 +4241,7 @@ $("reqs").addEventListener("toggle", ()=>{ store.set("reqsOpen", $("reqs").open)
 $("reqs").querySelector("summary").addEventListener("click", ()=>setTimeout(()=>{ if($("reqs").open) $("reqs").scrollIntoView({block:"nearest", behavior:"smooth"}); }, 0));
 map.on("singleclick", e=>{
   if(areaEd) return;
+  if(Date.now() - brushEnd < 700) return; // the end of a long press and stroke, not a tap
   if(flawDrop){ dropFlaw(e); return; }
   if(pinDrop && task){ dropPin(e.coordinate); return; }
   if(partEd){ partTap(e.coordinate); return; }
