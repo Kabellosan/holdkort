@@ -2,7 +2,7 @@
 <html lang="da">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#1f3a2e">
 <title>Holdkort</title>
 <link rel="manifest" href="manifest.json">
@@ -20,6 +20,9 @@
 }
 @media (prefers-color-scheme:dark){:root{--ink:#eaf0e7;--ink2:#a4b2a8;--paper:#161d18;--card:#1f2822;--line:#2f3b33;--moss:#2c5442;--moss2:#3a6b55;color-scheme:dark}}
 *{box-sizing:border-box}
+/* The page itself never zooms (2026-11-13, Captain: a pinch starting on a map button zoomed the whole page).
+   pan-x pan-y lets panels scroll but leaves out pinch and double-tap zoom; the map's own viewport has touch-action:none (OpenLayers handles the pinch). */
+*{touch-action:pan-x pan-y}
 [hidden]{display:none!important}
 html,body{height:100%;margin:0}
 body{font-family:var(--font);font-size:16px;line-height:1.35;color:var(--ink);background:var(--paper);overflow:hidden;-webkit-tap-highlight-color:transparent}
@@ -285,6 +288,8 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 /* A toast with a button (Fortryd) can be tapped; the button is big enough for a thumb */
 .toast.act{width:max-content;display:flex;align-items:center;gap:12px;padding:6px 6px 6px 16px;text-align:left}
 .toast.act.show{pointer-events:auto}
+.toast.two{border-radius:24px}
+#toastActs{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .toast button{min-height:44px;padding:0 16px;border-radius:999px;border:0;background:#fff;color:var(--moss);font:inherit;font-weight:700;cursor:pointer;white-space:nowrap}
 .spin{display:inline-block;width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-3px}
 @keyframes sp{to{transform:rotate(360deg)}}
@@ -364,7 +369,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   </div>
   <span class="credit" id="osmCredit" hidden>© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></span>
 </div>
-<div class="toast" id="toast" role="status"><span id="toastTxt"></span><button id="toastAct" hidden></button></div>
+<div class="toast" id="toast" role="status"><span id="toastTxt"></span><span id="toastActs"></span></div>
 
 <div class="sheet" id="sheet">
   <button class="grip" id="grip" aria-label="Gør panelet mindre" aria-expanded="true"><i></i><span>▲ Vis mere</span></button>
@@ -477,6 +482,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button class="btn" id="btnList">Liste</button>
       <button class="btn" id="btnTaskPhotos" hidden>💬 <span id="taskPhotoN">Noter</span></button>
     </div>
+    <button class="btn ringbtn" data-multi data-keep aria-pressed="false">☰ Markér flere</button>
   </div>
 
   <!-- A boss picks which elements of the area belong to the task -->
@@ -486,7 +492,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="legend" id="pickLegend" hidden></div>
     <div class="row tblrow"><span class="grow" id="pickTbl">📋 Tilbudsliste: <span class="muted">ingen</span></span><button class="btn" data-tbl>Vis</button></div>
     <div class="row" data-keep><span class="grow"><b class="num" id="pickCount">0</b> <span class="muted" id="pickOf"></span></span><button class="btn" id="btnPickAll">Hele området</button></div>
-    <button class="btn ringbtn" data-ring data-keep aria-pressed="false">◯ Tegn en ring om flere</button>
+    <button class="btn ringbtn" data-multi data-keep aria-pressed="false">☰ Markér flere</button>
     <div class="row" data-keep>
       <button class="btn" id="btnPickCancel">Annullér</button>
       <button class="btn primary fill" id="btnPickOk">Gem steder</button>
@@ -516,7 +522,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <span class="grow"><b class="num" id="spotsCount">0</b> <span class="muted" id="spotsOf">steder valgt</span></span>
       <button class="btn" id="btnSpotsOwn">📍 Eget punkt</button>
     </div>
-    <button class="btn ringbtn" data-ring data-keep aria-pressed="false">◯ Tegn en ring om flere</button>
+    <button class="btn ringbtn" data-multi data-keep aria-pressed="false">☰ Markér flere</button>
     <button class="btn primary" id="btnSpotsOk" data-keep>Videre ▸</button>
   </div>
 
@@ -545,7 +551,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button data-s="done"><i style="background:var(--done);box-shadow:0 0 0 2px var(--done-edge)"></i><span>Færdig</span></button>
       <button data-s="blocked"><i style="background:var(--blocked);outline:2px solid #fff;outline-offset:-1px"></i><span>🚧 Blokeret</span></button>
     </div>
-    <div class="row" data-keep><span class="muted grow" id="elMeta"></span><button class="btn primary" id="btnNext2">Næste ▸</button></div>
+    <div class="row" data-keep><span class="muted grow" id="elMeta"></span><button class="btn" data-multi="short" aria-pressed="false">☰ Flere</button><button class="btn primary" id="btnNext2">Næste ▸</button></div>
     <div class="blockinfo" id="elBlock" hidden></div>
     <div id="partRow" hidden><span id="elPart"></span></div>
     <!-- The less used actions, one row of big icon buttons so the panel fits a small phone -->
@@ -645,6 +651,17 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <p class="muted" style="margin:0">Tryk på et navn for at tage det med eller fjerne det. "Alle" er hele holdet, men ikke hjælpere: de ser kun opgaver med deres eget navn.</p>
     <button class="btn primary" id="askWhoOk">Gem</button>
     <button class="btn" id="askWhoNo">Annullér</button>
+  </div>
+</div>
+<div class="ask" id="askMulti" hidden role="dialog" aria-modal="true" aria-labelledby="askMultiQ">
+  <div>
+    <h2 id="askMultiQ">Markér flere på én gang</h2>
+    <div class="tbllist multilist">
+      <button id="multiHold"><b>👆 Hold og stryg</b><br><span class="muted">Hold fingeren på et sted, til telefonen summer, og stryg hen over de andre. Virker altid, også uden denne menu.</span></button>
+      <button id="multiRing"><b>◯ Tegn en ring</b><br><span class="muted">Tegn med én finger en ring rundt om dem.</span></button>
+      <button id="multiSee"><b>▭ Alt jeg kan se på kortet</b><br><span class="muted">Zoom først, så kun det, du vil have, er på skærmen.</span></button>
+    </div>
+    <button class="btn" id="askMultiNo">Annullér</button>
   </div>
 </div>
 <div class="ask" id="askOverlap" hidden role="dialog" aria-modal="true" aria-labelledby="askOverlapQ">
@@ -844,7 +861,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 <!-- Place search, full screen -->
 <div class="panel" id="pSearch" hidden>
   <header>
-    <div class="row"><input type="search" id="placeQ" class="grow" placeholder="By, vej, adresse, station …" autocomplete="off" enterkeyhint="search"><button class="btn ghost" id="btnSearchClose">Luk</button></div>
+    <div class="row"><input type="search" id="placeQ" class="grow" placeholder="By, vej, adresse i Ikast-Brande eller Aarhus …" autocomplete="off" enterkeyhint="search"><button class="btn ghost" id="btnSearchClose">Luk</button></div>
   </header>
   <div class="list" id="searchList"></div>
   <footer><div class="muted" style="font-size:12px">Søgning: Photon og Nominatim · data © OpenStreetMap-bidragydere</div></footer>
@@ -1081,7 +1098,7 @@ function workTcol(){
 }
 const byTypeNow = () => !!(workTcol() && store.get("workMode","status")==="type");
 function elStyle(f, res){
-  const pin = f.get("_own")!=null ? [OWN_PIN] : []; // a spot set by hand
+  const pin = f.get("_own")!=null ? [markStyle("📍", 22, 41, res)] : []; // a spot set by hand
   if(pick?.show && spotHidden(f)) return null;
   if(pick){ // picking: each type (or with Vis alt, each group) its own colour
     const far = res > 3.2, ty = pick.tcol?.get(pickKey(f)), on = pick.ids.has(f.getId());
@@ -1106,13 +1123,14 @@ const centerPoint = f => { const g = f.getGeometry(), t = g.getType();
   if(t==="MultiPolygon") return new ol.geom.Point(g.getInteriorPoints().getCoordinates()[0]);
   return new ol.geom.Point(g.getClosestPoint(ol.extent.getCenter(g.getExtent()))); };
 // A spot set by hand on the map (not in the kommune's data)
-const OWN_PIN = new ol.style.Style({zIndex:41, text:new ol.style.Text({text:"📍", font:"22px sans-serif", offsetY:-18})});
 // 📝 / 📷 beside elements with a note or a photo, so everyone can see where there's something to read or look at
 const badgeCache = {};
 // Small and round above the element, so the line itself stays visible; hidden when zoomed far out (res > 3.2), where they'd cover everything
-const badgeStyle = (t, res) => res > 3.2 ? [] : [badgeCache[t] ||= new ol.style.Style({geometry:centerPoint, zIndex:40,
-  image:new ol.style.Circle({radius: t.length > 2 ? 11 : 9, displacement:[0, 17], fill:new ol.style.Fill({color:"#ffffffb3"}), stroke:new ol.style.Stroke({color:"#0000002e", width:1})}),
-  text:new ol.style.Text({text:t, font: t.length > 2 ? "9px sans-serif" : "11px sans-serif", offsetY:-17})})];
+// Hidden from about town zoom out, so they don't pile up; a bit smaller just before that
+const badgeStyle = (t, res) => { if(res > 1.6) return []; const k = res > .8 ? .8 : 1, key = t + k;
+  return [badgeCache[key] ||= new ol.style.Style({geometry:centerPoint, zIndex:40,
+  image:new ol.style.Circle({radius: (t.length > 2 ? 11 : 9) * k, displacement:[0, 17 * k], fill:new ol.style.Fill({color:"#ffffffb3"}), stroke:new ol.style.Stroke({color:"#0000002e", width:1})}),
+  text:new ol.style.Text({text:t, font: `${Math.round((t.length > 2 ? 9 : 11) * k)}px sans-serif`, offsetY:-17 * k})})]; };
 const badgeText = (note, photo) => (note ? "📝" : "") + (photo ? "📷" : "");
 // In the open task: its current note (sent or waiting) and its photos
 const mediaMark = id => badgeText(!!eff(id)?.note?.trim(), hasMedia(id));
@@ -1232,14 +1250,16 @@ const clipShape = () => place?.shape || (over && overFilter?.shape) || null;
 });
 // 📌 Pins in the open task: a spot anyone can put a note or photo on, also where the kommune has no element
 const pinSrc = new ol.source.Vector();
-const PIN_STYLE = new ol.style.Style({zIndex:50, text:new ol.style.Text({text:"📌", font:"30px sans-serif", offsetY:-14, stroke:new ol.style.Stroke({color:"#fff", width:3})})});
+// Pins and kortfejl shrink as you zoom out, like the dots (Captain 2026-11-13: they piled up over the town)
+const markK = res => res <= 1 ? 1 : res <= 2.5 ? .75 : res <= 6 ? .55 : .45;
+const markCache = {}, markStyle = (t, px, z, res) => { const k = markK(res), key = t + k;
+  return markCache[key] ||= new ol.style.Style({zIndex:z, text:new ol.style.Text({text:t, font:`${Math.round(px * k)}px sans-serif`, offsetY:-Math.round(px * k * .47), stroke:new ol.style.Stroke({color:"#fff", width:k < .7 ? 2 : 3})})}); };
 const PIN_NEW = new ol.style.Style({zIndex:51, text:new ol.style.Text({text:"📌", font:"36px sans-serif", offsetY:-16, backgroundFill:new ol.style.Fill({color:"#ffffffcc"}), padding:[2,4,2,4]})});
-const pinLayer = new ol.layer.Vector({source:pinSrc, style:f=>f.get("draft") ? PIN_NEW : PIN_STYLE});
+const pinLayer = new ol.layer.Vector({source:pinSrc, style:(f, res)=>f.get("draft") ? PIN_NEW : markStyle("📌", 30, 50, res)});
 // ⚠️ Kortfejl: shown on every map, they're few and anyone may run into the same spot
 const flawSrc = new ol.source.Vector();
-const FLAW_STYLE = new ol.style.Style({zIndex:52, text:new ol.style.Text({text:"⚠️", font:"26px sans-serif", offsetY:-12, stroke:new ol.style.Stroke({color:"#fff", width:3})})});
 const FLAW_NEW = new ol.style.Style({zIndex:53, text:new ol.style.Text({text:"⚠️", font:"34px sans-serif", offsetY:-16, backgroundFill:new ol.style.Fill({color:"#ffffffcc"}), padding:[2,4,2,4]})});
-const flawLayer = new ol.layer.Vector({source:flawSrc, style:f=>f.get("draft") ? FLAW_NEW : FLAW_STYLE});
+const flawLayer = new ol.layer.Vector({source:flawSrc, style:(f, res)=>f.get("draft") ? FLAW_NEW : markStyle("⚠️", 26, 52, res)});
 const map = new ol.Map({target:"map", layers:[ortoLayer, osmLayer, filterLayer, areaLayer, overLayer, elLayer, tblLayer, labelLayer, prevLayer, editLayer, pinLayer, flawLayer, gpsLayer],
   view:new ol.View({projection:proj, center:START_CENTER, zoom:START_ZOOM, resolutions:RES, constrainResolution:true}),
   controls: ol.control.defaults.defaults({attribution:false, rotate:false})});
@@ -1268,12 +1288,15 @@ const sheetPad = () => sheetH() + 20;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 // act = {label, fn}: a button in the toast (e.g. Fortryd); it goes away with the toast
-function toast(t, ms=2600, act){const el=$("toast"), b=$("toastAct"); $("toastTxt").textContent=t;
-  b.hidden=!act; el.classList.toggle("act", !!act); b.onclick = act ? ()=>{ el.classList.remove("show"); b.onclick=null; act.fn(); } : null; if(act) b.textContent=act.label;
-  el.classList.add("show"); clearTimeout(toast.t); toast.t=setTimeout(()=>{ el.classList.remove("show"); b.onclick=null; },ms);}
+function toast(t, ms=2600, act){const el=$("toast"), box=$("toastActs"); $("toastTxt").textContent=t; // act: one {label, fn} or a list of them
+  const acts = (Array.isArray(act) ? act : [act]).filter(Boolean);
+  box.replaceChildren(...acts.map(a=>{ const b = document.createElement("button"); b.textContent = a.label;
+    b.onclick = ()=>{ el.classList.remove("show"); box.replaceChildren(); a.fn(); }; return b; }));
+  el.classList.toggle("act", acts.length>0); el.classList.toggle("two", acts.length>1);
+  el.classList.add("show"); clearTimeout(toast.t); toast.t=setTimeout(()=>{ el.classList.remove("show"); box.replaceChildren(); },ms);}
 const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick","pPlace","pPart","pSpots","pBrowse"];
 const curPane = () => PANES.find(p=>!$(p).hidden);
-function pane(id){ if(id!==curPane()) fold(false); if(ringOn && id!=="pPick" && id!=="pSpots") ringMode(false); PANES.forEach(p=>$(p).hidden = p!==id);
+function pane(id){ if(id!==curPane()) fold(false); if(ringOn && !["pPick","pSpots","pWork","pEl"].includes(id)) ringMode(false); PANES.forEach(p=>$(p).hidden = p!==id);
   $("sheet").classList.toggle("can-fold", !!$(id).querySelector(":scope>[data-keep]")); showTbl(); showFlawBtn(); showLayersBtn(); }
 // Fold the sheet down to the rows marked data-keep (its main buttons), so more of the map shows
 // on = 2 folds it all the way: only the bar is left ("mini"); panes without data-keep rows go straight there
@@ -1316,17 +1339,20 @@ let packs = store.get("packs", []); // saved groups of types, see PACKAGES
 // (all of Fast belægning means every fortov). Tasks keep the result in tasks.surface, {code: [surfaces]}.
 // Areas carry their belægning in attribut_1/attribut_2 (the plads at Hanningvej shows "asfalt" there), roads in belaegningstype
 const surfOf = f => ["belaegningstype", "attribut_1", "attribut_2"].map(k=>f.get(k)).filter(Boolean).join(" ").trim();
-// rulePick: the package last tapped. Several packages may have the same types and different rules ("Træer med
-// vandingspose" / "… med etableringsvanding", Captain 2026-11-12); the ticked types can't tell them apart, so the tapped one wins.
+// rulePick: the package last tapped. Several packages may have the same types ("Træer" and "Træer med vandingspose",
+// Captain 2026-11-12); the ticked types can't tell them apart, so the tapped one decides. A rule package with the same
+// types as a package without a rule only applies when it was the one tapped.
 let rulePick = null;
-const pickRule = p => { if(p?.surface?.length) rulePick = p.id; };
+const pickRule = p => { if(p) rulePick = p.id; };
 const codeKey = p => [...p.codes].sort().join(",");
 function surfaceFor(set){
   const m = {}, full = p => p.codes.length && p.codes.every(c=>set.has(c));
-  const rs = packs.filter(p=>p.surface?.length && full(p)), win = new Map();
-  rs.forEach(p=>{ const k = codeKey(p); if(!win.has(k) || p.id===rulePick) win.set(k, p); });
-  [...win.values()].forEach(p=>Object.entries(packSurf(p)).forEach(([c, v])=>{ m[c] = v; }));
-  packs.filter(p=>!p.surface?.length && full(p)).forEach(p=>p.codes.forEach(c=>delete m[c]));
+  const rs = packs.filter(p=>p.surface?.length && full(p)), plain = packs.filter(p=>!p.surface?.length && full(p));
+  const plainKeys = new Set(plain.map(codeKey)), win = new Map(), picked = new Set();
+  rs.forEach(p=>{ const k = codeKey(p); if(p.id===rulePick){ win.set(k, p); picked.add(k); } else if(!win.has(k)) win.set(k, p); });
+  win.forEach((p, k)=>{ if(plainKeys.has(k) && !picked.has(k)) return;
+    Object.entries(packSurf(p)).forEach(([c, v])=>{ m[c] = v; }); });
+  plain.filter(p=>!picked.has(codeKey(p))).forEach(p=>p.codes.forEach(c=>delete m[c]));
   return Object.keys(m).length ? m : null;
 }
 // packages.surface: "beton" applies to every type in the package, "FB2a:beton" only to that type
@@ -1475,7 +1501,7 @@ const COLOR_STEP = {ic:"🎨", t:"Farverne på kortet", h:`<div class="gcol">
   ${dotC("var(--doing)")}<span><b>Gul</b> = i gang</span>
   ${dotC("var(--done)")}<span><b>Grøn</b> = færdig</span>
   ${dotC("var(--blocked)")}<span><b>Sort</b> = blokeret, fx en bil holder der</span></div>`};
-const MARK_STEP = {ic:"👆", t:"Marker et sted", h:`<p>Tryk på et sted på kortet. Tryk så <b>Færdig</b>, <b>I gang</b>, <b>Mangler</b> eller <b>🚧 Blokeret</b>. Markeringen forsvinder af sig selv; trykkede du forkert, så tryk <b>↶ Fortryd</b>.</p>
+const MARK_STEP = {ic:"👆", t:"Marker et sted", h:`<p>Tryk på et sted på kortet. Tryk så <b>Færdig</b>, <b>I gang</b>, <b>Mangler</b> eller <b>🚧 Blokeret</b>. Markeringen forsvinder af sig selv; trykkede du forkert, så tryk <b>↶ Fortryd</b>.</p><p>Mange på én gang: hold fingeren på et sted, til telefonen summer, og stryg hen over de andre. Flere måder under <b>☰ Markér flere</b>.</p>
   <p>Tryk på flere steder for at markere dem på én gang. <b>Næste ▸</b> viser det nærmeste sted, der mangler.</p>
   <p>Kun nået et stykke af en lang hæk eller sti? Tryk <b>📏 Stykke</b>, og tryk så, hvor du startede, og hvor du stoppede.</p>`};
 const SEND_STEP = {ic:"📤", t:"Husk at sende", h:`<p>Det, du markerer, bliver på telefonen, til du trykker <b>Send</b>. Så kan du vente, til du har forbindelse.</p>
@@ -2125,7 +2151,7 @@ function pickCount(){
   $("pickOf").textContent = `valgt af ${taskAll.length} i området`;
   pickLegend($("pickLegend"));
   $("pickHint").textContent = (ringOn ? "Tegn en ring med én finger om det, der skal med. Ring om noget, der er med, for at tage det ud. Flyt kortet med to fingre. "
-    : "Tryk på de steder, holdet skal tage. Tryk igen for at fjerne et sted. ") + (pick.tcol?.size ? "Farvet er med, grå er ikke." : "Blå er med, grå er ikke.");
+    : "Tryk på de steder, holdet skal tage. Tryk igen for at fjerne et sted. Hold fingeren på et sted og stryg for at tage flere. ") + (pick.tcol?.size ? "Farvet er med, grå er ikke." : "Blå er med, grå er ikke.");
   elLayer.changed();
 }
 function endPick(){
@@ -2198,7 +2224,7 @@ function spotsCount(){
     : p.busy ? `<span class="spin"></span> Henter kommunens elementer her …`
     : ol.extent.getArea(v) > spotView(p) ? "Zoom ind på kortet for at se kommunens elementer. Brug <b>⌕ Søg</b> for at finde en by eller vej."
     : ringOn ? "Tegn en ring med én finger om det, der skal med. Ring om noget, der er med, for at tage det ud. Flyt kortet med <b>to fingre</b>."
-    : "Tryk på de steder, der skal med. Tryk igen for at fjerne et. <b>Blå</b> er med.";
+    : "Tryk på de steder, der skal med. Tryk igen for at fjerne et. Hold fingeren på et sted og stryg for at tage flere. <b>Blå</b> er med.";
   elLayer.changed();
 }
 // Ask the kommune for every element (or only the types shown) around the view, once per place: only when zoomed in, and a bit wider than the screen
@@ -2284,60 +2310,155 @@ function openOverlap(hits, onPick, isOn){
   render(); $("askOverlap").hidden = false;
 }
 $("askOverlapNo").onclick = ()=>{ $("askOverlap").hidden = true; };
-// A ring around several things (Captain 2026-10-22: tapping each little pur and ticking the rest in "Vælg ▾" was
-// still slow): with "◯ Tegn en ring om flere" on, one finger draws a ring instead of moving the map; two fingers
-// still move and zoom it, and a plain tap still takes one thing in or out. Everything whose middle (onPoint) is
-// inside the ring comes in; if all of it was in already, the ring takes it out instead. The toast says how many,
-// with "↶ Fortryd". The mode stays on for the next ring until the button is pressed again
+// ================= MARKING SEVERAL AT ONCE =================
+// "☰ Markér flere" (Captain 2026-11-13: the ring alone was fiddly; "a little menu with a few tools") in Vælg steder,
+// Tryk på stederne and a task's own view. The tools, all ending in a toast with "↶ Fortryd":
+// - Hold og stryg (Captain's favourite, works any time without the menu): hold a finger still on a place for a
+//   moment, then stroke over the others. If the first place wasn't marked, everything stroked over is marked;
+//   if it was, they're unmarked. The map doesn't move while stroking.
+// - Ring (2026-10-22): one finger draws a ring, everything whose middle is inside is marked (all marked already →
+//   unmarked). Picking spots keeps it on for the next ring; in a task it's one ring per pick from the menu.
+// - Alt jeg kan se: everything whose middle is on the part of the map above the bottom sheet.
+// Two fingers always still move and zoom the map, and a plain tap still takes one thing in or out.
+// In a task "marked" is selSet (the element pane opens for all of them); picking, it's pick.ids
+const MULTI_PANES = ["pPick","pSpots","pWork","pEl"];
+const multiOk = () => !!(pick || task) && MULTI_PANES.includes(curPane()) && !areaEd && !partEd && !pinDrop && !flawDrop && !pick?.own;
+const canMulti = f => pick ? f.get("_own")==null && (!pick.spots || (!spotHidden(f) && !!f.get("elementkode"))) : elSrc.hasFeature(f);
+const isOn = f => pick ? pick.ids.has(f.getId()) : selSet.has(f);
+function setOn(f, on){
+  if(isOn(f)===on) return;
+  if(pick?.spots) spotToggle(f);
+  else if(pick) on ? pick.ids.add(f.getId()) : pick.ids.delete(f.getId());
+  else on ? selSet.add(f) : selSet.delete(f);
+}
+function multiShow(){
+  if(pick){ pick.spots ? spotsCount() : pickCount(); return; }
+  if(!selSet.size){ select(null); return; }
+  if(!selSet.has(selected)) selected = [...selSet][0];
+  elLayer.changed(); showEl(false);
+}
+// what's marked now, to put back with Fortryd
+function multiSnap(){
+  const p = pick, t = task;
+  if(p){ const ids = new Set(p.ids), info = p.info && new Map(p.info); return ()=>{ if(pick!==p) return; p.ids = ids; if(info) p.info = info; multiShow(); }; }
+  const was = new Set(selSet), sel = selected;
+  return ()=>{ if(task!==t || pick) return; selSet = new Set([...was].filter(f=>elSrc.hasFeature(f))); selected = selSet.has(sel) ? sel : [...selSet][0] || null; multiShow(); };
+}
+function multiToast(n, on, undo){
+  const word = pick ? "ting" : n===1 ? "sted" : "steder";
+  toast(pick ? `${n} ting ${on ? "taget med" : "taget ud"}` : on ? `${n} ${word} markeret · ${selSet.size} i alt` : `${n} ${word} fjernet fra markeringen`, 6000, {label:"↶ Fortryd", fn:undo});
+}
+// Mark (or, if every one is marked already, unmark) the things whose middle passes test
+function multiBy(test, none){
+  const fs = elSrc.getFeatures().filter(f=>{ if(!canMulti(f)) return false; const c = f.getGeometry() && onPoint(f.getGeometry()); return !!c && test(c); });
+  if(!fs.length){ toast(none, 4000); return; }
+  const undo = multiSnap(), add = fs.filter(f=>!isOn(f)), take = add.length ? add : fs;
+  take.forEach(f=>setOn(f, !!add.length));
+  multiShow(); multiToast(take.length, !!add.length, undo);
+}
+
+// ---- The menu ----
+function multiBtns(){
+  document.querySelectorAll("[data-multi]").forEach(b=>{ b.setAttribute("aria-pressed", String(ringOn));
+    b.textContent = ringOn ? (b.dataset.multi==="short" ? "✕ Stop ring" : pick ? "✓ Færdig med ringe" : "✕ Ingen ring alligevel") : b.dataset.multi==="short" ? "☰ Flere" : "☰ Markér flere"; });
+}
+document.querySelectorAll("[data-multi]").forEach(b=>b.onclick=()=>{
+  if(ringOn){ ringMode(false); return; }
+  $("askMulti").hidden = false;
+});
+$("askMultiNo").onclick = ()=>{ $("askMulti").hidden = true; };
+$("multiHold").onclick = ()=>{ $("askMulti").hidden = true;
+  toast("Hold fingeren stille på et sted et øjeblik, til telefonen summer. Stryg så hen over de andre. Det virker altid, også uden menuen.", 7000); };
+$("multiRing").onclick = ()=>{ $("askMulti").hidden = true; ringMode(true);
+  if(!wide() && !foldLv()) fold(true); // more map to draw on; the button stays on the folded sheet
+  toast((pick ? "Tegn en ring med én finger rundt om det, der skal med." : "Tegn en ring med én finger rundt om de steder, du vil markere.") + " Flyt kortet med to fingre."
+    + (pick?.spots && !pick.show ? " Ringen tager alt, der vises: vælg typer under Skift, så tager den kun dem." : ""), 6000); };
+$("multiSee").onclick = ()=>{ $("askMulti").hidden = true;
+  const top = map.getTargetElement().getBoundingClientRect(), h = map.getSize()[1] - (wide() ? 0 : Math.max(0, top.bottom - $("sheet").getBoundingClientRect().top));
+  multiBy(c=>{ const [x, y] = map.getPixelFromCoordinate(c); return x >= 0 && y >= 0 && x <= map.getSize()[0] && y <= h; },
+    "Der er ikke noget på kortet her. Flyt eller zoom kortet, så det, du vil have, er på skærmen.");
+};
+
+// ---- Ring ----
 var ringOn = false, ringPts = null; // var: pane() asks before this runs
 const ringSrc = new ol.source.Vector(), ringFeat = new ol.Feature();
 map.addLayer(new ol.layer.Vector({source:ringSrc, zIndex:60,
   style:new ol.style.Style({stroke:new ol.style.Stroke({color:"#2b6cd4", width:3, lineDash:[8,6]}), fill:new ol.style.Fill({color:"#2b6cd422"})})}));
 function ringMode(on){
-  ringOn = !!on && !!pick; ringPts = null; ringSrc.clear();
-  document.querySelectorAll("[data-ring]").forEach(b=>{ b.setAttribute("aria-pressed", String(ringOn)); b.textContent = ringOn ? "✓ Færdig med ringe" : "◯ Tegn en ring om flere"; });
+  ringOn = !!on && !!(pick || task); ringPts = null; ringSrc.clear();
+  multiBtns();
   if(pick) pick.spots ? spotsCount() : pickCount();
 }
-document.querySelectorAll("[data-ring]").forEach(b=>b.onclick=()=>{
-  ringMode(!ringOn);
-  if(ringOn && !wide() && !foldLv()) fold(true); // more map to draw on; the button stays on the folded sheet
-  if(ringOn) toast("Tegn en ring med én finger rundt om det, der skal med. Flyt kortet med to fingre."
-    + (pick?.spots && !pick.show ? " Ringen tager alt, der vises: vælg typer under Skift, så tager den kun dem." : ""), 6000);
-});
+function ringDone(pts){
+  const g = new ol.geom.Polygon([[...pts, pts[0]]]);
+  if(g.getArea() < Math.pow(map.getView().getResolution() * 20, 2)){ toast("Tegn ringen lidt større, rundt om det, der skal med"); return; }
+  if(!pick) ringMode(false); // in a task: one ring per pick from the menu
+  multiBy(c=>g.intersectsCoordinate(c), "Der er ikke noget inden i ringen. Tegn den rundt om midten af tingene.");
+}
+
+// ---- Hold og stryg ----
+const HOLD_MS = 450, HOLD_SLOP = 10; // how long to hold still, and how far the finger may wander meanwhile (px)
+let hold = null, brush = null, brushEnd = 0; // hold: waiting for the finger to stay; brush: stroking
+const nearPx = (a, b) => Math.hypot(a[0]-b[0], a[1]-b[1]);
+const hitsAt = px => map.getFeaturesAtPixel(px, {layerFilter:l=>l===elLayer, hitTolerance:10}).filter(canMulti);
+function brushAt(px){
+  const b = brush, from = b.px; b.px = px;
+  const steps = Math.max(1, Math.ceil(nearPx(from, px) / 8)); // a quick stroke mustn't jump over small things
+  for(let i = 1; i <= steps; i++){
+    const q = [from[0] + (px[0]-from[0])*i/steps, from[1] + (px[1]-from[1])*i/steps];
+    hitsAt(q).forEach(f=>{ if(b.seen.has(f)) return; b.seen.add(f); if(isOn(f)!==b.on){ setOn(f, b.on); b.n++; } });
+  }
+  pick ? (pick.spots ? spotsCount() : pickCount()) : elLayer.changed();
+}
+function holdFire(){
+  const h = hold; hold = null; if(!h || !multiOk()) return;
+  const f = hitsAt(h.px).sort((a,b)=>spotSize(a) - spotSize(b))[0]; if(!f) return; // only from a place, so a long press on empty map does nothing
+  brush = {on:!isOn(f), seen:new Set(), n:0, px:h.px, undo:multiSnap()};
+  navigator.vibrate?.(30);
+  brushAt(h.px);
+  toast(brush.on ? "Stryg hen over dem, der skal med" : "Stryg hen over dem, der skal ud", 3000);
+}
+// One interaction for both: it sees every event before the map moves (added after the others)
 map.addInteraction(new (class extends ol.interaction.Interaction{
   handleEvent(e){
-    if(!ringOn || !pick || pinDrop || flawDrop || pick.own) return true;
-    const n = e.activePointers?.length || 0;
-    if(e.type==="pointerdown"){ ringPts = n===1 ? [e.coordinate] : null; ringSrc.clear(); return true; }
-    if(e.type==="pointerdrag" && ringPts){
-      if(n > 1){ ringPts = null; ringSrc.clear(); return true; } // a second finger: move or zoom the map instead
-      ringPts.push(e.coordinate);
-      ringFeat.setGeometry(new ol.geom.LineString(ringPts)); if(!ringSrc.getFeatures().length) ringSrc.addFeature(ringFeat);
-      e.originalEvent.preventDefault();
-      return false; // the map doesn't move under the ring
+    if(!multiOk()){ hold = null; brush = null; ringPts = null; return true; }
+    const n = e.activePointers?.length || 0, t = e.type;
+    if(ringOn){
+      if(t==="pointerdown"){ ringPts = n===1 ? [e.coordinate] : null; ringSrc.clear(); return true; }
+      if(t==="pointerdrag" && ringPts){
+        if(n > 1){ ringPts = null; ringSrc.clear(); return true; } // a second finger: move or zoom the map instead
+        ringPts.push(e.coordinate);
+        ringFeat.setGeometry(new ol.geom.LineString(ringPts)); if(!ringSrc.getFeatures().length) ringSrc.addFeature(ringFeat);
+        e.originalEvent.preventDefault();
+        return false; // the map doesn't move under the ring
+      }
+      if(t==="pointerup" && ringPts){ const pts = ringPts; ringPts = null; ringSrc.clear(); if(pts.length > 4) ringDone(pts); }
+      return true;
     }
-    if(e.type==="pointerup" && ringPts){ const pts = ringPts; ringPts = null; ringSrc.clear(); if(pts.length > 4) ringDone(pts); }
+    if(t==="pointerdown"){
+      clearTimeout(hold?.timer); hold = null;
+      if(brush || n!==1) { brush = null; return true; }
+      hold = {px:e.pixel, timer:setTimeout(holdFire, HOLD_MS)};
+      return true;
+    }
+    if(t==="pointerdrag"){
+      if(brush){
+        if(n > 1){ brush = null; return true; }
+        brushAt(e.pixel); e.originalEvent.preventDefault(); return false;
+      }
+      if(hold && (n > 1 || nearPx(hold.px, e.pixel) > HOLD_SLOP)){ clearTimeout(hold.timer); hold = null; } // it's a pan
+      return true;
+    }
+    if(t==="pointerup"){
+      if(hold){ clearTimeout(hold.timer); hold = null; }
+      if(brush){ const b = brush; brush = null; brushEnd = Date.now();
+        if(b.n){ multiShow(); multiToast(b.n, b.on, b.undo); } else if(!pick) multiShow(); }
+    }
     return true;
   }
 })());
-function ringDone(pts){
-  const p = pick; if(!p) return;
-  const g = new ol.geom.Polygon([[...pts, pts[0]]]);
-  if(g.getArea() < Math.pow(map.getView().getResolution() * 20, 2)){ toast("Tegn ringen lidt større, rundt om det, der skal med"); return; }
-  const inside = elSrc.getFeatures().filter(f=>{
-    if(f.get("_own")!=null || (p.spots ? spotHidden(f) || !f.get("elementkode") : false)) return false;
-    const c = f.getGeometry() && onPoint(f.getGeometry()); return !!c && g.intersectsCoordinate(c);
-  });
-  if(!inside.length){ toast("Der er ikke noget inden i ringen. Tegn den rundt om midten af tingene."); return; }
-  const was = {ids:new Set(p.ids), info:p.info && new Map(p.info)};
-  const add = inside.filter(f=>!p.ids.has(f.getId())), take = add.length ? add : inside;
-  take.forEach(f=>{ if(p.spots) spotToggle(f); else p.ids.has(f.getId()) ? p.ids.delete(f.getId()) : p.ids.add(f.getId()); });
-  const redraw = ()=>p.spots ? spotsCount() : pickCount();
-  redraw();
-  const n = take.length;
-  toast(add.length ? `${n} ting taget med` : `${n} ting taget ud (de var allerede med)`, 6000,
-    {label:"↶ Fortryd", fn:()=>{ if(pick!==p) return; p.ids = was.ids; if(was.info) p.info = was.info; redraw(); }});
-}
+// a long press isn't a tap, and Android shouldn't open its own menu for it
+map.getViewport().addEventListener("contextmenu", e=>{ if(multiOk()) e.preventDefault(); });
 // While picking, every type gets a type colour in the order it turns up on the map, kept while panning, so you
 // see at once what things are. With Vis alt there are too many types for that, so each group gets one instead
 // (Græs, Hæk og pur, Fast belægning …, the kommune map's folders). One type alone stays grey.
@@ -3866,7 +3987,9 @@ $("photoIn").onchange = $("photoCam").onchange = async e=>{
   try{
     const id = uuid(); await photoPut(id, await shrink(file));
     setStatus(ids, null, null, undefined, id); // also redraws Noter og billeder if it's open
-    toast(autoSend ? "Billede tilføjet" : "Billedet er lagt klar. Tryk Send", cam ? 8000 : 3000, cam && keepAct(file));
+    const msg = autoSend ? "Billede tilføjet" : "Billedet er lagt klar. Tryk Send";
+    if($("pNotes").hidden) doneWith(msg, 8000, cam && keepAct(file)); // the quick 📷 in the element panel: done with the place
+    else { notesDirty = msg; toast(msg, cam ? 8000 : 3000, cam && keepAct(file)); }
   }catch(err){ console.error(err); toast("Billedet kunne ikke gemmes. Prøv igen.", 4000); }
 };
 // A web page can't put a camera photo in the phone's gallery by itself, so the toast offers it:
@@ -4191,7 +4314,10 @@ $("btnPartOk").onclick = ()=>{
   const all = [...e.old, ...(cur ? [cur] : [])], tot = partTotal(g), pct = tot ? Math.min(100, Math.round(100*partSize(g, all)/tot)) : 0;
   setStatus([id], cur && statusOf(id)==="todo" ? "doing" : null, null, null, null, all);
   endPart();
-  toast(!cur ? "Stykkerne er fjernet" : pct >= 97 ? "Det ser ud til at være hele stedet. Tryk Færdig, hvis det er." : `Stykket er gemt: ${pct}\u00a0% af stedet er gjort`, 4000);
+  // Saved = done with the place, like a status (marks clear). Looks like all of it: Færdig is offered right in the toast.
+  const whole = cur && pct >= 97, fs = [...selSet], t = task;
+  doneWith(!cur ? "Stykkerne er fjernet" : whole ? "Det ser ud til at være hele stedet" : `Stykket er gemt: ${pct}\u00a0% af stedet er gjort`, whole ? 8000 : 6000,
+    whole && {label:"✓ Færdig", fn:()=>{ if(task!==t) return; reselect(fs); if(selSet.size) markAndClear("done"); }});
 };
 
 // ================= ELEMENT VIEW =================
@@ -4267,6 +4393,7 @@ $("reqs").addEventListener("toggle", ()=>{ store.set("reqsOpen", $("reqs").open)
 $("reqs").querySelector("summary").addEventListener("click", ()=>setTimeout(()=>{ if($("reqs").open) $("reqs").scrollIntoView({block:"nearest", behavior:"smooth"}); }, 0));
 map.on("singleclick", e=>{
   if(areaEd) return;
+  if(Date.now() - brushEnd < 700) return; // the end of a long press and stroke, not a tap
   if(flawDrop){ dropFlaw(e); return; }
   if(pinDrop && task){ dropPin(e.coordinate); return; }
   if(partEd){ partTap(e.coordinate); return; }
@@ -4359,6 +4486,19 @@ function markAndClear(status, note, reason){
     toast("Fortrudt");
   }});
 }
+// Saving a note, a photo or a stretch is also the end of that job (Captain, 2026-11-13): the marks clear and you're back on the map.
+// "↶ Vælg igen" marks the same places again, for a note written before Færdig. Nothing saved (Tilbage) keeps them marked.
+function doneWith(what, ms=6000, extra){
+  const fs = [...selSet], t = task;
+  if(!fs.length) return toast(what, ms, extra);
+  select(null);
+  const again = {label:"↶ Vælg igen", fn:()=>{ if(task!==t) return; reselect(fs); }};
+  toast(what, ms, extra ? [extra, again] : again);
+}
+function reselect(fs){
+  selSet = new Set(fs.filter(f=>elSrc.hasFeature(f))); selected = [...selSet][0] || null;
+  elLayer.changed(); if(selected) showEl(false); else pane("pWork");
+}
 function askBlock(){ $("blockNote").value = ""; $("askBlock").hidden = false; }
 function closeBlock(){ $("askBlock").hidden = true; }
 $("askBlock").querySelectorAll("[data-r]").forEach(b=>b.onclick=()=>{
@@ -4375,7 +4515,7 @@ async function showNotes(){
   if(noteCtx) return showThread();
   const fs = [...selSet], n = fs.length, f = selected, L = $("notesList"), first = $("pNotes").hidden;
   if(!n || !task) return closeNotes();
-  $("pNotes").hidden = false; $("btnNote").textContent = "Gem noten";
+  $("pNotes").hidden = false; noteBtn();
   $("notesTitle").textContent = n>1 ? `${n} markerede steder` : titleOf(f);
   if(n>1){ L.innerHTML = `<p class="muted">Noten kommer på alle ${n} markerede steder.</p>`; if(first) $("noteIn").focus(); return; }
   const id = f.getId(), seq = ++notesSeq;
@@ -4407,7 +4547,7 @@ async function showNotes(){
   const curAt = now ? msgs.map(m=>m.tid===task.id && m.note?.trim()===now).lastIndexOf(true) : -1;
   L.innerHTML = (failed ? `<p class="muted">Ældre noter kan ikke hentes lige nu. Tjek forbindelsen.</p>` : "") + msgHtml(msgs, curAt);
   wireMsgs(L, msgs);
-  L.querySelector("[data-off]")?.addEventListener("click", ()=>{ setStatus([id], null, ""); toast("Noten er taget af. Den står stadig her."); });
+  L.querySelector("[data-off]")?.addEventListener("click", ()=>{ setStatus([id], null, ""); notesDirty = "Noten er taget af"; toast("Noten er taget af. Den står stadig her."); });
   if(first && !msgs.length) $("noteIn").focus();
 }
 // The messages of a conversation, oldest first; curAt marks the element's current note
@@ -4453,7 +4593,7 @@ function groupPics(msgs){
 // ================= PINS AND THE WHOLE TASK =================
 // A pin or the whole task has the same conversation screen as an element. These go straight to the team on "Send"
 // (they're messages, not marks), as element_log lines with element_id "pin:<id>" or "opgave:<task id>".
-let pins = [], pinsOk = false, noteCtx = null, pinDrop = false;
+let pins = [], pinsOk = false, noteCtx = null, pinDrop = false, notesDirty = null; // notesDirty: what was saved in one place's notes, if anything
 const pinOf = id => id?.startsWith("pin:") ? pins.find(p=>"pin:"+p.id===id) : null;
 const pinTitle = p => p.title || "Pin";
 async function loadPins(t){
@@ -4481,7 +4621,7 @@ function openThread(ctx){ noteCtx = ctx; $("noteIn").value = ""; $("pNotes").hid
   $("noteIn").placeholder = ctx.flaw ? "Beskriv fejlen …" : "Skriv en note til holdet …"; showThread(); }
 async function showThread(){
   const c = noteCtx, L = $("notesList"), first = $("pNotes").hidden; if(!c) return;
-  $("pNotes").hidden = false; $("notesTitle").textContent = c.title; $("btnNote").textContent = "Send";
+  $("pNotes").hidden = false; $("notesTitle").textContent = c.title; noteBtn();
   const head = c.flaw ? flawHead(c) : c.pin && !c.pin.draft ? `<div class="pinhead">📌 Sat af ${esc(c.pin.worker || "?")} ${sinceText(c.pin.day)}<button class="btn ghost" data-close>✓ Klaret, fjern pinnen</button></div>` : "";
   if(!c.key && c.flaw){ L.innerHTML = head; wireFlawHead(L, c); return; }
   if(!c.key){ L.innerHTML = `<p class="muted">Skriv hvad pinnen handler om, eller tag et billede. Holdet og koordinatoren kan se den på kortet, når du trykker Send.</p>`; $("noteIn").focus(); return; }
@@ -4517,7 +4657,7 @@ async function threadSend(text){
     if(!await ensurePin(c, text)) throw new Error("pin");
     const {error} = await sb.from("element_log").insert(threadLine(c, {note:text}));
     if(error) throw error;
-    $("noteIn").value = ""; toast(c.flaw ? "Kortfejlen er sendt til koordinatoren" : "Sendt", c.flaw ? 3500 : 2600); if(task) loadTaskMedia(task);
+    $("noteIn").value = ""; noteBtn(); toast(c.flaw ? "Kortfejlen er sendt til koordinatoren" : "Sendt", c.flaw ? 3500 : 2600); if(task) loadTaskMedia(task);
   }catch(e){ console.error(e); toast("Kunne ikke sende. Tjek forbindelsen og prøv igen.", 4000); }
   finally{ btn.disabled = false; }
   if(noteCtx === c) showThread();
@@ -4715,6 +4855,7 @@ $("askNoteDel").onclick = ()=>{ // second tap deletes, so a slip of the finger d
 // text null = delete
 async function changeNote(m, text){
   closeEditNote(); if(!m) return;
+  if(!noteCtx) notesDirty = "Noten er rettet";
   const id = noteCtx ? null : selected?.getId();
   if(m.wait){ // not sent yet: change it in the outbox, on every marked place it was written on
     const old = m.note;
@@ -4759,6 +4900,7 @@ function askDelPic(p){ delPic = p; $("delPicImg").src = p.url; $("askDelPic").hi
 $("askDelPicNo").onclick = ()=>{ $("askDelPic").hidden = true; delPic = null; };
 $("askDelPicOk").onclick = async ()=>{
   const p = delPic; $("askDelPic").hidden = true; delPic = null; if(!p) return;
+  if(!noteCtx) notesDirty = "Billedet er slettet";
   if(p.pid){ // still on the phone: take it out of the outbox, from every place it was taken for
     await photoDel(p.pid);
     for(const [key, r] of [...pending]){ if(!r._photos?.includes(p.pid)) continue;
@@ -4782,17 +4924,26 @@ $("askDelPicOk").onclick = async ()=>{
 function closeNotes(){
   const nf = noteCtx?.feat; // a new pin or kortfejl with nothing sent isn't kept
   if(nf) [pinSrc, flawSrc].forEach(s=>{ if(s.hasFeature(nf)) s.removeFeature(nf); });
-  noteCtx = null; $("pNotes").hidden = true; $("noteIn").blur();
+  noteCtx = null; notesDirty = null; $("pNotes").hidden = true; $("noteIn").blur();
 }
-$("btnNoteOpen").onclick = $("notePeek").onclick = ()=>{ noteCtx = null; $("noteIn").value = ""; showNotes(); };
-$("btnNotesClose").onclick = closeNotes;
+$("btnNoteOpen").onclick = $("notePeek").onclick = ()=>{ noteCtx = null; notesDirty = null; $("noteIn").value = ""; showNotes(); noteBtn(); };
+// Back from one place's notes: added or changed something → done with the place (marks clear); nothing → still on it
+function leaveNotes(){
+  const msg = !noteCtx && notesDirty; notesDirty = null;
+  closeNotes(); if(msg) doneWith(msg);
+}
+$("btnNotesClose").onclick = leaveNotes;
+// An empty box can't be saved, so the button takes you back instead
+function noteBtn(){ $("btnNote").textContent = $("noteIn").value.trim() ? (noteCtx ? "Send" : "Gem noten") : "‹ Tilbage til kortet"; }
+$("noteIn").addEventListener("input", noteBtn);
 $("btnNotePhoto").onclick = ()=>{ if(flawKindOk(noteCtx)) $("btnPhoto").click(); };
 $("btnNote").onclick = ()=>{
   const t = $("noteIn").value.trim(), ids = [...selSet].map(g=>g.getId());
-  if(!t){ $("noteIn").focus(); return toast("Skriv noten først"); }
+  if(!t) return leaveNotes();
   if(noteCtx) return threadSend(t);
   setStatus(ids, null, t); $("noteIn").value = "";
-  toast(autoSend ? "Noten er gemt" : "Noten er lagt klar. Tryk Send", 3000);
+  notesDirty = autoSend ? "Noten er gemt" : "Noten er lagt klar. Tryk Send";
+  leaveNotes(); // saving the note is the end of it: back to the map
 };
 $("btnElClose").onclick = ()=>select(null);
 // Directions in Google Maps (opens the Maps app on phones). Goes to the marked element nearest you,
@@ -4912,19 +5063,38 @@ function memoPut(k, fs){
   const ks = Object.keys(searchMemo); if(ks.length > SEARCH_MEMO) ks.sort((a,b)=>searchMemo[a].t - searchMemo[b].t).slice(0, ks.length - SEARCH_MEMO).forEach(x=>delete searchMemo[x]);
   store.set("searchMemo", searchMemo);
 }
+// Search only finds places in Ikast-Brande and Aarhus Kommune (Captain, 2026-11-12: no Østre Anlæg in Aalborg).
+// The servers get one box around both; then each answer is checked: a kommune name in the answer decides,
+// else its point must lie in one of the two kommuners' own boxes (so Silkeborg between them is left out).
+const SEARCH_AREAS = [{name:"ikast-brande", box:[8.85,55.84,9.60,56.27]}, {name:"aarhus", alt:"århus", box:[9.98,56.03,10.36,56.32]}];
+const SEARCH_BBOX = "8.85,55.84,10.36,56.32"; // both, lon/lat
+function inSearchArea(f){
+  const p = f.properties || {};
+  const txt = [p.county, p.municipality, p.district, p.state].filter(Boolean).join(" ").toLowerCase();
+  if(/kommune/.test(txt)) return SEARCH_AREAS.some(a=>txt.includes(a.name + " kommune") || (a.alt && txt.includes(a.alt + " kommune")));
+  const [x, y] = f.geometry?.coordinates || [];
+  return SEARCH_AREAS.some(({box:b})=>x>=b[0] && x<=b[2] && y>=b[1] && y<=b[3]);
+}
 async function photon(q, extra, signal){
-  const u = PHOTON + "?" + new URLSearchParams({q, ...near(), limit:"8", location_bias_scale:"0.8", zoom:"13", bbox:"8.0,54.5,15.3,57.8", ...extra});
-  return (await getJSON(u, {}, 8000, signal)).features || [];
+  const ask = ps => getJSON(PHOTON + "?" + new URLSearchParams(ps), {}, 8000, signal);
+  const ps = {q, ...near(), limit:"12", location_bias_scale:"0.8", zoom:"13", bbox:SEARCH_BBOX, ...extra};
+  let r;
+  try{ r = await ask(ps); }
+  catch(e){ // if Photon refuses the box, ask once without it; inSearchArea still keeps only the two kommuner
+    if(signal?.aborted || extra?.bbox) throw e;
+    delete ps.bbox; r = await ask({...ps, limit:"30"});
+  }
+  return (r.features || []).filter(inSearchArea);
 }
 // Nominatim (only on Enter, per its usage policy) is better at stations and house numbers
 async function nominatim(q, signal){
-  const u = NOMINATIM + "?" + new URLSearchParams({q, format:"jsonv2", limit:"6", countrycodes:"dk", viewbox:"8.8,56.35,9.7,55.75", addressdetails:"1"});
+  const u = NOMINATIM + "?" + new URLSearchParams({q, format:"jsonv2", limit:"6", countrycodes:"dk", viewbox:SEARCH_BBOX, bounded:"1", addressdetails:"1"});
   const rs = await getJSON(u, {}, 10000, signal);
   return rs.map(r=>{ const a = r.address||{};
     const bb = r.boundingbox ? [+r.boundingbox[2], +r.boundingbox[1], +r.boundingbox[3], +r.boundingbox[0]] : null;
     return {geometry:{coordinates:[+r.lon, +r.lat]}, properties:{name:r.name || [a.road,a.house_number].filter(Boolean).join(" "),
-      street:a.road, housenumber:a.house_number, postcode:a.postcode, city:a.town||a.city||a.village||a.hamlet,
-      osm_key:r.category, osm_value:r.type, extent: (r.type==="town"||r.type==="city"||r.type==="village") ? bb : null}}; });
+      street:a.road, housenumber:a.house_number, postcode:a.postcode, city:a.town||a.city||a.village||a.hamlet, municipality:a.municipality,
+      osm_key:r.category, osm_value:r.type, extent: (r.type==="town"||r.type==="city"||r.type==="village") ? bb : null}}; }).filter(inSearchArea);
 }
 const fkey = f => f.geometry.coordinates.map(x=>x.toFixed(3)).join(",") + (f.properties.name||"");
 const townChips = () => `<div class="section">Byer i kommunen</div><div class="people">${TOWNS.map(n=>`<button data-town="${esc(n)}">${esc(n)}</button>`).join("")}</div>`;
@@ -4937,7 +5107,7 @@ async function searchPlaces(q, deep, pickTown){
   if(searchCtl) searchCtl.abort();
   clearTimeout(searchT);
   if(q.length < 2){ searchStart(); return; }
-  const key = (deep ? "+" : "") + q.toLowerCase();
+  const key = "ia:" + (deep ? "+" : "") + q.toLowerCase(); // "ia:" = Ikast-Brande + Aarhus only
   let fs = memoGet(key);
   if(!fs){
     searchCtl = new AbortController(); const sig = searchCtl.signal;
@@ -4946,21 +5116,25 @@ async function searchPlaces(q, deep, pickTown){
       const jobs = [photon(q, {}, sig)];
       const st = q.match(/^(.*?)\s*(station|st\.?|banegård)$/i);
       if(st && st[1]) jobs.unshift(photon(st[1], {osm_tag:"railway:station"}, sig));
-      if(deep) jobs.unshift(nominatim(q, sig).catch(()=>[]));
+      if(deep) jobs.unshift(nominatim(q, sig));
       const seen = new Set(); fs = [];
-      for(const list of await Promise.all(jobs)) for(const f of list){ const k = fkey(f); if(!seen.has(k)){ seen.add(k); fs.push(f); } }
-      fs = fs.slice(0,12); memoPut(key, fs);
+      const got = await Promise.allSettled(jobs); // one service down (e.g. Photon) mustn't hide the other's answers
+      if(got.every(g=>g.status==="rejected")) throw got[0].reason;
+      for(const list of got.map(g=>g.value || [])) for(const f of list){ const k = fkey(f); if(!seen.has(k)){ seen.add(k); fs.push(f); } }
+      fs = fs.slice(0,12); if(got.every(g=>g.status==="fulfilled")) memoPut(key, fs);
     }catch(e){
       if(sig.aborted) return; // a newer search took over
-      $("searchList").innerHTML = `<p class="muted">Søgningen svarer ikke lige nu. Måske er nettet væk et øjeblik.</p><button class="btn" id="btnSearchRetry">Prøv igen</button>`;
+      $("searchList").innerHTML = `<p class="muted">Søgningen svarer ikke lige nu. Måske er nettet væk et øjeblik.</p><button class="btn" id="btnSearchRetry">Prøv igen</button>`
+        + (deep ? "" : `<button class="btn ghost" id="btnSearchDeep">Prøv den anden søgetjeneste</button>`);
       $("btnSearchRetry").onclick = ()=>searchPlaces(q, deep, pickTown);
+      if(!deep) $("btnSearchDeep").onclick = ()=>searchPlaces(q, true, pickTown);
       return;
     }
   }
   if(pickTown){ const t = fs.find(f=>f.properties.osm_key==="place" && norm(f.properties.name)===norm(q)); if(t){ goPlace(t); return; } }
   $("searchList").innerHTML = (fs.length ? fs.map((f,i)=>{ const l = placeLabel(f.properties);
     return `<button class="item" data-i="${i}"><div class="grow"><div class="t">${esc(l.name)}</div><div class="s">${esc(l.sub)}</div></div><span class="code">${esc(l.kind)}</span></button>`; }).join("")
-    : `<p class="muted">Ingen steder fundet for "${esc(q)}".</p>`)
+    : `<p class="muted">Ingen steder fundet for "${esc(q)}" i Ikast-Brande eller Aarhus Kommune.</p>`)
     + (deep ? "" : `<button class="btn ghost" id="btnDeep">Find ikke det rigtige? Søg grundigere</button>`);
   $("searchList").querySelectorAll("[data-i]").forEach(b=>b.onclick=()=>goPlace(fs[+b.dataset.i]));
   if(!deep) $("btnDeep").onclick = ()=>searchPlaces(q, true);
@@ -5166,7 +5340,7 @@ async function findSearch(q, pickTown){
   if(findCtl) findCtl.abort();
   clearTimeout(findT);
   if(q.length < 2){ findStart(); return; }
-  const key = "find:" + q.toLowerCase();
+  const key = "find2:" + q.toLowerCase();
   let items = memoGet(key);
   if(!items){
     findCtl = new AbortController(); const sig = findCtl.signal;
@@ -5276,6 +5450,10 @@ window.addEventListener("popstate", e=>{
 new MutationObserver(()=>backSync()).observe(document.body, {subtree:true, attributes:true, attributeFilter:["hidden","aria-pressed"]});
 document.addEventListener("keydown", e=>{ if(e.key==="Escape") backClose(); }); // on computers
 backSync();
+
+// The page itself never zooms (iOS Safari ignores user-scalable=no; Android may with "force zoom" on).
+for(const ev of ["gesturestart","gesturechange","gestureend"])document.addEventListener(ev,e=>e.preventDefault(),{passive:false});
+document.addEventListener("touchmove",e=>{if(e.touches.length>1&&!e.target.closest?.(".ol-viewport"))e.preventDefault()},{passive:false});
 </script>
 </body>
 </html>
