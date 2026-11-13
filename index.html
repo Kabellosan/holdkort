@@ -53,7 +53,8 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0;color:var(--ink)}
 .flip .ic{font-size:19px;line-height:1}
 .flip .tx{font-size:11px;font-weight:600}
-.basemap #btnMe,.basemap #btnMore:not([hidden]){display:flex}
+.basemap #btnMe,.basemap #btnMore:not([hidden]),.basemap #btnTint:not([hidden]){display:flex}
+#btnTint .ic{font-size:18px}
 #btnMe .ic{font-size:22px;color:#2b6cd4}
 /* Phones zoom with two fingers, so +/− only take up map there */
 @media (pointer:coarse) and (max-width:1023px){.ol-zoom{display:none}.basemap{top:calc(env(safe-area-inset-top,0px) + 64px)}}
@@ -342,6 +343,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 <div class="basemap">
   <button class="flip" id="btnFlip"><span class="ic"></span><span class="tx"></span></button>
   <button class="flip" id="btnMe" aria-label="Vis min position" title="Min position"><span class="ic">◎</span><span class="tx">Mig</span></button>
+  <button class="flip" id="btnTint" hidden><span class="ic"></span><span class="tx"></span></button>
   <div class="morewrap">
     <button class="flip" id="btnMore" hidden aria-expanded="false" aria-label="Flere værktøjer"><span class="ic">⋯</span><span class="tx">Mere</span></button>
     <div id="moreBox" hidden>
@@ -448,19 +450,14 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="row" data-keep>
       <button class="btn ghost" id="btnBack" aria-label="Tilbage til opgaver">‹ Opgaver</button>
       <div class="grow"></div>
-      <button class="btn ghost" id="btnEditArea" hidden>▭ Område</button>
-      <button class="btn ghost" id="btnPick" hidden>☝ Steder</button>
+      <button class="btn ghost" id="btnEdit" hidden>✏️ Ret opgaven</button>
     </div>
     <div class="row" data-keep>
       <div class="grow"><div class="eyebrow" id="workCodes"></div><h2 id="workName"></h2></div>
       <div style="text-align:right"><div class="big num" id="workCount">–</div><div class="muted">færdige</div></div>
     </div>
-    <div class="row"><span class="grow" id="workWho"></span><button class="btn ghost" id="btnName" hidden>Ret navn</button><button class="btn ghost" id="btnWho" hidden>Ret hvem</button></div>
+    <div class="row"><span class="grow" id="workWho"></span></div>
     <div class="bar" id="bar"></div>
-    <div class="seg" id="workMode" role="group" aria-label="Farver" hidden>
-      <button data-o="status">Status</button>
-      <button data-o="type">Farve pr. type</button>
-    </div>
     <div class="legend" id="workLegend" hidden></div>
     <div class="row"><span class="muted grow" id="dataAge"></span><button class="btn ghost" id="btnRefresh" style="min-height:36px;padding:4px 8px">Opdater</button></div>
     <div class="row" data-keep>
@@ -606,6 +603,19 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <p class="muted" style="margin:0">Det forsvinder for alle og kan ikke hentes tilbage.</p>
     <button class="btn danger" id="askDelPicOk">🗑 Slet billedet</button>
     <button class="btn" id="askDelPicNo">Nej, behold det</button>
+  </div>
+</div>
+<!-- "✏️ Ret opgaven": everything that changes an open task, each with its words (2026-11-13, Captain: "Steder" said little) -->
+<div class="ask" id="askEdit" hidden role="dialog" aria-modal="true" aria-labelledby="askEditQ">
+  <div>
+    <h2 id="askEditQ">Ret opgaven</h2>
+    <div class="tbllist multilist" id="editList">
+      <button id="btnName" hidden><b>✏️ Navn</b><br><span class="muted">Giv opgaven et nyt navn.</span></button>
+      <button id="btnWho" hidden><b>👥 Hvem skal lave den</b><br><span class="muted">Tag folk med på opgaven, eller fjern dem.</span></button>
+      <button id="btnPick" hidden><b>☝ Tilføj eller fjern steder</b><br><span class="muted">Tryk på steder på kortet for at tage dem med eller ud.</span></button>
+      <button id="btnEditArea" hidden><b>▭ Tegn området om</b><br><span class="muted">Gør området større eller mindre, eller flyt det.</span></button>
+    </div>
+    <button class="btn" id="askEditNo">Annullér</button>
   </div>
 </div>
 <!-- A koordinator changes who an existing task is for -->
@@ -1144,6 +1154,8 @@ const TASK_COLORS = ["#2f6fe0", "#c2338a", "#0e8f9e", "#8b5a2b", "#2c2f8f", "#56
 const areaStyleCache = {};
 function areaStyle(f){
   const c = f.get("color"); if(!c) return areaDash;
+  if(f.getGeometry().getType()==="MultiPoint") return areaStyleCache[c+"p"] ||= new ol.style.Style({image:new ol.style.Circle({radius:6,
+    fill:new ol.style.Fill({color:c}), stroke:new ol.style.Stroke({color:"#fff", width:2})})});
   const foc = over?.focus, dim = foc && foc!==f.get("tid"), on = foc===f.get("tid");
   const key = c + (dim ? "d" : on ? "o" : "");
   return areaStyleCache[key] ||= [
@@ -1154,8 +1166,8 @@ function areaStyle(f){
 const areaLayer = new ol.layer.Vector({source:areaSrc, style:areaStyle});
 const labelLayer = new ol.layer.Vector({source:areaSrc, declutter:true, style:f=>{ // task names in the overview, above the elements
   const name = f.get("label"); if(!name) return null;
-  const dim = over?.focus && over.focus!==f.get("tid");
-  return new ol.style.Style({text:new ol.style.Text({text:name, font:"600 13px system-ui,sans-serif", overflow:true,
+  const dim = over?.focus && over.focus!==f.get("tid"), g = f.getGeometry();
+  return new ol.style.Style({geometry: g.getType()==="MultiPoint" ? new ol.geom.Point(ol.extent.getCenter(g.getExtent())) : undefined, text:new ol.style.Text({text:name, font:"600 13px system-ui,sans-serif", overflow:true,
     fill:new ol.style.Fill({color: dim ? "#ffffffaa" : "#fff"}), stroke:new ol.style.Stroke({color:(f.get("color")||"#000000")+(dim ? "66" : "ee"),width:4}),
     padding:[2,4,2,4]}), zIndex: f.get("tid")===over?.focus ? 1 : 0});
 }});
@@ -1248,7 +1260,8 @@ function toast(t, ms=2600, act){const el=$("toast"), box=$("toastActs"); $("toas
 const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick","pPlace","pPart","pSpots"];
 const curPane = () => PANES.find(p=>!$(p).hidden);
 function pane(id){ if(id!==curPane()) fold(false); if(ringOn && !["pPick","pSpots","pWork","pEl"].includes(id)) ringMode(false); PANES.forEach(p=>$(p).hidden = p!==id);
-  $("sheet").classList.toggle("can-fold", !!$(id).querySelector(":scope>[data-keep]")); showTbl(); showFlawBtn(); }
+  $("sheet").classList.toggle("can-fold", !!$(id).querySelector(":scope>[data-keep]")); showTbl(); showFlawBtn();
+  if(typeof syncTint==="function") syncTint(); if(typeof homeMap==="function") homeMap(); }
 // Fold the sheet down to the rows marked data-keep (its main buttons), so more of the map shows
 // on = 2 folds it all the way: only the bar is left ("mini"); panes without data-keep rows go straight there
 function fold(on){ const s = $("sheet"); if(!s) return; const lv = on === 2 || (on && !s.classList.contains("can-fold")) ? 2 : on ? 1 : 0;
@@ -1859,9 +1872,9 @@ async function loadCrew(){
 }
 document.querySelectorAll("#bossView [data-v]").forEach(b=>b.onclick=()=>{ bossView = b.dataset.v; store.set("bossView",bossView); renderTasks(); });
 function taskRow(t, noClose){
-  const done = store.get("count:"+t.id, null);
+  const done = store.get("count:"+t.id, null), c = homeColors().get(t.id);
   return `<div class="row">
-    <button class="item grow" data-open="${esc(t.id)}"><div class="grow"><div class="t">${esc(t.name)}</div>
+    <button class="item grow" data-open="${esc(t.id)}">${c ? `<i class="swatch" style="background:${c}"></i>` : ""}<div class="grow"><div class="t">${esc(t.name)}</div>
     <div class="s">${esc(shortCodes(t.codes) + scopeOf(t))} · ${esc(whoFor(t))}</div></div>
     ${done ? `<span class="pill ${done[0]===done[1]?"done":"todo"} num">${done[0]}/${done[1]}</span>` : ""}</button>
     ${noClose ? "" : canManage(t) ? `<button class="btn ghost close" data-arch="${esc(t.id)}">Afslut</button>`
@@ -1901,6 +1914,7 @@ function renderTasks(){
       : `<p class="muted" style="margin:0">Ingen opgaver til dig lige nu. ${ownHint()}</p>`);
   }
   L.querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openTask(tasks.find(t=>t.id===b.dataset.open)));
+  homeMap();
   L.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>askRemove(b.dataset.rm));
   if($("btnAddPerson")) $("btnAddPerson").onclick = askAdd;
   // Udførende may close only tasks they made themselves; say why the others have no Afslut
@@ -1910,6 +1924,34 @@ function renderTasks(){
     if(b.dataset.armed){ archiveTask(tasks.find(t=>t.id===b.dataset.arch)); return; }
     b.dataset.armed=1; b.textContent="Sikker?"; setTimeout(()=>{delete b.dataset.armed; b.textContent="Afslut";},3000);
   });
+}
+// ---- The start screen's map: every task in the list as its own coloured area (2026-11-13, Captain: the map there was empty) ----
+// Same colour as the stripe on the task's row; tapping an area opens the task. Spots tasks show their spots as dots.
+const homeTasks = () => !user ? [] : isBoss() ? tasks : tasks.filter(forMe);
+function homeColors(){ // oldest first, so a task keeps its colour while new ones are added
+  const tl = [...homeTasks()].sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
+  return new Map(tl.map((t,i)=>[t.id, TASK_COLORS[i % TASK_COLORS.length]]));
+}
+var homeFit = false;
+function homeMap(){
+  areaSrc.getFeatures().filter(f=>f.get("home")).forEach(f=>areaSrc.removeFeature(f));
+  if(curPane()!=="pTasks" || task || pick || over || place || areaEd) return;
+  const col = homeColors(), fs = [];
+  homeTasks().forEach(t=>{
+    let g;
+    if(t.spots){ const pts = t.spots.map(s=>s.xy || (s.box && ol.extent.getCenter(s.box))).filter(Boolean); if(!pts.length) return; g = new ol.geom.MultiPoint(pts); }
+    else if(t.extent) g = shapeGeom(t); else return;
+    const f = new ol.Feature(g); f.setProperties({label:t.name, tid:t.id, color:col.get(t.id), home:true}); fs.push(f);
+  });
+  areaSrc.addFeatures(fs); areaLayer.setVisible(true); labelLayer.setVisible(true);
+  // The first time, if none of the tasks is in sight, show them all
+  if(!homeFit && fs.length){ homeFit = true;
+    const v = map.getView().calculateExtent(map.getSize());
+    if(!fs.some(f=>ol.extent.intersects(f.getGeometry().getExtent(), v))){
+      const e = ol.extent.createEmpty(); fs.forEach(f=>ol.extent.extend(e, f.getGeometry().getExtent()));
+      map.getView().fit(e, {padding:[70,16,sheetPad(),16], duration:300, maxZoom:16});
+    }
+  }
 }
 // ---- Bosses add people to the team and take them off it ----
 const personPanel = (title, body, foot) => {
@@ -2075,18 +2117,25 @@ function refresh(){
 // Several types in one task: a switch between status colours and a colour per type, with a legend of the types
 function workLegend(fs){
   const tc = workTcol(), byType = byTypeNow();
-  $("workMode").hidden = !tc;
-  document.querySelectorAll("#workMode [data-o]").forEach(b=>b.classList.toggle("on", b.dataset.o===(byType ? "type" : "status")));
+  syncTint();
   $("workLegend").hidden = !byType;
   if(!byType){ $("workLegend").innerHTML = ""; return; }
   const per = {}; fs.forEach(f=>{ const k = f.get("elementkode"), q = per[k] ||= {n:0, done:0}; q.n++; if(statusOf(f.getId())==="done") q.done++; });
   $("workLegend").innerHTML = task.codes.filter(k=>per[k]).map(k=>`<span><i style="background:${COLORS[tc[k]]}"></i>${esc(CODES[k] || k)} <b class="num">${per[k].done}/${per[k].n}</b></span>`).join("")
     + `<span><i style="background:${COLORS.done};box-shadow:0 0 0 2px ${DONE_EDGE}"></i>Færdig</span>`;
 }
-document.querySelectorAll("#workMode [data-o]").forEach(b=>b.onclick=()=>{
-  if(store.get("workMode","status")===b.dataset.o) return;
-  store.set("workMode", b.dataset.o); refresh();
-});
+// The switch is a map button under Mig (2026-11-13, Captain: it vanished when the sheet was folded): it shows the other choice, like Foto/Kort
+function syncTint(){
+  const b = $("btnTint"), on = !!(task && !pick && workTcol() && ["pWork","pEl","pList"].includes(curPane()));
+  b.hidden = !on; if(!on) return;
+  const ty = byTypeNow();
+  b.querySelector(".ic").textContent = ty ? "🚦" : "🎨"; b.querySelector(".tx").textContent = ty ? "Status" : "Typer";
+  b.setAttribute("aria-label", ty ? "Farv efter status" : "Farv efter type"); b.title = b.getAttribute("aria-label");
+}
+$("btnTint").onclick = ()=>{
+  const ty = !byTypeNow(); store.set("workMode", ty ? "type" : "status"); refresh();
+  toast(ty ? "Farve pr. type. Færdige er stadig grønne." : "Farve efter status", 2500);
+};
 
 // ================= PICKING SPOTS: a boss chooses which elements of the area are in the task =================
 // fresh: a new task starts with nothing picked; an existing whole-area task starts with everything picked
@@ -2738,7 +2787,12 @@ function showWho(t){
   $("workWho").textContent = "👥 " + whoFor(t);
   $("btnWho").hidden = !isBoss();
   $("btnName").hidden = !canManage(t);
+  $("btnEdit").hidden = ["btnName","btnWho","btnPick","btnEditArea"].every(id=>$(id).hidden);
 }
+$("btnEdit").onclick = ()=>{ $("askEdit").hidden = false; };
+$("askEditNo").onclick = ()=>{ $("askEdit").hidden = true; };
+// A row's own handler opens its screen; then the menu closes
+$("editList").addEventListener("click", ()=>{ $("askEdit").hidden = true; });
 // Rename an open task (koordinator, or Udførende for a task made with that login; Captain, 2026-11-12)
 $("btnName").onclick = ()=>{ $("nameIn").value = task.name; $("askName").hidden = false; $("nameIn").focus(); $("nameIn").select(); };
 $("askNameNo").onclick = ()=>{ $("askName").hidden = true; };
@@ -4288,6 +4342,13 @@ map.on("singleclick", e=>{
       const last = f.get("_d"), age = over.mode==="age" ? ` · ${last ? "sidst passet " + sinceText(last) : "ikke registreret passet"}` : "";
       if(f.get("_m") && sb && logOk) showHistory(f); // a note or photo: show it right away (the history names the tasks)
       else toast(`${titleOf(f)}${subOf(f) ? " · " + subOf(f) : ""}${age} · ${parts.length ? parts.join(" · ") : "ikke i en opgave"}`, 4000 + 1500*Math.max(0, n-1)); }
+    return;
+  }
+  if(!task && curPane()==="pTasks"){ // start screen: tapping a task's area opens it (the smallest, if they overlap)
+    const hs = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===areaLayer, hitTolerance:10}).filter(f=>f.get("home"));
+    hs.sort((a,b)=>ol.extent.getArea(a.getGeometry().getExtent()) - ol.extent.getArea(b.getGeometry().getExtent()));
+    const t = hs[0] && tasks.find(x=>x.id===hs[0].get("tid"));
+    if(t) openTask(t);
     return;
   }
   if(!task) return;
