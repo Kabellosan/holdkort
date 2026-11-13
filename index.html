@@ -4878,11 +4878,14 @@ $("btnRoute").onclick = ()=>{
   const f = gps ? fs.reduce((a,b)=>distTo(b,gps)<distTo(a,gps)?b:a) : selected;
   const g = f.getGeometry(), c = g.getClosestPoint(ol.extent.getCenter(g.getExtent()));
   const [lon, lat] = ol.proj.toLonLat(c, proj);
-  const web = `https://www.google.com/maps/dir/?api=1&destination=${lat.toFixed(6)},${lon.toFixed(6)}`;
-  // Android: some browsers (Opera) open https Maps links as a web page, so ask for the Maps app by name;
-  // without the app the browser goes to the web page instead (browser_fallback_url).
+  const ll = `${lat.toFixed(6)},${lon.toFixed(6)}`;
+  const web = `https://www.google.com/maps/dir/?api=1&destination=${ll}`;
+  // Android: start the Maps app's navigation straight to the point (google.navigation:q=lat,lng). The
+  // directions link above lets Maps swap the point for the nearest house address, which can be the wrong
+  // side of a green (Captain, 2026-11-13); naming the app also stops Opera opening the website.
+  // Without the app the browser goes to the web page instead (browser_fallback_url).
   if(/Android/i.test(navigator.userAgent)){
-    location.href = `intent://${web.slice(8)}#Intent;scheme=https;package=com.google.android.apps.maps;`
+    location.href = `intent:q=${ll}#Intent;scheme=google.navigation;package=com.google.android.apps.maps;`
       + `S.browser_fallback_url=${encodeURIComponent(web)};end`;
     return;
   }
