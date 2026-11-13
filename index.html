@@ -276,6 +276,8 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 /* A toast with a button (Fortryd) can be tapped; the button is big enough for a thumb */
 .toast.act{width:max-content;display:flex;align-items:center;gap:12px;padding:6px 6px 6px 16px;text-align:left}
 .toast.act.show{pointer-events:auto}
+.toast.two{border-radius:24px}
+#toastActs{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .toast button{min-height:44px;padding:0 16px;border-radius:999px;border:0;background:#fff;color:var(--moss);font:inherit;font-weight:700;cursor:pointer;white-space:nowrap}
 .spin{display:inline-block;width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-3px}
 @keyframes sp{to{transform:rotate(360deg)}}
@@ -353,7 +355,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   </div>
   <span class="credit" id="osmCredit" hidden>© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></span>
 </div>
-<div class="toast" id="toast" role="status"><span id="toastTxt"></span><button id="toastAct" hidden></button></div>
+<div class="toast" id="toast" role="status"><span id="toastTxt"></span><span id="toastActs"></span></div>
 
 <div class="sheet" id="sheet">
   <button class="grip" id="grip" aria-label="Gør panelet mindre" aria-expanded="true"><i></i><span>▲ Vis mere</span></button>
@@ -1234,9 +1236,12 @@ const sheetPad = () => sheetH() + 20;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 // act = {label, fn}: a button in the toast (e.g. Fortryd); it goes away with the toast
-function toast(t, ms=2600, act){const el=$("toast"), b=$("toastAct"); $("toastTxt").textContent=t;
-  b.hidden=!act; el.classList.toggle("act", !!act); b.onclick = act ? ()=>{ el.classList.remove("show"); b.onclick=null; act.fn(); } : null; if(act) b.textContent=act.label;
-  el.classList.add("show"); clearTimeout(toast.t); toast.t=setTimeout(()=>{ el.classList.remove("show"); b.onclick=null; },ms);}
+function toast(t, ms=2600, act){const el=$("toast"), box=$("toastActs"); $("toastTxt").textContent=t; // act: one {label, fn} or a list of them
+  const acts = (Array.isArray(act) ? act : [act]).filter(Boolean);
+  box.replaceChildren(...acts.map(a=>{ const b = document.createElement("button"); b.textContent = a.label;
+    b.onclick = ()=>{ el.classList.remove("show"); box.replaceChildren(); a.fn(); }; return b; }));
+  el.classList.toggle("act", acts.length>0); el.classList.toggle("two", acts.length>1);
+  el.classList.add("show"); clearTimeout(toast.t); toast.t=setTimeout(()=>{ el.classList.remove("show"); box.replaceChildren(); },ms);}
 const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick","pPlace","pPart","pSpots"];
 const curPane = () => PANES.find(p=>!$(p).hidden);
 function pane(id){ if(id!==curPane()) fold(false); if(ringOn && !["pPick","pSpots","pWork","pEl"].includes(id)) ringMode(false); PANES.forEach(p=>$(p).hidden = p!==id);
@@ -3843,7 +3848,9 @@ $("photoIn").onchange = $("photoCam").onchange = async e=>{
   try{
     const id = uuid(); await photoPut(id, await shrink(file));
     setStatus(ids, null, null, undefined, id); // also redraws Noter og billeder if it's open
-    toast(autoSend ? "Billede tilføjet" : "Billedet er lagt klar. Tryk Send", cam ? 8000 : 3000, cam && keepAct(file));
+    const msg = autoSend ? "Billede tilføjet" : "Billedet er lagt klar. Tryk Send";
+    if($("pNotes").hidden) doneWith(msg, 8000, cam && keepAct(file)); // the quick 📷 in the element panel: done with the place
+    else { notesDirty = msg; toast(msg, cam ? 8000 : 3000, cam && keepAct(file)); }
   }catch(err){ console.error(err); toast("Billedet kunne ikke gemmes. Prøv igen.", 4000); }
 };
 // A web page can't put a camera photo in the phone's gallery by itself, so the toast offers it:
@@ -4168,7 +4175,10 @@ $("btnPartOk").onclick = ()=>{
   const all = [...e.old, ...(cur ? [cur] : [])], tot = partTotal(g), pct = tot ? Math.min(100, Math.round(100*partSize(g, all)/tot)) : 0;
   setStatus([id], cur && statusOf(id)==="todo" ? "doing" : null, null, null, null, all);
   endPart();
-  toast(!cur ? "Stykkerne er fjernet" : pct >= 97 ? "Det ser ud til at være hele stedet. Tryk Færdig, hvis det er." : `Stykket er gemt: ${pct}\u00a0% af stedet er gjort`, 4000);
+  // Saved = done with the place, like a status (marks clear). Looks like all of it: Færdig is offered right in the toast.
+  const whole = cur && pct >= 97, fs = [...selSet], t = task;
+  doneWith(!cur ? "Stykkerne er fjernet" : whole ? "Det ser ud til at være hele stedet" : `Stykket er gemt: ${pct}\u00a0% af stedet er gjort`, whole ? 8000 : 6000,
+    whole && {label:"✓ Færdig", fn:()=>{ if(task!==t) return; reselect(fs); if(selSet.size) markAndClear("done"); }});
 };
 
 // ================= ELEMENT VIEW =================
@@ -4336,6 +4346,19 @@ function markAndClear(status, note, reason){
     toast("Fortrudt");
   }});
 }
+// Saving a note, a photo or a stretch is also the end of that job (Captain, 2026-11-13): the marks clear and you're back on the map.
+// "↶ Vælg igen" marks the same places again, for a note written before Færdig. Nothing saved (Tilbage) keeps them marked.
+function doneWith(what, ms=6000, extra){
+  const fs = [...selSet], t = task;
+  if(!fs.length) return toast(what, ms, extra);
+  select(null);
+  const again = {label:"↶ Vælg igen", fn:()=>{ if(task!==t) return; reselect(fs); }};
+  toast(what, ms, extra ? [extra, again] : again);
+}
+function reselect(fs){
+  selSet = new Set(fs.filter(f=>elSrc.hasFeature(f))); selected = [...selSet][0] || null;
+  elLayer.changed(); if(selected) showEl(false); else pane("pWork");
+}
 function askBlock(){ $("blockNote").value = ""; $("askBlock").hidden = false; }
 function closeBlock(){ $("askBlock").hidden = true; }
 $("askBlock").querySelectorAll("[data-r]").forEach(b=>b.onclick=()=>{
@@ -4352,7 +4375,7 @@ async function showNotes(){
   if(noteCtx) return showThread();
   const fs = [...selSet], n = fs.length, f = selected, L = $("notesList"), first = $("pNotes").hidden;
   if(!n || !task) return closeNotes();
-  $("pNotes").hidden = false; $("btnNote").textContent = "Gem noten";
+  $("pNotes").hidden = false; noteBtn();
   $("notesTitle").textContent = n>1 ? `${n} markerede steder` : titleOf(f);
   if(n>1){ L.innerHTML = `<p class="muted">Noten kommer på alle ${n} markerede steder.</p>`; if(first) $("noteIn").focus(); return; }
   const id = f.getId(), seq = ++notesSeq;
@@ -4384,7 +4407,7 @@ async function showNotes(){
   const curAt = now ? msgs.map(m=>m.tid===task.id && m.note?.trim()===now).lastIndexOf(true) : -1;
   L.innerHTML = (failed ? `<p class="muted">Ældre noter kan ikke hentes lige nu. Tjek forbindelsen.</p>` : "") + msgHtml(msgs, curAt);
   wireMsgs(L, msgs);
-  L.querySelector("[data-off]")?.addEventListener("click", ()=>{ setStatus([id], null, ""); toast("Noten er taget af. Den står stadig her."); });
+  L.querySelector("[data-off]")?.addEventListener("click", ()=>{ setStatus([id], null, ""); notesDirty = "Noten er taget af"; toast("Noten er taget af. Den står stadig her."); });
   if(first && !msgs.length) $("noteIn").focus();
 }
 // The messages of a conversation, oldest first; curAt marks the element's current note
@@ -4430,7 +4453,7 @@ function groupPics(msgs){
 // ================= PINS AND THE WHOLE TASK =================
 // A pin or the whole task has the same conversation screen as an element. These go straight to the team on "Send"
 // (they're messages, not marks), as element_log lines with element_id "pin:<id>" or "opgave:<task id>".
-let pins = [], pinsOk = false, noteCtx = null, pinDrop = false;
+let pins = [], pinsOk = false, noteCtx = null, pinDrop = false, notesDirty = null; // notesDirty: what was saved in one place's notes, if anything
 const pinOf = id => id?.startsWith("pin:") ? pins.find(p=>"pin:"+p.id===id) : null;
 const pinTitle = p => p.title || "Pin";
 async function loadPins(t){
@@ -4458,7 +4481,7 @@ function openThread(ctx){ noteCtx = ctx; $("noteIn").value = ""; $("pNotes").hid
   $("noteIn").placeholder = ctx.flaw ? "Beskriv fejlen …" : "Skriv en note til holdet …"; showThread(); }
 async function showThread(){
   const c = noteCtx, L = $("notesList"), first = $("pNotes").hidden; if(!c) return;
-  $("pNotes").hidden = false; $("notesTitle").textContent = c.title; $("btnNote").textContent = "Send";
+  $("pNotes").hidden = false; $("notesTitle").textContent = c.title; noteBtn();
   const head = c.flaw ? flawHead(c) : c.pin && !c.pin.draft ? `<div class="pinhead">📌 Sat af ${esc(c.pin.worker || "?")} ${sinceText(c.pin.day)}<button class="btn ghost" data-close>✓ Klaret, fjern pinnen</button></div>` : "";
   if(!c.key && c.flaw){ L.innerHTML = head; wireFlawHead(L, c); return; }
   if(!c.key){ L.innerHTML = `<p class="muted">Skriv hvad pinnen handler om, eller tag et billede. Holdet og koordinatoren kan se den på kortet, når du trykker Send.</p>`; $("noteIn").focus(); return; }
@@ -4494,7 +4517,7 @@ async function threadSend(text){
     if(!await ensurePin(c, text)) throw new Error("pin");
     const {error} = await sb.from("element_log").insert(threadLine(c, {note:text}));
     if(error) throw error;
-    $("noteIn").value = ""; toast(c.flaw ? "Kortfejlen er sendt til koordinatoren" : "Sendt", c.flaw ? 3500 : 2600); if(task) loadTaskMedia(task);
+    $("noteIn").value = ""; noteBtn(); toast(c.flaw ? "Kortfejlen er sendt til koordinatoren" : "Sendt", c.flaw ? 3500 : 2600); if(task) loadTaskMedia(task);
   }catch(e){ console.error(e); toast("Kunne ikke sende. Tjek forbindelsen og prøv igen.", 4000); }
   finally{ btn.disabled = false; }
   if(noteCtx === c) showThread();
@@ -4692,6 +4715,7 @@ $("askNoteDel").onclick = ()=>{ // second tap deletes, so a slip of the finger d
 // text null = delete
 async function changeNote(m, text){
   closeEditNote(); if(!m) return;
+  if(!noteCtx) notesDirty = "Noten er rettet";
   const id = noteCtx ? null : selected?.getId();
   if(m.wait){ // not sent yet: change it in the outbox, on every marked place it was written on
     const old = m.note;
@@ -4736,6 +4760,7 @@ function askDelPic(p){ delPic = p; $("delPicImg").src = p.url; $("askDelPic").hi
 $("askDelPicNo").onclick = ()=>{ $("askDelPic").hidden = true; delPic = null; };
 $("askDelPicOk").onclick = async ()=>{
   const p = delPic; $("askDelPic").hidden = true; delPic = null; if(!p) return;
+  if(!noteCtx) notesDirty = "Billedet er slettet";
   if(p.pid){ // still on the phone: take it out of the outbox, from every place it was taken for
     await photoDel(p.pid);
     for(const [key, r] of [...pending]){ if(!r._photos?.includes(p.pid)) continue;
@@ -4759,17 +4784,26 @@ $("askDelPicOk").onclick = async ()=>{
 function closeNotes(){
   const nf = noteCtx?.feat; // a new pin or kortfejl with nothing sent isn't kept
   if(nf) [pinSrc, flawSrc].forEach(s=>{ if(s.hasFeature(nf)) s.removeFeature(nf); });
-  noteCtx = null; $("pNotes").hidden = true; $("noteIn").blur();
+  noteCtx = null; notesDirty = null; $("pNotes").hidden = true; $("noteIn").blur();
 }
-$("btnNoteOpen").onclick = $("notePeek").onclick = ()=>{ noteCtx = null; $("noteIn").value = ""; showNotes(); };
-$("btnNotesClose").onclick = closeNotes;
+$("btnNoteOpen").onclick = $("notePeek").onclick = ()=>{ noteCtx = null; notesDirty = null; $("noteIn").value = ""; showNotes(); noteBtn(); };
+// Back from one place's notes: added or changed something → done with the place (marks clear); nothing → still on it
+function leaveNotes(){
+  const msg = !noteCtx && notesDirty; notesDirty = null;
+  closeNotes(); if(msg) doneWith(msg);
+}
+$("btnNotesClose").onclick = leaveNotes;
+// An empty box can't be saved, so the button takes you back instead
+function noteBtn(){ $("btnNote").textContent = $("noteIn").value.trim() ? (noteCtx ? "Send" : "Gem noten") : "‹ Tilbage til kortet"; }
+$("noteIn").addEventListener("input", noteBtn);
 $("btnNotePhoto").onclick = ()=>{ if(flawKindOk(noteCtx)) $("btnPhoto").click(); };
 $("btnNote").onclick = ()=>{
   const t = $("noteIn").value.trim(), ids = [...selSet].map(g=>g.getId());
-  if(!t){ $("noteIn").focus(); return toast("Skriv noten først"); }
+  if(!t) return leaveNotes();
   if(noteCtx) return threadSend(t);
   setStatus(ids, null, t); $("noteIn").value = "";
-  toast(autoSend ? "Noten er gemt" : "Noten er lagt klar. Tryk Send", 3000);
+  notesDirty = autoSend ? "Noten er gemt" : "Noten er lagt klar. Tryk Send";
+  leaveNotes(); // saving the note is the end of it: back to the map
 };
 $("btnElClose").onclick = ()=>select(null);
 // Directions in Google Maps (opens the Maps app on phones). Goes to the marked element nearest you,
