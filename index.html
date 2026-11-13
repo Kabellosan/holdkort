@@ -1049,7 +1049,7 @@ function workTcol(){
 }
 const byTypeNow = () => !!(workTcol() && store.get("workMode","status")==="type");
 function elStyle(f, res){
-  const pin = f.get("_own")!=null ? [OWN_PIN] : []; // a spot set by hand
+  const pin = f.get("_own")!=null ? [markStyle("📍", 22, 41, res)] : []; // a spot set by hand
   if(pick?.show && spotHidden(f)) return null;
   if(pick){ // picking: each type (or with Vis alt, each group) its own colour
     const far = res > 3.2, ty = pick.tcol?.get(pickKey(f)), on = pick.ids.has(f.getId());
@@ -1074,13 +1074,14 @@ const centerPoint = f => { const g = f.getGeometry(), t = g.getType();
   if(t==="MultiPolygon") return new ol.geom.Point(g.getInteriorPoints().getCoordinates()[0]);
   return new ol.geom.Point(g.getClosestPoint(ol.extent.getCenter(g.getExtent()))); };
 // A spot set by hand on the map (not in the kommune's data)
-const OWN_PIN = new ol.style.Style({zIndex:41, text:new ol.style.Text({text:"📍", font:"22px sans-serif", offsetY:-18})});
 // 📝 / 📷 beside elements with a note or a photo, so everyone can see where there's something to read or look at
 const badgeCache = {};
 // Small and round above the element, so the line itself stays visible; hidden when zoomed far out (res > 3.2), where they'd cover everything
-const badgeStyle = (t, res) => res > 3.2 ? [] : [badgeCache[t] ||= new ol.style.Style({geometry:centerPoint, zIndex:40,
-  image:new ol.style.Circle({radius: t.length > 2 ? 11 : 9, displacement:[0, 17], fill:new ol.style.Fill({color:"#ffffffb3"}), stroke:new ol.style.Stroke({color:"#0000002e", width:1})}),
-  text:new ol.style.Text({text:t, font: t.length > 2 ? "9px sans-serif" : "11px sans-serif", offsetY:-17})})];
+// Hidden from about town zoom out, so they don't pile up; a bit smaller just before that
+const badgeStyle = (t, res) => { if(res > 1.6) return []; const k = res > .8 ? .8 : 1, key = t + k;
+  return [badgeCache[key] ||= new ol.style.Style({geometry:centerPoint, zIndex:40,
+  image:new ol.style.Circle({radius: (t.length > 2 ? 11 : 9) * k, displacement:[0, 17 * k], fill:new ol.style.Fill({color:"#ffffffb3"}), stroke:new ol.style.Stroke({color:"#0000002e", width:1})}),
+  text:new ol.style.Text({text:t, font: `${Math.round((t.length > 2 ? 9 : 11) * k)}px sans-serif`, offsetY:-17 * k})})]; };
 const badgeText = (note, photo) => (note ? "📝" : "") + (photo ? "📷" : "");
 // In the open task: its current note (sent or waiting) and its photos
 const mediaMark = id => badgeText(!!eff(id)?.note?.trim(), hasMedia(id));
@@ -1200,14 +1201,16 @@ const clipShape = () => place?.shape || (over && overFilter?.shape) || null;
 });
 // 📌 Pins in the open task: a spot anyone can put a note or photo on, also where the kommune has no element
 const pinSrc = new ol.source.Vector();
-const PIN_STYLE = new ol.style.Style({zIndex:50, text:new ol.style.Text({text:"📌", font:"30px sans-serif", offsetY:-14, stroke:new ol.style.Stroke({color:"#fff", width:3})})});
+// Pins and kortfejl shrink as you zoom out, like the dots (Captain 2026-11-13: they piled up over the town)
+const markK = res => res <= 1 ? 1 : res <= 2.5 ? .75 : res <= 6 ? .55 : .45;
+const markCache = {}, markStyle = (t, px, z, res) => { const k = markK(res), key = t + k;
+  return markCache[key] ||= new ol.style.Style({zIndex:z, text:new ol.style.Text({text:t, font:`${Math.round(px * k)}px sans-serif`, offsetY:-Math.round(px * k * .47), stroke:new ol.style.Stroke({color:"#fff", width:k < .7 ? 2 : 3})})}); };
 const PIN_NEW = new ol.style.Style({zIndex:51, text:new ol.style.Text({text:"📌", font:"36px sans-serif", offsetY:-16, backgroundFill:new ol.style.Fill({color:"#ffffffcc"}), padding:[2,4,2,4]})});
-const pinLayer = new ol.layer.Vector({source:pinSrc, style:f=>f.get("draft") ? PIN_NEW : PIN_STYLE});
+const pinLayer = new ol.layer.Vector({source:pinSrc, style:(f, res)=>f.get("draft") ? PIN_NEW : markStyle("📌", 30, 50, res)});
 // ⚠️ Kortfejl: shown on every map, they're few and anyone may run into the same spot
 const flawSrc = new ol.source.Vector();
-const FLAW_STYLE = new ol.style.Style({zIndex:52, text:new ol.style.Text({text:"⚠️", font:"26px sans-serif", offsetY:-12, stroke:new ol.style.Stroke({color:"#fff", width:3})})});
 const FLAW_NEW = new ol.style.Style({zIndex:53, text:new ol.style.Text({text:"⚠️", font:"34px sans-serif", offsetY:-16, backgroundFill:new ol.style.Fill({color:"#ffffffcc"}), padding:[2,4,2,4]})});
-const flawLayer = new ol.layer.Vector({source:flawSrc, style:f=>f.get("draft") ? FLAW_NEW : FLAW_STYLE});
+const flawLayer = new ol.layer.Vector({source:flawSrc, style:(f, res)=>f.get("draft") ? FLAW_NEW : markStyle("⚠️", 26, 52, res)});
 const map = new ol.Map({target:"map", layers:[ortoLayer, osmLayer, filterLayer, areaLayer, overLayer, elLayer, tblLayer, labelLayer, prevLayer, editLayer, pinLayer, flawLayer, gpsLayer],
   view:new ol.View({projection:proj, center:START_CENTER, zoom:START_ZOOM, resolutions:RES, constrainResolution:true}),
   controls: ol.control.defaults.defaults({attribution:false, rotate:false})});
