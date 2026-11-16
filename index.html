@@ -6,6 +6,10 @@
 <meta name="theme-color" content="#1f3a2e">
 <title>Holdkort</title>
 <link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Holdkort">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@10.10.0/ol.css">
 <script src="https://cdn.jsdelivr.net/npm/ol@10.10.0/dist/ol.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/proj4@2.22.0/dist/proj4.js"></script>
@@ -53,7 +57,8 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0;color:var(--ink)}
 .flip .ic{font-size:19px;line-height:1}
 .flip .tx{font-size:11px;font-weight:600}
-.basemap #btnMe,.basemap #btnMore:not([hidden]){display:flex}
+.basemap #btnMe,.basemap #btnMore:not([hidden]),.basemap #btnTint:not([hidden]){display:flex}
+#btnTint .ic{font-size:18px}
 #btnMe .ic{font-size:22px;color:#2b6cd4}
 /* Phones zoom with two fingers, so +/− only take up map there */
 @media (pointer:coarse) and (max-width:1023px){.ol-zoom{display:none}.basemap{top:calc(env(safe-area-inset-top,0px) + 64px)}}
@@ -356,6 +361,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 <div class="basemap">
   <button class="flip" id="btnFlip"><span class="ic"></span><span class="tx"></span></button>
   <button class="flip" id="btnMe" aria-label="Vis min position" title="Min position"><span class="ic">◎</span><span class="tx">Mig</span></button>
+  <button class="flip" id="btnTint" hidden><span class="ic"></span><span class="tx"></span></button>
   <div class="morewrap">
     <button class="flip" id="btnMore" hidden aria-expanded="false" aria-label="Flere værktøjer"><span class="ic">⋯</span><span class="tx">Mere</span></button>
     <div id="moreBox" hidden>
@@ -462,19 +468,14 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="row" data-keep>
       <button class="btn ghost" id="btnBack" aria-label="Tilbage til opgaver">‹ Opgaver</button>
       <div class="grow"></div>
-      <button class="btn ghost" id="btnEditArea" hidden>▭ Område</button>
-      <button class="btn ghost" id="btnPick" hidden>☝ Steder</button>
+      <button class="btn ghost" id="btnEdit" hidden>✏️ Ret opgaven</button>
     </div>
     <div class="row" data-keep>
       <div class="grow"><div class="eyebrow" id="workCodes"></div><h2 id="workName"></h2></div>
       <div style="text-align:right"><div class="big num" id="workCount">–</div><div class="muted">færdige</div></div>
     </div>
-    <div class="row"><span class="grow" id="workWho"></span><button class="btn ghost" id="btnName" hidden>Ret navn</button><button class="btn ghost" id="btnWho" hidden>Ret hvem</button></div>
+    <div class="row"><span class="grow" id="workWho"></span></div>
     <div class="bar" id="bar"></div>
-    <div class="seg" id="workMode" role="group" aria-label="Farver" hidden>
-      <button data-o="status">Status</button>
-      <button data-o="type">Farve pr. type</button>
-    </div>
     <div class="legend" id="workLegend" hidden></div>
     <div class="row"><span class="muted grow" id="dataAge"></span><button class="btn ghost" id="btnRefresh" style="min-height:36px;padding:4px 8px">Opdater</button></div>
     <div class="row" data-keep>
@@ -632,6 +633,19 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <p class="muted" style="margin:0">Det forsvinder for alle og kan ikke hentes tilbage.</p>
     <button class="btn danger" id="askDelPicOk">🗑 Slet billedet</button>
     <button class="btn" id="askDelPicNo">Nej, behold det</button>
+  </div>
+</div>
+<!-- "✏️ Ret opgaven": everything that changes an open task, each with its words (2026-11-13, Captain: "Steder" said little) -->
+<div class="ask" id="askEdit" hidden role="dialog" aria-modal="true" aria-labelledby="askEditQ">
+  <div>
+    <h2 id="askEditQ">Ret opgaven</h2>
+    <div class="tbllist multilist" id="editList">
+      <button id="btnName" hidden><b>✏️ Navn</b><br><span class="muted">Giv opgaven et nyt navn.</span></button>
+      <button id="btnWho" hidden><b>👥 Hvem skal lave den</b><br><span class="muted">Tag folk med på opgaven, eller fjern dem.</span></button>
+      <button id="btnPick" hidden><b>☝ Tilføj eller fjern steder</b><br><span class="muted">Tryk på steder på kortet for at tage dem med eller ud.</span></button>
+      <button id="btnEditArea" hidden><b>▭ Tegn området om</b><br><span class="muted">Gør området større eller mindre, eller flyt det.</span></button>
+    </div>
+    <button class="btn" id="askEditNo">Annullér</button>
   </div>
 </div>
 <!-- A koordinator changes who an existing task is for -->
@@ -1193,6 +1207,8 @@ const TASK_COLORS = ["#2f6fe0", "#c2338a", "#0e8f9e", "#8b5a2b", "#2c2f8f", "#56
 const areaStyleCache = {};
 function areaStyle(f){
   const c = f.get("color"); if(!c) return areaDash;
+  if(f.getGeometry().getType()==="MultiPoint") return areaStyleCache[c+"p"] ||= new ol.style.Style({image:new ol.style.Circle({radius:6,
+    fill:new ol.style.Fill({color:c}), stroke:new ol.style.Stroke({color:"#fff", width:2})})});
   const foc = over?.focus, dim = foc && foc!==f.get("tid"), on = foc===f.get("tid");
   const key = c + (dim ? "d" : on ? "o" : "");
   return areaStyleCache[key] ||= [
@@ -1203,8 +1219,8 @@ function areaStyle(f){
 const areaLayer = new ol.layer.Vector({source:areaSrc, style:areaStyle});
 const labelLayer = new ol.layer.Vector({source:areaSrc, declutter:true, style:f=>{ // task names in the overview, above the elements
   const name = f.get("label"); if(!name) return null;
-  const dim = over?.focus && over.focus!==f.get("tid");
-  return new ol.style.Style({text:new ol.style.Text({text:name, font:"600 13px system-ui,sans-serif", overflow:true,
+  const dim = over?.focus && over.focus!==f.get("tid"), g = f.getGeometry();
+  return new ol.style.Style({geometry: g.getType()==="MultiPoint" ? new ol.geom.Point(ol.extent.getCenter(g.getExtent())) : undefined, text:new ol.style.Text({text:name, font:"600 13px system-ui,sans-serif", overflow:true,
     fill:new ol.style.Fill({color: dim ? "#ffffffaa" : "#fff"}), stroke:new ol.style.Stroke({color:(f.get("color")||"#000000")+(dim ? "66" : "ee"),width:4}),
     padding:[2,4,2,4]}), zIndex: f.get("tid")===over?.focus ? 1 : 0});
 }});
@@ -1254,8 +1270,15 @@ const pinSrc = new ol.source.Vector();
 const markK = res => res <= 1 ? 1 : res <= 2.5 ? .75 : res <= 6 ? .55 : .45;
 const markCache = {}, markStyle = (t, px, z, res) => { const k = markK(res), key = t + k;
   return markCache[key] ||= new ol.style.Style({zIndex:z, text:new ol.style.Text({text:t, font:`${Math.round(px * k)}px sans-serif`, offsetY:-Math.round(px * k * .47), stroke:new ol.style.Stroke({color:"#fff", width:k < .7 ? 2 : 3})})}); };
-const PIN_NEW = new ol.style.Style({zIndex:51, text:new ol.style.Text({text:"📌", font:"36px sans-serif", offsetY:-16, backgroundFill:new ol.style.Fill({color:"#ffffffcc"}), padding:[2,4,2,4]})});
-const pinLayer = new ol.layer.Vector({source:pinSrc, style:(f, res)=>f.get("draft") ? PIN_NEW : markStyle("📌", 30, 50, res)});
+// Drawn as a red dot with a "!" above it (Captain 2026-11-16). Red is also Mangler on point elements,
+// so the pin gets a thick white ring, a dark outer edge and the "!" to tell it apart.
+const PIN_RED = "#d0021b", PIN_EDGE = "#3a0008";
+const pinCache = {}, pinDot = (k, draft) => pinCache[k + (draft ? "d" : "")] ||= (() => { const r = Math.round(10 * k), w = Math.max(2, Math.round(3 * k));
+  return [new ol.style.Style({zIndex:draft ? 51 : 50, image:new ol.style.Circle({radius:r + w / 2 + 1.5, fill:new ol.style.Fill({color:PIN_EDGE})})}),
+    new ol.style.Style({zIndex:draft ? 51 : 50, image:new ol.style.Circle({radius:r, fill:new ol.style.Fill({color:PIN_RED}), stroke:new ol.style.Stroke({color:"#fff", width:w})})}),
+    new ol.style.Style({zIndex:draft ? 51 : 50, text:new ol.style.Text({text:"!", font:`900 ${Math.round(32 * Math.max(k, .7))}px sans-serif`, offsetY:-(r + w + Math.round(16 * k)),
+      fill:new ol.style.Fill({color:PIN_RED}), stroke:new ol.style.Stroke({color:"#fff", width:Math.max(3, Math.round(5 * k))})})})]; })();
+const pinLayer = new ol.layer.Vector({source:pinSrc, style:(f, res)=>f.get("draft") ? pinDot(1.25, true) : pinDot(markK(res))});
 // ⚠️ Kortfejl: shown on every map, they're few and anyone may run into the same spot
 const flawSrc = new ol.source.Vector();
 const FLAW_NEW = new ol.style.Style({zIndex:53, text:new ol.style.Text({text:"⚠️", font:"34px sans-serif", offsetY:-16, backgroundFill:new ol.style.Fill({color:"#ffffffcc"}), padding:[2,4,2,4]})});
@@ -1297,7 +1320,8 @@ function toast(t, ms=2600, act){const el=$("toast"), box=$("toastActs"); $("toas
 const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick","pPlace","pPart","pSpots","pBrowse"];
 const curPane = () => PANES.find(p=>!$(p).hidden);
 function pane(id){ if(id!==curPane()) fold(false); if(ringOn && !["pPick","pSpots","pWork","pEl"].includes(id)) ringMode(false); PANES.forEach(p=>$(p).hidden = p!==id);
-  $("sheet").classList.toggle("can-fold", !!$(id).querySelector(":scope>[data-keep]")); showTbl(); showFlawBtn(); showLayersBtn(); }
+  $("sheet").classList.toggle("can-fold", !!$(id).querySelector(":scope>[data-keep]")); showTbl(); showFlawBtn(); showLayersBtn();
+  if(typeof syncTint==="function") syncTint(); if(typeof homeMap==="function") homeMap(); }
 // Fold the sheet down to the rows marked data-keep (its main buttons), so more of the map shows
 // on = 2 folds it all the way: only the bar is left ("mini"); panes without data-keep rows go straight there
 function fold(on){ const s = $("sheet"); if(!s) return; const lv = on === 2 || (on && !s.classList.contains("can-fold")) ? 2 : on ? 1 : 0;
@@ -1763,11 +1787,24 @@ async function fetchLayers(cqls, keep){
   return results.flatMap(r=>r.value).filter(f=>!seen.has(f.getId()) && seen.add(f.getId()));
 }
 const codeIn = codes => `elementkode IN (${codes.map(c=>`'${c.replace(/'/g,"")}'`).join(",")})`;
-async function fetchElements(codes, extent, area){
+// A task's belægning rule as a server filter (2026-11-16, Captain: a kommune-wide "Træer med vanding" task was slow, the
+// server sent every tree and the phone threw most away). Only when every type has the same rule and it only says what
+// must be there ("vanding", "beton"); "!asfalt" must also keep elements with no belægning, so it stays on the phone.
+// The phone still checks surfOk afterwards, so a looser server answer can't let wrong ones in.
+function surfCql(codes, surface){
+  if(!surface) return null;
+  const rules = codes.map(c=>surface[c]);
+  if(rules.some(r=>!r?.length || r.some(a=>a.startsWith("!"))) || new Set(rules.map(r=>[...r].sort().join("|"))).size > 1) return null;
+  const like = a => ["belaegningstype","attribut_1","attribut_2"].map(k=>`${k} ILIKE '%${a.replace(/['%_]/g,"")}%'`);
+  return `(${rules[0].flatMap(like).join(" OR ")})`;
+}
+async function fetchElements(codes, extent, area, surface){
   // Ask the server to cut to the bounding box (if the geometry column has another name, fall back to filtering here),
-  // then keep only what touches the drawn shape
-  const shape = prepShape({extent, area});
-  return fetchLayers([`${codeIn(codes)} AND BBOX(wkb_geometry,${extent.join(",")})`, codeIn(codes)], g=>inShape(g, shape));
+  // then keep only what touches the drawn shape. With a belægning rule the server is asked to apply it first;
+  // a layer that doesn't know those columns falls back to the plain filters
+  const shape = prepShape({extent, area}), bbox = `BBOX(wkb_geometry,${extent.join(",")})`, sc = surfCql(codes, surface);
+  return fetchLayers([...(sc ? [`${codeIn(codes)} AND ${sc} AND ${bbox}`] : []), `${codeIn(codes)} AND ${bbox}`, codeIn(codes)],
+    g=>inShape(g, shape));
 }
 // A task of hand-picked spots (tasks.spots) asks only for the picked types, in a small box around each spot,
 // and keeps exactly the picked elements. Spots set by hand ("egen:…") aren't the kommune's, so they're made here.
@@ -1849,7 +1886,17 @@ async function nameByStreet(feats, extent){
   if(!needs.length) return;
   const pad = 60, ext = [extent[0]-pad, extent[1]-pad, extent[2]+pad, extent[3]+pad];
   let roads;
-  try{ roads = await wfs(ROAD_LAYER, {bbox: ext.join(",") + ",EPSG:25832"}); }catch(e){ return; }
+  // A big area (a kommune-wide task) would fetch every road in the kommune to name a few hundred trees, so ask only
+  // for the roads near the elements, in merged boxes, 30 to a request (2026-11-16). If the server won't, do as before.
+  if(ol.extent.getArea(ext) > 25e6 && needs.length <= 5000) try{
+    const boxes = mergeBoxes(needs.map(f=>ol.extent.buffer(f.getGeometry().getExtent(), 150))), got = new Map();
+    for(let i = 0; i < boxes.length; i += 30){
+      const or = boxes.slice(i, i+30).map(b=>`BBOX(wkb_geometry,${b.map(Math.round).join(",")})`).join(" OR ");
+      (await wfsAll(ROAD_LAYER, {CQL_FILTER:or})).forEach(r=>got.set(r.get("ogc_fid") ?? r.getId() ?? got.size, r));
+    }
+    roads = [...got.values()];
+  }catch(e){ console.warn(e); roads = null; }
+  if(!roads) try{ roads = await wfs(ROAD_LAYER, {bbox: ext.join(",") + ",EPSG:25832"}); }catch(e){ return; }
   nameNear(needs, roads);
 }
 function nameNear(needs, roads){
@@ -1908,9 +1955,9 @@ async function loadCrew(){
 }
 document.querySelectorAll("#bossView [data-v]").forEach(b=>b.onclick=()=>{ bossView = b.dataset.v; store.set("bossView",bossView); renderTasks(); });
 function taskRow(t, noClose){
-  const done = store.get("count:"+t.id, null);
+  const done = store.get("count:"+t.id, null), c = homeColors().get(t.id);
   return `<div class="row">
-    <button class="item grow" data-open="${esc(t.id)}"><div class="grow"><div class="t">${esc(t.name)}</div>
+    <button class="item grow" data-open="${esc(t.id)}">${c ? `<i class="swatch" style="background:${c}"></i>` : ""}<div class="grow"><div class="t">${esc(t.name)}</div>
     <div class="s">${esc(shortCodes(t.codes) + scopeOf(t))} · ${esc(whoFor(t))}</div></div>
     ${done ? `<span class="pill ${done[0]===done[1]?"done":"todo"} num">${done[0]}/${done[1]}</span>` : ""}</button>
     ${noClose ? "" : canManage(t) ? `<button class="btn ghost close" data-arch="${esc(t.id)}">Afslut</button>`
@@ -1950,6 +1997,7 @@ function renderTasks(){
       : `<p class="muted" style="margin:0">Ingen opgaver til dig lige nu. ${ownHint()}</p>`);
   }
   L.querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openTask(tasks.find(t=>t.id===b.dataset.open)));
+  homeMap();
   L.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>askRemove(b.dataset.rm));
   if($("btnAddPerson")) $("btnAddPerson").onclick = askAdd;
   // Udførende may close only tasks they made themselves; say why the others have no Afslut
@@ -1959,6 +2007,34 @@ function renderTasks(){
     if(b.dataset.armed){ archiveTask(tasks.find(t=>t.id===b.dataset.arch)); return; }
     b.dataset.armed=1; b.textContent="Sikker?"; setTimeout(()=>{delete b.dataset.armed; b.textContent="Afslut";},3000);
   });
+}
+// ---- The start screen's map: every task in the list as its own coloured area (2026-11-13, Captain: the map there was empty) ----
+// Same colour as the stripe on the task's row; tapping an area opens the task. Spots tasks show their spots as dots.
+const homeTasks = () => !user ? [] : isBoss() ? tasks : tasks.filter(forMe);
+function homeColors(){ // oldest first, so a task keeps its colour while new ones are added
+  const tl = [...homeTasks()].sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
+  return new Map(tl.map((t,i)=>[t.id, TASK_COLORS[i % TASK_COLORS.length]]));
+}
+var homeFit = false;
+function homeMap(){
+  areaSrc.getFeatures().filter(f=>f.get("home")).forEach(f=>areaSrc.removeFeature(f));
+  if(curPane()!=="pTasks" || task || pick || over || place || areaEd) return;
+  const col = homeColors(), fs = [];
+  homeTasks().forEach(t=>{
+    let g;
+    if(t.spots){ const pts = t.spots.map(s=>s.xy || (s.box && ol.extent.getCenter(s.box))).filter(Boolean); if(!pts.length) return; g = new ol.geom.MultiPoint(pts); }
+    else if(t.extent) g = shapeGeom(t); else return;
+    const f = new ol.Feature(g); f.setProperties({label:t.name, tid:t.id, color:col.get(t.id), home:true}); fs.push(f);
+  });
+  areaSrc.addFeatures(fs); areaLayer.setVisible(true); labelLayer.setVisible(true);
+  // The first time, if none of the tasks is in sight, show them all
+  if(!homeFit && fs.length){ homeFit = true;
+    const v = map.getView().calculateExtent(map.getSize());
+    if(!fs.some(f=>ol.extent.intersects(f.getGeometry().getExtent(), v))){
+      const e = ol.extent.createEmpty(); fs.forEach(f=>ol.extent.extend(e, f.getGeometry().getExtent()));
+      map.getView().fit(e, {padding:[70,16,sheetPad(),16], duration:300, maxZoom:16});
+    }
+  }
 }
 // ---- Bosses add people to the team and take them off it ----
 const personPanel = (title, body, foot) => {
@@ -2034,7 +2110,10 @@ async function elCachePut(id, feats, key){ try{ await (await caches.open(EL_CACH
 async function elCacheDel(id){ try{ await (await caches.open(EL_CACHE)).delete(elKey(id)); }catch(e){} }
 const rushHour = () => { const h = new Date().getHours(); return h >= 6 && h < 9; };
 async function downloadElements(t){
-  const fs = t.spots ? await fetchSpots(t.spots) : await fetchElements(t.codes, t.extent, t.area);
+  // Only what the task's belægning rule keeps is named and stored, so opening the task doesn't re-read thousands of
+  // elements it never shows (a kommune-wide vanding task stored every tree in the kommune)
+  let fs = t.spots ? await fetchSpots(t.spots) : await fetchElements(t.codes, t.extent, t.area, t.surface);
+  fs = fs.filter(f=>surfOk(t.surface, f));
   if(!t.spots) await nameByStreet(fs, t.extent);
   await elCachePut(t.id, fs, areaKey(t)); return fs;
 }
@@ -2124,18 +2203,25 @@ function refresh(){
 // Several types in one task: a switch between status colours and a colour per type, with a legend of the types
 function workLegend(fs){
   const tc = workTcol(), byType = byTypeNow();
-  $("workMode").hidden = !tc;
-  document.querySelectorAll("#workMode [data-o]").forEach(b=>b.classList.toggle("on", b.dataset.o===(byType ? "type" : "status")));
+  syncTint();
   $("workLegend").hidden = !byType;
   if(!byType){ $("workLegend").innerHTML = ""; return; }
   const per = {}; fs.forEach(f=>{ const k = f.get("elementkode"), q = per[k] ||= {n:0, done:0}; q.n++; if(statusOf(f.getId())==="done") q.done++; });
   $("workLegend").innerHTML = task.codes.filter(k=>per[k]).map(k=>`<span><i style="background:${COLORS[tc[k]]}"></i>${esc(CODES[k] || k)} <b class="num">${per[k].done}/${per[k].n}</b></span>`).join("")
     + `<span><i style="background:${COLORS.done};box-shadow:0 0 0 2px ${DONE_EDGE}"></i>Færdig</span>`;
 }
-document.querySelectorAll("#workMode [data-o]").forEach(b=>b.onclick=()=>{
-  if(store.get("workMode","status")===b.dataset.o) return;
-  store.set("workMode", b.dataset.o); refresh();
-});
+// The switch is a map button under Mig (2026-11-13, Captain: it vanished when the sheet was folded): it shows the other choice, like Foto/Kort
+function syncTint(){
+  const b = $("btnTint"), on = !!(task && !pick && workTcol() && ["pWork","pEl","pList"].includes(curPane()));
+  b.hidden = !on; if(!on) return;
+  const ty = byTypeNow();
+  b.querySelector(".ic").textContent = ty ? "🚦" : "🎨"; b.querySelector(".tx").textContent = ty ? "Status" : "Typer";
+  b.setAttribute("aria-label", ty ? "Farv efter status" : "Farv efter type"); b.title = b.getAttribute("aria-label");
+}
+$("btnTint").onclick = ()=>{
+  const ty = !byTypeNow(); store.set("workMode", ty ? "type" : "status"); refresh();
+  toast(ty ? "Farve pr. type. Færdige er stadig grønne." : "Farve efter status", 2500);
+};
 
 // ================= PICKING SPOTS: a boss chooses which elements of the area are in the task =================
 // fresh: a new task starts with nothing picked; an existing whole-area task starts with everything picked
@@ -2874,7 +2960,12 @@ function showWho(t){
   $("workWho").textContent = "👥 " + whoFor(t);
   $("btnWho").hidden = !isBoss();
   $("btnName").hidden = !canManage(t);
+  $("btnEdit").hidden = ["btnName","btnWho","btnPick","btnEditArea"].every(id=>$(id).hidden);
 }
+$("btnEdit").onclick = ()=>{ $("askEdit").hidden = false; };
+$("askEditNo").onclick = ()=>{ $("askEdit").hidden = true; };
+// A row's own handler opens its screen; then the menu closes
+$("editList").addEventListener("click", ()=>{ $("askEdit").hidden = true; });
 // Rename an open task (koordinator, or Udførende for a task made with that login; Captain, 2026-11-12)
 $("btnName").onclick = ()=>{ $("nameIn").value = task.name; $("askName").hidden = false; $("nameIn").focus(); $("nameIn").select(); };
 $("askNameNo").onclick = ()=>{ $("askName").hidden = true; };
@@ -3988,7 +4079,10 @@ $("photoIn").onchange = $("photoCam").onchange = async e=>{
     const id = uuid(); await photoPut(id, await shrink(file));
     setStatus(ids, null, null, undefined, id); // also redraws Noter og billeder if it's open
     const msg = autoSend ? "Billede tilføjet" : "Billedet er lagt klar. Tryk Send";
-    if($("pNotes").hidden) doneWith(msg, 8000, cam && keepAct(file)); // the quick 📷 in the element panel: done with the place
+    // the quick 📷 in the element panel: done with the place; if they aren't all Færdig yet, the toast offers it (Captain, 2026-11-16)
+    if($("pNotes").hidden){ const fs = [...selSet], t = task, open = ids.some(id=>(eff(id)?.status||"todo")!=="done");
+      const done = open && {label:"✓ Færdig", fn:()=>{ if(task!==t) return; reselect(fs); if(selSet.size) markAndClear("done", undefined, undefined, true); }};
+      doneWith(msg, 8000, [done, cam && keepAct(file)].filter(Boolean)); }
     else { notesDirty = msg; toast(msg, cam ? 8000 : 3000, cam && keepAct(file)); }
   }catch(err){ console.error(err); toast("Billedet kunne ikke gemmes. Prøv igen.", 4000); }
 };
@@ -4427,6 +4521,13 @@ map.on("singleclick", e=>{
       else toast(`${titleOf(f)}${subOf(f) ? " · " + subOf(f) : ""}${age} · ${parts.length ? parts.join(" · ") : "ikke i en opgave"}`, 4000 + 1500*Math.max(0, n-1)); }
     return;
   }
+  if(!task && curPane()==="pTasks"){ // start screen: tapping a task's area opens it (the smallest, if they overlap)
+    const hs = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===areaLayer, hitTolerance:10}).filter(f=>f.get("home"));
+    hs.sort((a,b)=>ol.extent.getArea(a.getGeometry().getExtent()) - ol.extent.getArea(b.getGeometry().getExtent()));
+    const t = hs[0] && tasks.find(x=>x.id===hs[0].get("tid"));
+    if(t) openTask(t);
+    return;
+  }
   if(!task) return;
   const pinHit = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===pinLayer, hitTolerance:16}).find(f=>f.get("pin"));
   if(pinHit){ openPin(pinHit.get("pin")); return; }
@@ -4467,7 +4568,7 @@ document.querySelectorAll(".status [data-s]").forEach(b=>b.onclick=()=>{
 });
 // Setting a status is the end of that job: the marks clear and the panel closes, so the next tap starts fresh
 // (Captain, 2026-10-15). A toast says what was set, with Fortryd for a mis-tap: it puts the old status back and marks them again.
-function markAndClear(status, note, reason){
+function markAndClear(status, note, reason, noPic){
   const fs = [...selSet], ids = fs.map(g=>g.getId()), t = task, key = id=>t.id+"|"+id;
   const before = new Map(ids.map(id=>[id, {row:pending.get(key(id)), was:eff(id)}]));
   setStatus(ids, status, note, reason);
@@ -4475,7 +4576,9 @@ function markAndClear(status, note, reason){
   const after = new Map(ids.map(id=>[id, pending.get(key(id))]));
   select(null);
   const n = ids.length, what = status==="blocked" ? `🚧 ${n>1 ? n + " blokeret" : "Blokeret"}: ${reason}` : `${LABEL[status]}${status==="done" ? " ✓" : ""}${n>1 ? ` · ${n} steder` : ""}`;
-  toast(what, 6000, {label:"↶ Fortryd", fn:()=>{
+  // Færdig or Blokeret often wants a picture as proof (Captain, 2026-11-16): one tap marks the same places again and opens the photo picker
+  const pic = !noPic && status!=="todo" && !$("btnPhoto").hidden && {label:"📷 Billede", fn:()=>{ if(task!==t) return; reselect(fs); if(selSet.size) $("btnPhoto").click(); }};
+  toast(what, 8000, [pic, {label:"↶ Fortryd", fn:()=>{
     if(task!==t) return;
     if(ids.every(id=>pending.get(key(id))===after.get(id))){ // not sent yet: the outbox goes back to exactly what it was
       ids.forEach(id=>{ const r = before.get(id).row; r ? pending.set(key(id), r) : pending.delete(key(id)); });
@@ -4484,7 +4587,7 @@ function markAndClear(status, note, reason){
     selSet = new Set(fs.filter(f=>elSrc.hasFeature(f))); selected = [...selSet][0] || null;
     elLayer.changed(); if(selected) showEl(false); else pane("pWork");
     toast("Fortrudt");
-  }});
+  }}]);
 }
 // Saving a note, a photo or a stretch is also the end of that job (Captain, 2026-11-13): the marks clear and you're back on the map.
 // "↶ Vælg igen" marks the same places again, for a note written before Færdig. Nothing saved (Tilbage) keeps them marked.
@@ -4493,7 +4596,7 @@ function doneWith(what, ms=6000, extra){
   if(!fs.length) return toast(what, ms, extra);
   select(null);
   const again = {label:"↶ Vælg igen", fn:()=>{ if(task!==t) return; reselect(fs); }};
-  toast(what, ms, extra ? [extra, again] : again);
+  toast(what, ms, [extra, again].flat().filter(Boolean));
 }
 function reselect(fs){
   selSet = new Set(fs.filter(f=>elSrc.hasFeature(f))); selected = [...selSet][0] || null;
@@ -4954,11 +5057,14 @@ $("btnRoute").onclick = ()=>{
   const f = gps ? fs.reduce((a,b)=>distTo(b,gps)<distTo(a,gps)?b:a) : selected;
   const g = f.getGeometry(), c = g.getClosestPoint(ol.extent.getCenter(g.getExtent()));
   const [lon, lat] = ol.proj.toLonLat(c, proj);
-  const web = `https://www.google.com/maps/dir/?api=1&destination=${lat.toFixed(6)},${lon.toFixed(6)}`;
-  // Android: some browsers (Opera) open https Maps links as a web page, so ask for the Maps app by name;
-  // without the app the browser goes to the web page instead (browser_fallback_url).
+  const ll = `${lat.toFixed(6)},${lon.toFixed(6)}`;
+  const web = `https://www.google.com/maps/dir/?api=1&destination=${ll}`;
+  // Android: start the Maps app's navigation straight to the point (google.navigation:q=lat,lng). The
+  // directions link above lets Maps swap the point for the nearest house address, which can be the wrong
+  // side of a green (Captain, 2026-11-13); naming the app also stops Opera opening the website.
+  // Without the app the browser goes to the web page instead (browser_fallback_url).
   if(/Android/i.test(navigator.userAgent)){
-    location.href = `intent://${web.slice(8)}#Intent;scheme=https;package=com.google.android.apps.maps;`
+    location.href = `intent:q=${ll}#Intent;scheme=google.navigation;package=com.google.android.apps.maps;`
       + `S.browser_fallback_url=${encodeURIComponent(web)};end`;
     return;
   }
@@ -5023,6 +5129,9 @@ $("fltTodo").onclick = ()=>{ onlyOpen=!onlyOpen; store.set("onlyOpen",onlyOpen);
 $("btnListClose").onclick = ()=>pane(selected ? "pEl" : "pWork");
 
 if("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(()=>{});
+// Ask the browser not to clear what's kept on the phone (tasks, element data, unsent marks) when space runs low.
+// Chrome grants it to apps on the home screen by itself; it can't keep the page in memory, only the stored data.
+navigator.storage?.persist?.().catch(()=>{});
 // ================= PLACE SEARCH (Photon / OpenStreetMap) =================
 const PHOTON = "https://photon.komoot.io/api/";
 const KIND = {city:"By",town:"By",village:"Landsby",hamlet:"Landsby",suburb:"Bydel",neighbourhood:"Kvarter",
@@ -5406,7 +5515,59 @@ if(user && sb) sb.auth.getSession().then(({data, error})=>{
     $("loginErr").textContent = "Du er ikke på holdet længere. Spørg din koordinator.";
   });
 });
-loadTasks();
+// ================= PICK UP WHERE YOU LEFT OFF =================
+// A phone may throw the page out of memory while you're in another app; coming back reloads it.
+// So the screen you were on is kept on the phone (localStorage "resume") and opened again on load:
+// the open task, element panel or Liste, the marked places, the note being written, the fold, or Overblik.
+// The map position, login and unsent marks were already kept. Older than RESUME_MAX, or another name: start on the list.
+const RESUME_MAX = 12*3600e3;
+function resumeNow(){
+  if(!user) return null;
+  const s = {at:Date.now(), who:me, fold:foldLv()}, p = curPane();
+  if(task && !pick && ["pWork","pEl","pList"].includes(p)){
+    s.task = task.id; s.pane = p; s.sel = [...selSet].map(f=>f.getId());
+    if(!$("pNotes").hidden && !noteCtx && s.sel.length){ s.notes = true; s.note = $("noteIn").value; }
+  } else if(task) s.task = task.id, s.pane = "pWork"; // picking, a stretch, redrawing: back to the task itself
+  else if(over && p==="pOver" && !over.tbl && !overFilter) s.over = {codes:over.codes, pack:over.pack};
+  return s;
+}
+let resumeT = null, resumeReady = false; // nothing is written until the old one has been read back
+function resumeSave(){ clearTimeout(resumeT); if(resumeReady) store.set("resume", resumeNow()); }
+const resumeSoon = () => { clearTimeout(resumeT); resumeT = setTimeout(resumeSave, 800); };
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="hidden") resumeSave(); });
+window.addEventListener("pagehide", resumeSave);
+$("noteIn").addEventListener("input", resumeSoon);
+new MutationObserver(resumeSoon).observe(document.body, {subtree:true, attributes:true, attributeFilter:["hidden","aria-pressed"]});
+map.on("click", resumeSoon); // a tap on another element changes the marks without opening or closing anything
+async function resumeOpen(t, s){
+  await openTask(t);
+  if(task !== t) return;
+  const ids = new Set(s.sel || []);
+  selSet = new Set(elSrc.getFeatures().filter(f=>ids.has(f.getId()))); selected = [...selSet][0] || null; elLayer.changed();
+  if(s.pane==="pList"){ pane("pList"); renderList(); }
+  else if(s.pane==="pEl" && selSet.size){ showEl(false);
+    if(s.notes){ noteCtx = null; notesDirty = null; $("noteIn").value = s.note || ""; showNotes(); noteBtn(); } }
+  if(s.fold) fold(s.fold);
+}
+async function resumeLast(){
+  const s = store.get("resume", null);
+  const ok = s && user && norm(s.who||"")===norm(me) && Date.now() - s.at < RESUME_MAX;
+  const seen = t => t && (isBoss() || forMe(t));
+  let t = ok && s.task ? tasks.find(x=>x.id===s.task) : null;
+  // Open straight from the tasks kept on the phone, so a weak connection doesn't hold it up
+  if(seen(t)) await resumeOpen(t, s);
+  else if(ok && s.over && isBoss()){ await openOverview(s.over.codes, s.over.pack); if(s.fold) fold(s.fold); }
+  resumeReady = true;
+  await tasksLoaded;
+  // The fresh list from the database: closed meanwhile → back to the list; changed → open the new version
+  if(!t || task?.id !== t.id) return;
+  const fresh = tasks.find(x=>x.id===t.id);
+  if(!seen(fresh)){ $("btnBack").click(); toast("Opgaven er lukket eller ikke din mere", 4000); }
+  else if(JSON.stringify(fresh) !== JSON.stringify(t)) await resumeOpen(fresh, resumeNow() || s);
+}
+if(user) tasks = store.get("tasks", []);
+const tasksLoaded = loadTasks();
+resumeLast().catch(e=>{ console.error(e); resumeReady = true; });
 // Try to send leftovers when the connection comes back, but only if the worker chose auto-send
 window.addEventListener("online", ()=>{ if(autoSend) sendPending(); });
 

@@ -1,9 +1,17 @@
 {
+  "id": "./",
   "name": "Holdkort",
   "short_name": "Holdkort",
+  "description": "Opgaver og status på kommunens kort for holdet",
+  "lang": "da",
   "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#f6f7f2",
   "theme_color": "#1f3a2e",
-  "icons": []
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
 }
