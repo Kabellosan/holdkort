@@ -3932,7 +3932,10 @@ $("photoIn").onchange = $("photoCam").onchange = async e=>{
     const id = uuid(); await photoPut(id, await shrink(file));
     setStatus(ids, null, null, undefined, id); // also redraws Noter og billeder if it's open
     const msg = autoSend ? "Billede tilføjet" : "Billedet er lagt klar. Tryk Send";
-    if($("pNotes").hidden) doneWith(msg, 8000, cam && keepAct(file)); // the quick 📷 in the element panel: done with the place
+    // the quick 📷 in the element panel: done with the place; if they aren't all Færdig yet, the toast offers it (Captain, 2026-11-16)
+    if($("pNotes").hidden){ const fs = [...selSet], t = task, open = ids.some(id=>(eff(id)?.status||"todo")!=="done");
+      const done = open && {label:"✓ Færdig", fn:()=>{ if(task!==t) return; reselect(fs); if(selSet.size) markAndClear("done", undefined, undefined, true); }};
+      doneWith(msg, 8000, [done, cam && keepAct(file)].filter(Boolean)); }
     else { notesDirty = msg; toast(msg, cam ? 8000 : 3000, cam && keepAct(file)); }
   }catch(err){ console.error(err); toast("Billedet kunne ikke gemmes. Prøv igen.", 4000); }
 };
@@ -4417,7 +4420,7 @@ document.querySelectorAll(".status [data-s]").forEach(b=>b.onclick=()=>{
 });
 // Setting a status is the end of that job: the marks clear and the panel closes, so the next tap starts fresh
 // (Captain, 2026-10-15). A toast says what was set, with Fortryd for a mis-tap: it puts the old status back and marks them again.
-function markAndClear(status, note, reason){
+function markAndClear(status, note, reason, noPic){
   const fs = [...selSet], ids = fs.map(g=>g.getId()), t = task, key = id=>t.id+"|"+id;
   const before = new Map(ids.map(id=>[id, {row:pending.get(key(id)), was:eff(id)}]));
   setStatus(ids, status, note, reason);
@@ -4425,7 +4428,9 @@ function markAndClear(status, note, reason){
   const after = new Map(ids.map(id=>[id, pending.get(key(id))]));
   select(null);
   const n = ids.length, what = status==="blocked" ? `🚧 ${n>1 ? n + " blokeret" : "Blokeret"}: ${reason}` : `${LABEL[status]}${status==="done" ? " ✓" : ""}${n>1 ? ` · ${n} steder` : ""}`;
-  toast(what, 6000, {label:"↶ Fortryd", fn:()=>{
+  // Færdig or Blokeret often wants a picture as proof (Captain, 2026-11-16): one tap marks the same places again and opens the photo picker
+  const pic = !noPic && status!=="todo" && !$("btnPhoto").hidden && {label:"📷 Billede", fn:()=>{ if(task!==t) return; reselect(fs); if(selSet.size) $("btnPhoto").click(); }};
+  toast(what, 8000, [pic, {label:"↶ Fortryd", fn:()=>{
     if(task!==t) return;
     if(ids.every(id=>pending.get(key(id))===after.get(id))){ // not sent yet: the outbox goes back to exactly what it was
       ids.forEach(id=>{ const r = before.get(id).row; r ? pending.set(key(id), r) : pending.delete(key(id)); });
@@ -4434,7 +4439,7 @@ function markAndClear(status, note, reason){
     selSet = new Set(fs.filter(f=>elSrc.hasFeature(f))); selected = [...selSet][0] || null;
     elLayer.changed(); if(selected) showEl(false); else pane("pWork");
     toast("Fortrudt");
-  }});
+  }}]);
 }
 // Saving a note, a photo or a stretch is also the end of that job (Captain, 2026-11-13): the marks clear and you're back on the map.
 // "↶ Vælg igen" marks the same places again, for a note written before Færdig. Nothing saved (Tilbage) keeps them marked.
@@ -4443,7 +4448,7 @@ function doneWith(what, ms=6000, extra){
   if(!fs.length) return toast(what, ms, extra);
   select(null);
   const again = {label:"↶ Vælg igen", fn:()=>{ if(task!==t) return; reselect(fs); }};
-  toast(what, ms, extra ? [extra, again] : again);
+  toast(what, ms, [extra, again].flat().filter(Boolean));
 }
 function reselect(fs){
   selSet = new Set(fs.filter(f=>elSrc.hasFeature(f))); selected = [...selSet][0] || null;
