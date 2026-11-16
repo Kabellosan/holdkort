@@ -1727,11 +1727,24 @@ async function fetchLayers(cqls, keep){
   return results.flatMap(r=>r.value).filter(f=>!seen.has(f.getId()) && seen.add(f.getId()));
 }
 const codeIn = codes => `elementkode IN (${codes.map(c=>`'${c.replace(/'/g,"")}'`).join(",")})`;
-async function fetchElements(codes, extent, area){
+// A task's belægning rule as a server filter (2026-11-16, Captain: a kommune-wide "Træer med vanding" task was slow, the
+// server sent every tree and the phone threw most away). Only when every type has the same rule and it only says what
+// must be there ("vanding", "beton"); "!asfalt" must also keep elements with no belægning, so it stays on the phone.
+// The phone still checks surfOk afterwards, so a looser server answer can't let wrong ones in.
+function surfCql(codes, surface){
+  if(!surface) return null;
+  const rules = codes.map(c=>surface[c]);
+  if(rules.some(r=>!r?.length || r.some(a=>a.startsWith("!"))) || new Set(rules.map(r=>[...r].sort().join("|"))).size > 1) return null;
+  const like = a => ["belaegningstype","attribut_1","attribut_2"].map(k=>`${k} ILIKE '%${a.replace(/['%_]/g,"")}%'`);
+  return `(${rules[0].flatMap(like).join(" OR ")})`;
+}
+async function fetchElements(codes, extent, area, surface){
   // Ask the server to cut to the bounding box (if the geometry column has another name, fall back to filtering here),
-  // then keep only what touches the drawn shape
-  const shape = prepShape({extent, area});
-  return fetchLayers([`${codeIn(codes)} AND BBOX(wkb_geometry,${extent.join(",")})`, codeIn(codes)], g=>inShape(g, shape));
+  // then keep only what touches the drawn shape. With a belægning rule the server is asked to apply it first;
+  // a layer that doesn't know those columns falls back to the plain filters
+  const shape = prepShape({extent, area}), bbox = `BBOX(wkb_geometry,${extent.join(",")})`, sc = surfCql(codes, surface);
+  return fetchLayers([...(sc ? [`${codeIn(codes)} AND ${sc} AND ${bbox}`] : []), `${codeIn(codes)} AND ${bbox}`, codeIn(codes)],
+    g=>inShape(g, shape));
 }
 // A task of hand-picked spots (tasks.spots) asks only for the picked types, in a small box around each spot,
 // and keeps exactly the picked elements. Spots set by hand ("egen:…") aren't the kommune's, so they're made here.
@@ -1813,7 +1826,17 @@ async function nameByStreet(feats, extent){
   if(!needs.length) return;
   const pad = 60, ext = [extent[0]-pad, extent[1]-pad, extent[2]+pad, extent[3]+pad];
   let roads;
-  try{ roads = await wfs(ROAD_LAYER, {bbox: ext.join(",") + ",EPSG:25832"}); }catch(e){ return; }
+  // A big area (a kommune-wide task) would fetch every road in the kommune to name a few hundred trees, so ask only
+  // for the roads near the elements, in merged boxes, 30 to a request (2026-11-16). If the server won't, do as before.
+  if(ol.extent.getArea(ext) > 25e6 && needs.length <= 5000) try{
+    const boxes = mergeBoxes(needs.map(f=>ol.extent.buffer(f.getGeometry().getExtent(), 150))), got = new Map();
+    for(let i = 0; i < boxes.length; i += 30){
+      const or = boxes.slice(i, i+30).map(b=>`BBOX(wkb_geometry,${b.map(Math.round).join(",")})`).join(" OR ");
+      (await wfsAll(ROAD_LAYER, {CQL_FILTER:or})).forEach(r=>got.set(r.get("ogc_fid") ?? r.getId() ?? got.size, r));
+    }
+    roads = [...got.values()];
+  }catch(e){ console.warn(e); roads = null; }
+  if(!roads) try{ roads = await wfs(ROAD_LAYER, {bbox: ext.join(",") + ",EPSG:25832"}); }catch(e){ return; }
   nameNear(needs, roads);
 }
 function nameNear(needs, roads){
@@ -2027,7 +2050,10 @@ async function elCachePut(id, feats, key){ try{ await (await caches.open(EL_CACH
 async function elCacheDel(id){ try{ await (await caches.open(EL_CACHE)).delete(elKey(id)); }catch(e){} }
 const rushHour = () => { const h = new Date().getHours(); return h >= 6 && h < 9; };
 async function downloadElements(t){
-  const fs = t.spots ? await fetchSpots(t.spots) : await fetchElements(t.codes, t.extent, t.area);
+  // Only what the task's belægning rule keeps is named and stored, so opening the task doesn't re-read thousands of
+  // elements it never shows (a kommune-wide vanding task stored every tree in the kommune)
+  let fs = t.spots ? await fetchSpots(t.spots) : await fetchElements(t.codes, t.extent, t.area, t.surface);
+  fs = fs.filter(f=>surfOk(t.surface, f));
   if(!t.spots) await nameByStreet(fs, t.extent);
   await elCachePut(t.id, fs, areaKey(t)); return fs;
 }
