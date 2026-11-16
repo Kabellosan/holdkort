@@ -696,6 +696,15 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <button class="btn ghost" id="askTblNo">Luk</button>
   </div>
 </div>
+<div class="ask" id="askRoute" hidden role="dialog" aria-modal="true" aria-labelledby="askRouteQ">
+  <div>
+    <h2 id="askRouteQ">Vis vej</h2>
+    <div class="muted" id="askRouteSub"></div>
+    <button class="btn primary" id="askRouteYes">🧭 Ja, vis vej dertil</button>
+    <button class="btn ghost" id="askRouteNo">Annullér</button>
+  </div>
+</div>
+
 <div class="ask" id="askPhoto" hidden role="dialog" aria-modal="true" aria-labelledby="askPhotoQ">
   <div>
     <h2 id="askPhotoQ">Billede</h2>
@@ -5108,10 +5117,20 @@ $("btnNote").onclick = ()=>{
 $("btnElClose").onclick = ()=>select(null);
 // Directions in Google Maps (opens the Maps app on phones). Goes to the marked element nearest you,
 // at the point of it closest to its middle, so long lines and odd shapes still get a spot on the element.
+// Several marked: ask first, then go to the one marked last and keep only it marked (Captain, 2026-11-16).
+// A question, not a toast with Fortryd: Maps opens straight away, so a toast would never be seen.
 $("btnRoute").onclick = ()=>{
   const fs = [...selSet]; if(!fs.length) return;
-  const gps = geo.getPosition();
-  const f = gps ? fs.reduce((a,b)=>distTo(b,gps)<distTo(a,gps)?b:a) : selected;
+  if(fs.length === 1){ routeTo(fs[0]); return; }
+  const f = fs[fs.length-1];
+  $("askRouteSub").textContent = `Du har ${fs.length} steder markeret. Vil du have vej til det, du markerede sidst (${titleOf(f)})? Så er det kun det, der er valgt bagefter.`;
+  $("askRoute").hidden = false; $("askRouteYes").focus();
+  $("askRouteYes").onclick = ()=>{ $("askRoute").hidden = true;
+    if(!elSrc.hasFeature(f)) return;
+    select(f); routeTo(f); };
+};
+$("askRouteNo").onclick = ()=>{ $("askRoute").hidden = true; };
+function routeTo(f){
   const g = f.getGeometry(), c = g.getClosestPoint(ol.extent.getCenter(g.getExtent()));
   const [lon, lat] = ol.proj.toLonLat(c, proj);
   const ll = `${lat.toFixed(6)},${lon.toFixed(6)}`;
@@ -5126,7 +5145,7 @@ $("btnRoute").onclick = ()=>{
     return;
   }
   window.open(web, "_blank", "noopener");
-};
+}
 
 // ================= NEXT / LIST / GPS =================
 const geo = new ol.Geolocation({projection:proj, trackingOptions:{enableHighAccuracy:true, maximumAge:10000}});
