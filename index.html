@@ -1731,11 +1731,24 @@ async function fetchLayers(cqls, keep){
   return results.flatMap(r=>r.value).filter(f=>!seen.has(f.getId()) && seen.add(f.getId()));
 }
 const codeIn = codes => `elementkode IN (${codes.map(c=>`'${c.replace(/'/g,"")}'`).join(",")})`;
-async function fetchElements(codes, extent, area){
+// A task's belægning rule as a server filter (2026-11-16, Captain: a kommune-wide "Træer med vanding" task was slow, the
+// server sent every tree and the phone threw most away). Only when every type has the same rule and it only says what
+// must be there ("vanding", "beton"); "!asfalt" must also keep elements with no belægning, so it stays on the phone.
+// The phone still checks surfOk afterwards, so a looser server answer can't let wrong ones in.
+function surfCql(codes, surface){
+  if(!surface) return null;
+  const rules = codes.map(c=>surface[c]);
+  if(rules.some(r=>!r?.length || r.some(a=>a.startsWith("!"))) || new Set(rules.map(r=>[...r].sort().join("|"))).size > 1) return null;
+  const like = a => ["belaegningstype","attribut_1","attribut_2"].map(k=>`${k} ILIKE '%${a.replace(/['%_]/g,"")}%'`);
+  return `(${rules[0].flatMap(like).join(" OR ")})`;
+}
+async function fetchElements(codes, extent, area, surface){
   // Ask the server to cut to the bounding box (if the geometry column has another name, fall back to filtering here),
-  // then keep only what touches the drawn shape
-  const shape = prepShape({extent, area});
-  return fetchLayers([`${codeIn(codes)} AND BBOX(wkb_geometry,${extent.join(",")})`, codeIn(codes)], g=>inShape(g, shape));
+  // then keep only what touches the drawn shape. With a belægning rule the server is asked to apply it first;
+  // a layer that doesn't know those columns falls back to the plain filters
+  const shape = prepShape({extent, area}), bbox = `BBOX(wkb_geometry,${extent.join(",")})`, sc = surfCql(codes, surface);
+  return fetchLayers([...(sc ? [`${codeIn(codes)} AND ${sc} AND ${bbox}`] : []), `${codeIn(codes)} AND ${bbox}`, codeIn(codes)],
+    g=>inShape(g, shape));
 }
 // A task of hand-picked spots (tasks.spots) asks only for the picked types, in a small box around each spot,
 // and keeps exactly the picked elements. Spots set by hand ("egen:…") aren't the kommune's, so they're made here.
@@ -1817,7 +1830,17 @@ async function nameByStreet(feats, extent){
   if(!needs.length) return;
   const pad = 60, ext = [extent[0]-pad, extent[1]-pad, extent[2]+pad, extent[3]+pad];
   let roads;
-  try{ roads = await wfs(ROAD_LAYER, {bbox: ext.join(",") + ",EPSG:25832"}); }catch(e){ return; }
+  // A big area (a kommune-wide task) would fetch every road in the kommune to name a few hundred trees, so ask only
+  // for the roads near the elements, in merged boxes, 30 to a request (2026-11-16). If the server won't, do as before.
+  if(ol.extent.getArea(ext) > 25e6 && needs.length <= 5000) try{
+    const boxes = mergeBoxes(needs.map(f=>ol.extent.buffer(f.getGeometry().getExtent(), 150))), got = new Map();
+    for(let i = 0; i < boxes.length; i += 30){
+      const or = boxes.slice(i, i+30).map(b=>`BBOX(wkb_geometry,${b.map(Math.round).join(",")})`).join(" OR ");
+      (await wfsAll(ROAD_LAYER, {CQL_FILTER:or})).forEach(r=>got.set(r.get("ogc_fid") ?? r.getId() ?? got.size, r));
+    }
+    roads = [...got.values()];
+  }catch(e){ console.warn(e); roads = null; }
+  if(!roads) try{ roads = await wfs(ROAD_LAYER, {bbox: ext.join(",") + ",EPSG:25832"}); }catch(e){ return; }
   nameNear(needs, roads);
 }
 function nameNear(needs, roads){
@@ -2031,7 +2054,10 @@ async function elCachePut(id, feats, key){ try{ await (await caches.open(EL_CACH
 async function elCacheDel(id){ try{ await (await caches.open(EL_CACHE)).delete(elKey(id)); }catch(e){} }
 const rushHour = () => { const h = new Date().getHours(); return h >= 6 && h < 9; };
 async function downloadElements(t){
-  const fs = t.spots ? await fetchSpots(t.spots) : await fetchElements(t.codes, t.extent, t.area);
+  // Only what the task's belægning rule keeps is named and stored, so opening the task doesn't re-read thousands of
+  // elements it never shows (a kommune-wide vanding task stored every tree in the kommune)
+  let fs = t.spots ? await fetchSpots(t.spots) : await fetchElements(t.codes, t.extent, t.area, t.surface);
+  fs = fs.filter(f=>surfOk(t.surface, f));
   if(!t.spots) await nameByStreet(fs, t.extent);
   await elCachePut(t.id, fs, areaKey(t)); return fs;
 }
@@ -3910,7 +3936,10 @@ $("photoIn").onchange = $("photoCam").onchange = async e=>{
     const id = uuid(); await photoPut(id, await shrink(file));
     setStatus(ids, null, null, undefined, id); // also redraws Noter og billeder if it's open
     const msg = autoSend ? "Billede tilføjet" : "Billedet er lagt klar. Tryk Send";
-    if($("pNotes").hidden) doneWith(msg, 8000, cam && keepAct(file)); // the quick 📷 in the element panel: done with the place
+    // the quick 📷 in the element panel: done with the place; if they aren't all Færdig yet, the toast offers it (Captain, 2026-11-16)
+    if($("pNotes").hidden){ const fs = [...selSet], t = task, open = ids.some(id=>(eff(id)?.status||"todo")!=="done");
+      const done = open && {label:"✓ Færdig", fn:()=>{ if(task!==t) return; reselect(fs); if(selSet.size) markAndClear("done", undefined, undefined, true); }};
+      doneWith(msg, 8000, [done, cam && keepAct(file)].filter(Boolean)); }
     else { notesDirty = msg; toast(msg, cam ? 8000 : 3000, cam && keepAct(file)); }
   }catch(err){ console.error(err); toast("Billedet kunne ikke gemmes. Prøv igen.", 4000); }
 };
@@ -4395,7 +4424,7 @@ document.querySelectorAll(".status [data-s]").forEach(b=>b.onclick=()=>{
 });
 // Setting a status is the end of that job: the marks clear and the panel closes, so the next tap starts fresh
 // (Captain, 2026-10-15). A toast says what was set, with Fortryd for a mis-tap: it puts the old status back and marks them again.
-function markAndClear(status, note, reason){
+function markAndClear(status, note, reason, noPic){
   const fs = [...selSet], ids = fs.map(g=>g.getId()), t = task, key = id=>t.id+"|"+id;
   const before = new Map(ids.map(id=>[id, {row:pending.get(key(id)), was:eff(id)}]));
   setStatus(ids, status, note, reason);
@@ -4403,7 +4432,9 @@ function markAndClear(status, note, reason){
   const after = new Map(ids.map(id=>[id, pending.get(key(id))]));
   select(null);
   const n = ids.length, what = status==="blocked" ? `🚧 ${n>1 ? n + " blokeret" : "Blokeret"}: ${reason}` : `${LABEL[status]}${status==="done" ? " ✓" : ""}${n>1 ? ` · ${n} steder` : ""}`;
-  toast(what, 6000, {label:"↶ Fortryd", fn:()=>{
+  // Færdig or Blokeret often wants a picture as proof (Captain, 2026-11-16): one tap marks the same places again and opens the photo picker
+  const pic = !noPic && status!=="todo" && !$("btnPhoto").hidden && {label:"📷 Billede", fn:()=>{ if(task!==t) return; reselect(fs); if(selSet.size) $("btnPhoto").click(); }};
+  toast(what, 8000, [pic, {label:"↶ Fortryd", fn:()=>{
     if(task!==t) return;
     if(ids.every(id=>pending.get(key(id))===after.get(id))){ // not sent yet: the outbox goes back to exactly what it was
       ids.forEach(id=>{ const r = before.get(id).row; r ? pending.set(key(id), r) : pending.delete(key(id)); });
@@ -4412,7 +4443,7 @@ function markAndClear(status, note, reason){
     selSet = new Set(fs.filter(f=>elSrc.hasFeature(f))); selected = [...selSet][0] || null;
     elLayer.changed(); if(selected) showEl(false); else pane("pWork");
     toast("Fortrudt");
-  }});
+  }}]);
 }
 // Saving a note, a photo or a stretch is also the end of that job (Captain, 2026-11-13): the marks clear and you're back on the map.
 // "↶ Vælg igen" marks the same places again, for a note written before Færdig. Nothing saved (Tilbage) keeps them marked.
@@ -4421,7 +4452,7 @@ function doneWith(what, ms=6000, extra){
   if(!fs.length) return toast(what, ms, extra);
   select(null);
   const again = {label:"↶ Vælg igen", fn:()=>{ if(task!==t) return; reselect(fs); }};
-  toast(what, ms, extra ? [extra, again] : again);
+  toast(what, ms, [extra, again].flat().filter(Boolean));
 }
 function reselect(fs){
   selSet = new Set(fs.filter(f=>elSrc.hasFeature(f))); selected = [...selSet][0] || null;
