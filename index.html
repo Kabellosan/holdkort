@@ -1270,14 +1270,14 @@ const pinSrc = new ol.source.Vector();
 const markK = res => res <= 1 ? 1 : res <= 2.5 ? .75 : res <= 6 ? .55 : .45;
 const markCache = {}, markStyle = (t, px, z, res) => { const k = markK(res), key = t + k;
   return markCache[key] ||= new ol.style.Style({zIndex:z, text:new ol.style.Text({text:t, font:`${Math.round(px * k)}px sans-serif`, offsetY:-Math.round(px * k * .47), stroke:new ol.style.Stroke({color:"#fff", width:k < .7 ? 2 : 3})})}); };
-// Drawn as a red dot with a "!" above it (Captain 2026-11-16). Red is also Mangler on point elements,
+// Drawn as a red dot with a "!" above it (Captain 2026-11-16), only a little bigger than the dots when zoomed out (Captain: the first version was "lidt voldsomt"). Red is also Mangler on point elements,
 // so the pin gets a thick white ring, a dark outer edge and the "!" to tell it apart.
 const PIN_RED = "#d0021b", PIN_EDGE = "#3a0008";
-const pinCache = {}, pinDot = (k, draft) => pinCache[k + (draft ? "d" : "")] ||= (() => { const r = Math.round(10 * k), w = Math.max(2, Math.round(3 * k));
+const pinCache = {}, pinDot = (k, draft) => pinCache[k + (draft ? "d" : "")] ||= (() => { const r = Math.max(4, Math.round(8 * k)), w = k < .7 ? 1.5 : 2.5;
   return [new ol.style.Style({zIndex:draft ? 51 : 50, image:new ol.style.Circle({radius:r + w / 2 + 1.5, fill:new ol.style.Fill({color:PIN_EDGE})})}),
     new ol.style.Style({zIndex:draft ? 51 : 50, image:new ol.style.Circle({radius:r, fill:new ol.style.Fill({color:PIN_RED}), stroke:new ol.style.Stroke({color:"#fff", width:w})})}),
-    new ol.style.Style({zIndex:draft ? 51 : 50, text:new ol.style.Text({text:"!", font:`900 ${Math.round(32 * Math.max(k, .7))}px sans-serif`, offsetY:-(r + w + Math.round(16 * k)),
-      fill:new ol.style.Fill({color:PIN_RED}), stroke:new ol.style.Stroke({color:"#fff", width:Math.max(3, Math.round(5 * k))})})})]; })();
+    new ol.style.Style({zIndex:draft ? 51 : 50, text:new ol.style.Text({text:"!", font:`900 ${Math.max(12, Math.round(24 * k))}px sans-serif`, offsetY:-(r + w + Math.max(6, Math.round(12 * k))),
+      fill:new ol.style.Fill({color:PIN_RED}), stroke:new ol.style.Stroke({color:"#fff", width:k < .7 ? 2.5 : 4})})})]; })();
 const pinLayer = new ol.layer.Vector({source:pinSrc, style:(f, res)=>f.get("draft") ? pinDot(1.25, true) : pinDot(markK(res))});
 // ⚠️ Kortfejl: shown on every map, they're few and anyone may run into the same spot
 const flawSrc = new ol.source.Vector();
