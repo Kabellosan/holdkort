@@ -6,6 +6,10 @@
 <meta name="theme-color" content="#1f3a2e">
 <title>Holdkort</title>
 <link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Holdkort">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@10.10.0/ol.css">
 <script src="https://cdn.jsdelivr.net/npm/ol@10.10.0/dist/ol.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/proj4@2.22.0/dist/proj4.js"></script>
@@ -4981,6 +4985,9 @@ $("fltTodo").onclick = ()=>{ onlyOpen=!onlyOpen; store.set("onlyOpen",onlyOpen);
 $("btnListClose").onclick = ()=>pane(selected ? "pEl" : "pWork");
 
 if("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(()=>{});
+// Ask the browser not to clear what's kept on the phone (tasks, element data, unsent marks) when space runs low.
+// Chrome grants it to apps on the home screen by itself; it can't keep the page in memory, only the stored data.
+navigator.storage?.persist?.().catch(()=>{});
 // ================= PLACE SEARCH (Photon / OpenStreetMap) =================
 const PHOTON = "https://photon.komoot.io/api/";
 const KIND = {city:"By",town:"By",village:"Landsby",hamlet:"Landsby",suburb:"Bydel",neighbourhood:"Kvarter",
@@ -5364,7 +5371,59 @@ if(user && sb) sb.auth.getSession().then(({data, error})=>{
     $("loginErr").textContent = "Du er ikke på holdet længere. Spørg din koordinator.";
   });
 });
-loadTasks();
+// ================= PICK UP WHERE YOU LEFT OFF =================
+// A phone may throw the page out of memory while you're in another app; coming back reloads it.
+// So the screen you were on is kept on the phone (localStorage "resume") and opened again on load:
+// the open task, element panel or Liste, the marked places, the note being written, the fold, or Overblik.
+// The map position, login and unsent marks were already kept. Older than RESUME_MAX, or another name: start on the list.
+const RESUME_MAX = 12*3600e3;
+function resumeNow(){
+  if(!user) return null;
+  const s = {at:Date.now(), who:me, fold:foldLv()}, p = curPane();
+  if(task && !pick && ["pWork","pEl","pList"].includes(p)){
+    s.task = task.id; s.pane = p; s.sel = [...selSet].map(f=>f.getId());
+    if(!$("pNotes").hidden && !noteCtx && s.sel.length){ s.notes = true; s.note = $("noteIn").value; }
+  } else if(task) s.task = task.id, s.pane = "pWork"; // picking, a stretch, redrawing: back to the task itself
+  else if(over && p==="pOver" && !over.tbl && !overFilter) s.over = {codes:over.codes, pack:over.pack};
+  return s;
+}
+let resumeT = null, resumeReady = false; // nothing is written until the old one has been read back
+function resumeSave(){ clearTimeout(resumeT); if(resumeReady) store.set("resume", resumeNow()); }
+const resumeSoon = () => { clearTimeout(resumeT); resumeT = setTimeout(resumeSave, 800); };
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="hidden") resumeSave(); });
+window.addEventListener("pagehide", resumeSave);
+$("noteIn").addEventListener("input", resumeSoon);
+new MutationObserver(resumeSoon).observe(document.body, {subtree:true, attributes:true, attributeFilter:["hidden","aria-pressed"]});
+map.on("click", resumeSoon); // a tap on another element changes the marks without opening or closing anything
+async function resumeOpen(t, s){
+  await openTask(t);
+  if(task !== t) return;
+  const ids = new Set(s.sel || []);
+  selSet = new Set(elSrc.getFeatures().filter(f=>ids.has(f.getId()))); selected = [...selSet][0] || null; elLayer.changed();
+  if(s.pane==="pList"){ pane("pList"); renderList(); }
+  else if(s.pane==="pEl" && selSet.size){ showEl(false);
+    if(s.notes){ noteCtx = null; notesDirty = null; $("noteIn").value = s.note || ""; showNotes(); noteBtn(); } }
+  if(s.fold) fold(s.fold);
+}
+async function resumeLast(){
+  const s = store.get("resume", null);
+  const ok = s && user && norm(s.who||"")===norm(me) && Date.now() - s.at < RESUME_MAX;
+  const seen = t => t && (isBoss() || forMe(t));
+  let t = ok && s.task ? tasks.find(x=>x.id===s.task) : null;
+  // Open straight from the tasks kept on the phone, so a weak connection doesn't hold it up
+  if(seen(t)) await resumeOpen(t, s);
+  else if(ok && s.over && isBoss()){ await openOverview(s.over.codes, s.over.pack); if(s.fold) fold(s.fold); }
+  resumeReady = true;
+  await tasksLoaded;
+  // The fresh list from the database: closed meanwhile → back to the list; changed → open the new version
+  if(!t || task?.id !== t.id) return;
+  const fresh = tasks.find(x=>x.id===t.id);
+  if(!seen(fresh)){ $("btnBack").click(); toast("Opgaven er lukket eller ikke din mere", 4000); }
+  else if(JSON.stringify(fresh) !== JSON.stringify(t)) await resumeOpen(fresh, resumeNow() || s);
+}
+if(user) tasks = store.get("tasks", []);
+const tasksLoaded = loadTasks();
+resumeLast().catch(e=>{ console.error(e); resumeReady = true; });
 // Try to send leftovers when the connection comes back, but only if the worker chose auto-send
 window.addEventListener("online", ()=>{ if(autoSend) sendPending(); });
 

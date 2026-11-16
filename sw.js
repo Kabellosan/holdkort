@@ -1,7 +1,8 @@
 // Caches map tiles from the kommune's WMS so each tile is only fetched once per phone.
 const TILE_CACHE = "tiles-v1";
 const APP_CACHE = "app-v1";
-const APP_FILES = ["./", "index.html", "manifest.json"];
+const APP_FILES = ["./", "index.html", "manifest.json", "icons/icon-192.png", "icons/icon-512.png"];
+const SHELL_WAIT = 3000; // ms: on a weak connection the app opens from the phone after this, instead of waiting
 const MAX_AGE_DAYS = 180; // the 2024 aerial photo doesn't change; keep tiles for half a year
 
 self.addEventListener("install", e => {
@@ -35,10 +36,29 @@ self.addEventListener("fetch", e => {
     return;
   }
 
-  // App shell and libraries: network first, cache fallback for offline
-  if (e.request.method === "GET" && (url.origin === location.origin || url.hostname === "cdn.jsdelivr.net")) {
-    e.respondWith(fetch(e.request).then(res => {
-      const copy = res.clone(); caches.open(APP_CACHE).then(c => c.put(e.request, copy)); return res;
-    }).catch(() => caches.match(e.request)));
+  if (e.request.method !== "GET") return;
+  // Libraries: their address has a fixed version, so the copy on the phone is always right
+  if (url.hostname === "cdn.jsdelivr.net") {
+    e.respondWith(caches.match(e.request).then(hit => hit || fetch(e.request).then(res => {
+      if (res.ok) { const copy = res.clone(); caches.open(APP_CACHE).then(c => c.put(e.request, copy)); }
+      return res;
+    })));
+    return;
+  }
+  // App shell: network first, so a new version shows at once; but when the phone reloads the page on a weak
+  // connection (it was thrown out of memory), the copy on the phone is used after SHELL_WAIT and offline.
+  // The network answer still updates the copy for next time.
+  if (url.origin === location.origin) {
+    const net = fetch(e.request).then(res => {
+      if (res.ok) { const copy = res.clone(); caches.open(APP_CACHE).then(c => c.put(e.request, copy)); }
+      return res;
+    });
+    e.waitUntil(net.catch(() => {}));
+    e.respondWith((async () => {
+      const hit = await caches.match(e.request, {ignoreSearch: e.request.mode === "navigate"});
+      if (!hit) return net;
+      const late = new Promise(r => setTimeout(() => r(hit), SHELL_WAIT));
+      return Promise.race([net.catch(() => hit), late]);
+    })());
   }
 });
