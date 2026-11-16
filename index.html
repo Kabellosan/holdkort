@@ -2483,23 +2483,74 @@ function ringDone(pts){
 }
 
 // ---- Hold og stryg ----
+// Fast on big tasks (Captain 2026-11-16: "laggy and slow"): finger moves are gathered and handled once per
+// frame; places are found through the source's spatial index (no hit-detection render per point), and while
+// stroking the map isn't drawn again at all (with thousands of places one map frame took most of a second):
+// the places just touched are painted on a plain canvas over the map, blue for in, grey for out, and the map
+// is drawn once, when the finger lifts. Each newly marked place gives a short buzz (Android; iPhones can't)
 const HOLD_MS = 450, HOLD_SLOP = 10; // how long to hold still, and how far the finger may wander meanwhile (px)
+const BRUSH_PX = 12; // how close to a place the finger must pass (px)
 let hold = null, brush = null, brushEnd = 0; // hold: waiting for the finger to stay; brush: stroking
 const nearPx = (a, b) => Math.hypot(a[0]-b[0], a[1]-b[1]);
-const hitsAt = px => map.getFeaturesAtPixel(px, {layerFilter:l=>l===elLayer, hitTolerance:10}).filter(canMulti);
+const brushCv = document.createElement("canvas");
+brushCv.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1";
+brushCv.hidden = true; map.getViewport().appendChild(brushCv);
+function brushPaint(f, on){
+  const x = brushCv.getContext("2d"), g = f.getGeometry(), P = c=>map.getPixelFromCoordinate(c);
+  x.fillStyle = on ? "#2b6cd4cc" : "#8a939ccc"; x.strokeStyle = on ? "#2b6cd4" : "#8a939c"; x.lineJoin = x.lineCap = "round";
+  const ring = r=>r.forEach((c, i)=>{ const [a, b] = P(c); i ? x.lineTo(a, b) : x.moveTo(a, b); });
+  const ty = g.getType(); x.beginPath();
+  if(/Point/.test(ty)) (ty==="Point" ? [g.getCoordinates()] : g.getCoordinates()).forEach(c=>{ const [a, b] = P(c); x.moveTo(a + 9, b); x.arc(a, b, 9, 0, 7); });
+  else if(/LineString/.test(ty)){ (ty==="LineString" ? [g.getCoordinates()] : g.getCoordinates()).forEach(ring); x.lineWidth = 8; x.stroke(); return; }
+  else (ty==="Polygon" ? [g.getCoordinates()] : g.getCoordinates()).forEach(p=>p.forEach(r=>{ ring(r); x.closePath(); }));
+  x.fill("evenodd"); x.lineWidth = 3; x.stroke();
+}
+function brushCanvas(on){
+  brushCv.hidden = !on; if(!on) return;
+  const r = devicePixelRatio || 1, [w, h] = map.getSize();
+  brushCv.width = Math.round(w * r); brushCv.height = Math.round(h * r);
+  brushCv.getContext("2d").setTransform(r, 0, 0, r, 0, 0);
+}
+// the places within BRUSH_PX of the line between two pixels, smallest first
+function placesAlong(a, b){
+  const res = map.getView().getResolution(), tol = BRUSH_PX * res;
+  const A = map.getCoordinateFromPixel(a), B = map.getCoordinateFromPixel(b);
+  const n = Math.max(1, Math.ceil(nearPx(a, b) / 6)), pts = [];
+  for(let i = 0; i <= n; i++) pts.push([A[0] + (B[0]-A[0])*i/n, A[1] + (B[1]-A[1])*i/n]);
+  const box = ol.extent.buffer(ol.extent.boundingExtent(pts), tol);
+  return elSrc.getFeaturesInExtent(box).filter(f=>{
+    const g = f.getGeometry(); if(!g || !canMulti(f)) return false;
+    const poly = /Polygon/.test(g.getType());
+    return pts.some(c=>(poly && g.intersectsCoordinate(c)) || nearPx(g.getClosestPoint(c), c) <= tol);
+  }).sort((x, y)=>spotSize(x) - spotSize(y));
+}
 function brushAt(px){
-  const b = brush, from = b.px; b.px = px;
-  const steps = Math.max(1, Math.ceil(nearPx(from, px) / 8)); // a quick stroke mustn't jump over small things
-  for(let i = 1; i <= steps; i++){
-    const q = [from[0] + (px[0]-from[0])*i/steps, from[1] + (px[1]-from[1])*i/steps];
-    hitsAt(q).forEach(f=>{ if(b.seen.has(f)) return; b.seen.add(f); if(isOn(f)!==b.on){ setOn(f, b.on); b.n++; } });
+  const b = brush; b.todo.push(px);
+  if(!b.raf) b.raf = requestAnimationFrame(brushFrame);
+}
+function brushFrame(){
+  const b = brush; if(!b) return; b.raf = 0;
+  let got = 0;
+  for(const px of b.todo.splice(0)){
+    placesAlong(b.px, px).forEach(f=>{ if(b.seen.has(f)) return; b.seen.add(f);
+      if(isOn(f)!==b.on){ setOn(f, b.on); b.n++; got++; brushPaint(f, b.on); } });
+    b.px = px;
   }
-  pick ? (pick.spots ? spotsCount() : pickCount()) : elLayer.changed();
+  if(!got) return;
+  const now = performance.now(); if(now - b.buzz > 45){ b.buzz = now; navigator.vibrate?.(15); }
+  if(pick) $(pick.spots ? "spotsCount" : "pickCount").textContent = pick.ids.size; // the full count and legend come at the end
+}
+function brushStop(){
+  const b = brush; brush = null; if(!b) return null;
+  if(b.raf){ cancelAnimationFrame(b.raf); brush = b; brushFrame(); brush = null; } // the last moves too
+  brushCanvas(false);
+  return b;
 }
 function holdFire(){
   const h = hold; hold = null; if(!h || !multiOk()) return;
-  const f = hitsAt(h.px).sort((a,b)=>spotSize(a) - spotSize(b))[0]; if(!f) return; // only from a place, so a long press on empty map does nothing
-  brush = {on:!isOn(f), seen:new Set(), n:0, px:h.px, undo:multiSnap()};
+  const f = placesAlong(h.px, h.px)[0]; if(!f) return; // only from a place, so a long press on empty map does nothing
+  brush = {on:!isOn(f), seen:new Set(), n:0, px:h.px, todo:[], raf:0, buzz:performance.now(), undo:multiSnap()};
+  brushCanvas(true);
   navigator.vibrate?.(30);
   brushAt(h.px);
   toast(brush.on ? "Stryg hen over dem, der skal med" : "Stryg hen over dem, der skal ud", 3000);
@@ -2507,7 +2558,7 @@ function holdFire(){
 // One interaction for both: it sees every event before the map moves (added after the others)
 map.addInteraction(new (class extends ol.interaction.Interaction{
   handleEvent(e){
-    if(!multiOk()){ hold = null; brush = null; ringPts = null; return true; }
+    if(!multiOk()){ hold = null; brushStop(); ringPts = null; return true; }
     const n = e.activePointers?.length || 0, t = e.type;
     if(ringOn){
       if(t==="pointerdown"){ ringPts = n===1 ? [e.coordinate] : null; ringSrc.clear(); return true; }
@@ -2523,13 +2574,13 @@ map.addInteraction(new (class extends ol.interaction.Interaction{
     }
     if(t==="pointerdown"){
       clearTimeout(hold?.timer); hold = null;
-      if(brush || n!==1) { brush = null; return true; }
+      if(brush || n!==1) { const b = brushStop(); if(b?.n) multiShow(); return true; }
       hold = {px:e.pixel, timer:setTimeout(holdFire, HOLD_MS)};
       return true;
     }
     if(t==="pointerdrag"){
       if(brush){
-        if(n > 1){ brush = null; return true; }
+        if(n > 1){ const b = brushStop(); if(b?.n) multiShow(); return true; }
         brushAt(e.pixel); e.originalEvent.preventDefault(); return false;
       }
       if(hold && (n > 1 || nearPx(hold.px, e.pixel) > HOLD_SLOP)){ clearTimeout(hold.timer); hold = null; } // it's a pan
@@ -2537,7 +2588,7 @@ map.addInteraction(new (class extends ol.interaction.Interaction{
     }
     if(t==="pointerup"){
       if(hold){ clearTimeout(hold.timer); hold = null; }
-      if(brush){ const b = brush; brush = null; brushEnd = Date.now();
+      if(brush){ const b = brushStop(); brushEnd = Date.now();
         if(b.n){ multiShow(); multiToast(b.n, b.on, b.undo); } else if(!pick) multiShow(); }
     }
     return true;
