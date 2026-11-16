@@ -2686,7 +2686,8 @@ $("btnSpotsOk").onclick = async ()=>{
 // The choice is kept per phone (localStorage layerShow, null = Vis alt).
 let layerSet = new Set(), layerOpen = {open:null};
 function showLayersBtn(){
-  const p = curPane(), on = !!user && (p==="pTasks" || p==="pBrowse");
+  // also in an open task (Captain 2026-11-16 looked for it there); Luk then goes back to the task
+  const p = curPane(), on = !!user && (p==="pTasks" || p==="pBrowse" || (p==="pWork" && !!task && !pick));
   $("btnLayers").hidden = !on; $("btnLayers").classList.toggle("on", p==="pBrowse");
 }
 function startBrowse(){
@@ -2697,7 +2698,9 @@ function startBrowse(){
   $("browseNew").hidden = !canCreate();
   pane("pBrowse"); spotColors(); spotsCount(); spotLoad();
 }
-function endBrowse(){ pick = null; clearTimeout(spotT); elSrc.clear(); layersOpen(false); pane("pTasks"); }
+let browseFrom = null; // the task Lag was opened from
+function endBrowse(){ pick = null; clearTimeout(spotT); elSrc.clear(); layersOpen(false); pane("pTasks");
+  const id = browseFrom; browseFrom = null; const t = id && tasks.find(x=>x.id===id); if(t) openTask(t); }
 function browseCount(){
   const p = pick, v = map.getView().calculateExtent(map.getSize());
   $("browseWhat").textContent = p.show ? shortCodes([...p.show]) : "Alt";
@@ -2746,7 +2749,10 @@ function layersApply(){
   pick.show = show; pick.tcol = null; pick.sel = null; spotColors(); spotsCount();
   clearTimeout(spotT); spotT = setTimeout(spotLoad, 300);
 }
-$("btnLayers").onclick = ()=>{ if(!pick?.browse) startBrowse(); layersOpen(true); };
+$("btnLayers").onclick = ()=>{
+  if(!pick?.browse){ browseFrom = task?.id || null; if(task) $("btnBack").click(); startBrowse();
+    $("btnBrowseClose").textContent = browseFrom ? "‹ Til opgaven" : "✕ Luk"; }
+  layersOpen(true); };
 $("btnBrowseLayers").onclick = ()=>layersOpen(true);
 $("btnLayersClose").onclick = $("btnLayersOk").onclick = $("layersScrim").onclick = ()=>layersOpen(false);
 $("layersAll").onclick = ()=>{ layerSet.clear(); layerOpen.open = null; renderLayers(); layersApply(); };
