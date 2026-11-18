@@ -99,7 +99,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
 @keyframes layersIn{from{transform:translateX(100%)}to{transform:none}}
 #pLayers .allrow{width:100%;justify-content:flex-start;font-size:17px;min-height:56px}
 #pLayers .allrow.on{background:var(--moss);color:#fff;border-color:var(--moss)}
-#pBrowse .twobtn{display:flex;gap:8px}#pBrowse .twobtn .btn{flex:1}
+#pBrowse .twobtn,#pReport .twobtn{display:flex;gap:8px}#pBrowse .twobtn .btn,#pReport .twobtn .btn{flex:1}
 #btnNorth svg{width:30px;height:30px;transition:transform .1s linear}
 .basemap .credit a{color:inherit}
 /* Paler street map, so status and task colours stand out on it */
@@ -915,13 +915,311 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <header><div class="row"><div class="grow"><div class="eyebrow" id="histEyebrow">Historik</div><h2 id="histTitle"></h2></div><button class="btn ghost" id="btnHistClose">Luk</button></div></header>
   <div class="body" id="histList"></div>
 </div>
+<!-- The downloadable report (⬇ Hent som fil): copied into one stand-alone HTML file with the anonymous data put in for /*HK-DATA*/null. Inert here. -->
+<template id="rptTpl">
+<style>
+:root{--ink:#17221c;--ink2:#55645b;--paper:#f2f4ee;--card:#fff;--line:#d3d9cc;--moss:#1f3a2e;--pick:#1f6feb;color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--paper)}
+main{max-width:980px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:16px}
+h1{font-size:26px;margin:0}
+h2{font-size:18px;margin:0 0 8px}
+.card{background:var(--card);border-radius:14px;padding:14px;box-shadow:0 1px 3px #0001}
+.meta{color:var(--ink2);font-size:14px;display:flex;flex-direction:column;gap:2px;margin-top:4px}
+.top{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.top>div{flex:1;min-width:220px}
+button,select{font:inherit;color:inherit}
+.btn{min-height:44px;padding:8px 14px;border-radius:12px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:600}
+.btn.primary{background:var(--moss);color:#fff;border-color:var(--moss)}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.tiles button{border:0;border-top:6px solid var(--c);border-radius:12px;padding:10px 6px;background:var(--paper);cursor:pointer;text-align:center}
+.tiles button.on{outline:3px solid var(--pick)}
+.tiles b{display:block;font-size:24px;font-variant-numeric:tabular-nums}
+.tiles span{font-size:13px;color:var(--ink2)}
+.bar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--line);margin-top:10px}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.filters select{min-height:44px;border-radius:12px;border:1px solid var(--line);background:var(--card);padding:6px 10px;max-width:100%}
+.filters .muted{font-size:14px}
+.muted{color:var(--ink2)}
+.mapwrap{container-type:size;position:relative;border-radius:14px;overflow:hidden;background:#eef0ea;border:1px solid var(--line);height:min(70vh,560px);touch-action:none;user-select:none;-webkit-user-select:none}
+#map{width:100%;height:100%;display:block;cursor:grab}
+#map.drag{cursor:grabbing}
+.mapbtns{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:6px}
+.mapbtns button{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:#fffd;font-size:20px;font-weight:700;cursor:pointer}
+.maptop{position:absolute;left:10px;top:10px;display:flex;gap:6px;flex-wrap:wrap}
+.maptop button{min-height:40px;border-radius:12px;border:1px solid var(--line);background:#fffd;padding:4px 10px;font-size:14px;font-weight:600;cursor:pointer}
+.maptop button[aria-pressed=true]{background:var(--moss);color:#fff;border-color:var(--moss)}
+.credit{position:absolute;right:6px;bottom:4px;font-size:11px;color:var(--ink2);background:#fffc;padding:1px 5px;border-radius:6px}
+.scale{position:absolute;left:10px;bottom:10px;font-size:12px;display:flex;flex-direction:column;align-items:center}
+.scale i{display:block;height:5px;background:var(--ink);border-radius:2px}
+#info{min-height:64px}
+#info .st{font-weight:700}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--ink2);margin-top:8px}
+.dot{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-weight:600;font-size:13px;color:var(--ink2);border-bottom:2px solid var(--line);padding:6px 4px}
+td{border-bottom:1px solid var(--line);padding:7px 4px;vertical-align:top}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tbody tr.go{cursor:pointer}
+tbody tr.go:hover{background:var(--paper)}
+tr.on{background:#e6efff}
+.small{font-size:13px;color:var(--ink2)}
+.foot{font-size:13px;color:var(--ink2)}
+@media (max-width:520px){.tiles{grid-template-columns:repeat(2,1fr)} main{padding:12px}}
+@media print{
+  @page{margin:12mm}
+  body{background:#fff}
+  .noprint,.mapbtns,.maptop{display:none!important}
+  .card{box-shadow:none;padding:0}
+  main{padding:0;gap:12px}
+  .mapwrap{height:auto;aspect-ratio:var(--ar,1.5);width:min(100%,calc(140mm * var(--ar,1.5)));margin:0 auto;break-inside:avoid} /* same view as on screen */
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  tr{break-inside:avoid}
+}
+</style>
+<main>
+  <div class="card top">
+    <div><h1 id="name"></h1><div class="meta" id="meta"></div></div>
+    <button class="btn primary noprint" id="print">🖨 Gem som PDF</button>
+  </div>
+  <div class="card">
+    <div class="tiles" id="tiles"></div>
+    <div class="bar" id="bar"></div>
+  </div>
+  <div class="card filters noprint">
+    <select id="fStreet" aria-label="Vej"></select>
+    <select id="fType" aria-label="Type"></select>
+    <button class="btn" id="fClear" hidden>✕ Vis alt</button>
+    <span class="muted" id="fCount"></span>
+  </div>
+  <div class="small" id="fPrint" hidden></div>
+  <div class="card">
+    <h2>Kort</h2>
+    <div class="mapwrap" id="wrap">
+      <svg id="map" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Kort over stederne efter status">
+        <g id="bg"></g><g id="out"></g><g id="feat"></g><g id="sel"></g><g id="lab"></g>
+      </svg>
+      <div class="maptop"><button id="bgBtn" aria-pressed="true">🛰 Luftfoto</button></div>
+      <div class="mapbtns"><button id="zin" aria-label="Zoom ind">+</button><button id="zout" aria-label="Zoom ud">−</button><button id="zall" aria-label="Vis alle steder" style="font-size:16px">⤢</button></div>
+      <div class="scale" id="scale"></div>
+      <div class="credit" id="credit">Luftfoto © Ikast-Brande Kommune</div>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div id="info" class="small" style="margin-top:10px">Tryk på et sted på kortet for at se status og datoer. Træk for at flytte, knib eller rul for at zoome.</div>
+  </div>
+  <div class="card" id="typeCard"><h2>Pr. type</h2><table><thead><tr><th>Type</th><th class="n">Steder</th><th class="n">Færdig</th></tr></thead><tbody id="types"></tbody></table></div>
+  <div class="card"><h2>Blokeret</h2><div id="blocked"></div></div>
+  <div class="card"><h2>Pr. vej</h2><div class="small noprint" style="margin-bottom:6px">Tryk på en vej for at se den på kortet.</div>
+    <table><thead><tr><th>Vej</th><th class="n">Steder</th><th class="n">Færdig</th><th class="n">Blok.</th><th class="n">Sidst færdig</th></tr></thead><tbody id="streets"></tbody></table></div>
+  <div class="card"><h2>Hvert sted</h2>
+    <table><thead><tr><th>Sted</th><th>Status</th><th class="n">Meldt færdig</th></tr></thead><tbody id="list"></tbody></table>
+    <button class="btn noprint" id="more" hidden style="margin-top:10px">Vis flere</button></div>
+  <div class="foot" id="foot"></div>
+</main>
+<script>const D = /*HK-DATA*/null;</script>
+<script>
+(function(){
+  if(!D) return;
+  const $ = id => document.getElementById(id), NS = "http://www.w3.org/2000/svg";
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
+  const ORDER = ["done","doing","blocked","todo"], C = D.colors, L = D.labels, EDGE = D.edge;
+  const P = D.places, NONE = "Uden vejnavn";
+  P.forEach((p, i) => { p.i = i; p.sk = p.s || NONE;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const walk = a => { if(typeof a[0] === "number"){ x0 = Math.min(x0, a[0]); y0 = Math.min(y0, a[1]); x1 = Math.max(x1, a[0]); y1 = Math.max(y1, a[1]); } else a.forEach(walk); };
+    walk(p.g); p.b = [x0, y0, x1, y1]; });
+  document.title = D.name + " · rapport";
+  $("name").textContent = D.name;
+  $("meta").innerHTML = D.meta.map(m => `<span>${esc(m)}</span>`).join("");
+  $("foot").textContent = D.foot;
+  $("print").onclick = () => print();
+
+  // ---- filters ----
+  const F = {st:null, street:"", type:""};
+  const streets = [...new Set(P.map(p => p.sk))].sort((a, b) => a === NONE ? 1 : b === NONE ? -1 : a.localeCompare(b, "da"));
+  const types = [...new Set(P.map(p => p.t))].sort((a, b) => a.localeCompare(b, "da"));
+  $("fStreet").innerHTML = `<option value="">Alle veje (${streets.length})</option>` + streets.map(s => `<option>${esc(s)}</option>`).join("");
+  $("fType").innerHTML = `<option value="">Alle typer (${types.length})</option>` + types.map(s => `<option>${esc(s)}</option>`).join("");
+  $("fType").hidden = types.length < 2;
+  $("fStreet").onchange = e => { F.street = e.target.value; apply(true); };
+  $("fType").onchange = e => { F.type = e.target.value; apply(true); };
+  $("fClear").onclick = () => { F.st = null; F.street = ""; F.type = ""; $("fStreet").value = ""; $("fType").value = ""; apply(true); };
+  const keep = p => (!F.st || p.st === F.st) && (!F.street || p.sk === F.street) && (!F.type || p.t === F.type);
+
+  // ---- map: EPSG:25832 metres, y flipped in the SVG ----
+  const svg = $("map"), wrap = $("wrap");
+  let cx = 0, cy = 0, res = 1, sel = -1, bgOn = true;
+  const all = P.length ? P.reduce((a, p) => [Math.min(a[0], p.b[0]), Math.min(a[1], p.b[1]), Math.max(a[2], p.b[2]), Math.max(a[3], p.b[3])], [Infinity, Infinity, -Infinity, -Infinity]) : (D.outline ? D.outlineBox : [0, 0, 100, 100]);
+  const size = () => [wrap.clientWidth || 600, wrap.clientHeight || 400];
+  function fit(b){ const [w, h] = size(), bw = Math.max(b[2] - b[0], 30), bh = Math.max(b[3] - b[1], 30);
+    cx = (b[0] + b[2]) / 2; cy = (b[1] + b[3]) / 2; res = Math.max(bw / (w - 60), bh / (h - 60), 0.05); draw(); }
+  const pathOf = (rings, close) => rings.map(r => "M" + r.map(c => c[0] + " " + (-c[1])).join("L") + (close ? "Z" : "")).join("");
+  // Features are built once; filters only show/hide them
+  const els = [];
+  if(D.outline){ const o = document.createElementNS(NS, "path"); o.setAttribute("d", pathOf(D.outline, true));
+    o.setAttribute("fill", "none"); o.setAttribute("stroke", "#1f3a2e"); o.setAttribute("stroke-width", "2"); o.setAttribute("stroke-dasharray", "8 5"); o.setAttribute("vector-effect", "non-scaling-stroke"); $("out").appendChild(o); }
+  const byStatus = {}; ORDER.forEach(s => { const g = document.createElementNS(NS, "g"); byStatus[s] = g; });
+  ["done","doing","todo","blocked"].forEach(s => $("feat").appendChild(byStatus[s])); // problems on top
+  P.forEach(p => {
+    let e;
+    if(p.k === "A"){ e = document.createElementNS(NS, "path"); e.setAttribute("d", pathOf(p.g, true)); e.setAttribute("fill", C[p.st]); e.setAttribute("stroke", C[p.st]); e.setAttribute("stroke-width", "3"); e.setAttribute("stroke-linejoin", "round"); }
+    else if(p.k === "L"){ e = document.createElementNS(NS, "path"); e.setAttribute("d", pathOf(p.g, false)); e.setAttribute("fill", "none"); e.setAttribute("stroke", C[p.st]); e.setAttribute("stroke-width", "4"); e.setAttribute("stroke-linecap", "round"); }
+    else { e = document.createElementNS(NS, "g"); p.g.forEach(c => { const k = document.createElementNS(NS, "circle"); k.setAttribute("cx", c[0]); k.setAttribute("cy", -c[1]); k.setAttribute("fill", C[p.st]); k.setAttribute("stroke", EDGE[p.st]); k.setAttribute("stroke-width", "1.5"); k.setAttribute("vector-effect", "non-scaling-stroke"); k.classList.add("pt"); e.appendChild(k); }); }
+    if(p.k !== "P") e.setAttribute("vector-effect", "non-scaling-stroke");
+    els[p.i] = e; byStatus[p.st].appendChild(e);
+  });
+  const dots = [...svg.querySelectorAll(".pt")];
+  // Street labels at the middle of each street's places
+  const labs = streets.filter(s => s !== NONE).map(s => { const ps = P.filter(p => p.sk === s); let x = 0, y = 0;
+    ps.forEach(p => { x += (p.b[0] + p.b[2]) / 2; y += (p.b[1] + p.b[3]) / 2; });
+    const t = document.createElementNS(NS, "text"); t.textContent = s; t.setAttribute("text-anchor", "middle");
+    t.setAttribute("fill", "#17221c"); t.setAttribute("stroke", "#fff"); t.setAttribute("paint-order", "stroke"); t.setAttribute("font-weight", "600");
+    t.setAttribute("font-family", "system-ui,sans-serif"); $("lab").appendChild(t); return {s, t, x: x / ps.length, y: y / ps.length, n: ps.length}; })
+    .sort((a, b) => b.n - a.n);
+  // Aerial photo: one picture from the kommune's map server for the view, after moving stops
+  const bgImg = document.createElementNS(NS, "image"); bgImg.setAttribute("preserveAspectRatio", "none"); bgImg.setAttribute("opacity", ".8"); $("bg").appendChild(bgImg);
+  let bgTimer = null, bgFail = false;
+  bgImg.addEventListener("error", () => { bgFail = true; $("credit").textContent = "Luftfoto kræver internet"; });
+  bgImg.addEventListener("load", () => { bgFail = false; $("credit").textContent = "Luftfoto © Ikast-Brande Kommune"; });
+  function loadBg(){
+    clearTimeout(bgTimer); if(!bgOn){ bgImg.removeAttribute("href"); return; }
+    bgTimer = setTimeout(() => { const [w, h] = size(), k = Math.min(window.devicePixelRatio || 1, 2), W = Math.min(Math.round(w * k), 2048), H = Math.min(Math.round(h * k), 2048);
+      const x0 = cx - w * res / 2, x1 = cx + w * res / 2, y0 = cy - h * res / 2, y1 = cy + h * res / 2;
+      const url = `${D.wms}?servicename=${D.wmsService}&service=WMS&version=1.1.1&request=GetMap&layers=${D.wmsLayer}&styles=&srs=EPSG:25832&format=image/jpeg&bbox=${x0.toFixed(1)},${y0.toFixed(1)},${x1.toFixed(1)},${y1.toFixed(1)}&width=${W}&height=${H}`;
+      const nx = x0, ny = -y1, nw = x1 - x0, nh = y1 - y0;
+      const pre = new Image(); pre.onload = () => { bgImg.setAttribute("href", url); bgImg.setAttribute("x", nx); bgImg.setAttribute("y", ny); bgImg.setAttribute("width", nw); bgImg.setAttribute("height", nh); bgImg.dispatchEvent(new Event("load")); };
+      pre.onerror = () => bgImg.dispatchEvent(new Event("error")); pre.src = url; }, 250);
+  }
+  $("bgBtn").onclick = () => { bgOn = !bgOn; $("bgBtn").setAttribute("aria-pressed", bgOn); if(!bgOn) $("credit").textContent = ""; loadBg(); };
+  let raf = 0;
+  function draw(){ cancelAnimationFrame(raf); raf = requestAnimationFrame(() => {
+    const [w, h] = size();
+    svg.setAttribute("viewBox", `${cx - w * res / 2} ${-cy - h * res / 2} ${w * res} ${h * res}`); wrap.style.setProperty("--ar", (w / h).toFixed(4));
+    const r = 5.5 * res; dots.forEach(d => d.setAttribute("r", r));
+    // Labels: font follows the zoom, and only as many as don't crowd each other
+    const fs = 13 * res, used = [];
+    labs.forEach(l => { const box = [l.x - l.t.textContent.length * fs * 0.3, l.y - fs, l.x + l.t.textContent.length * fs * 0.3, l.y + fs];
+      if(l.off){ l.t.style.display = "none"; return; }
+      const hit = used.some(u => !(box[2] < u[0] || box[0] > u[2] || box[3] < u[1] || box[1] > u[3]));
+      l.t.style.display = hit ? "none" : ""; if(hit) return; used.push(box);
+      l.t.setAttribute("x", l.x); l.t.setAttribute("y", -l.y - 9 * res); l.t.setAttribute("font-size", fs); l.t.setAttribute("stroke-width", 3.5 * res); });
+    // Scale bar about 100 px
+    const want = 110 * res, e = 10 ** Math.floor(Math.log10(want)), len = [5, 2, 1].map(k => k * e).find(v => v <= want) || e;
+    $("scale").innerHTML = `<span>${len >= 1000 ? len / 1000 + " km" : len + " m"}</span><i style="width:${len / res / w * 100}cqw"></i>`;
+    drawSel(); }); loadBg(); }
+  function drawSel(){ const g = $("sel"); g.innerHTML = ""; if(sel < 0) return; const p = P[sel];
+    const e = els[sel].cloneNode(true); e.querySelectorAll ? e.querySelectorAll("circle").forEach(k => { k.setAttribute("r", 9 * res); k.setAttribute("fill", "none"); k.setAttribute("stroke", "#1f6feb"); k.setAttribute("stroke-width", "4"); }) : 0;
+    if(p.k !== "P"){ e.setAttribute("fill", "none"); e.setAttribute("stroke", "#1f6feb"); e.setAttribute("stroke-width", p.k === "L" ? "8" : "5"); e.setAttribute("stroke-opacity", ".85"); }
+    e.style.display = ""; g.appendChild(e); }
+  // Pan, pinch and wheel
+  const ptrs = new Map(); let start = null, moved = false;
+  const toMap = (px, py) => { const r = svg.getBoundingClientRect(), [w, h] = size(); return [cx + (px - r.left - w / 2) * res, cy - (py - r.top - h / 2) * res]; };
+  function zoomAt(px, py, f){ const [mx, my] = toMap(px, py); res = Math.min(Math.max(res * f, 0.03), 200); const [nx, ny] = toMap(px, py); cx += mx - nx; cy += my - ny; draw(); }
+  svg.addEventListener("pointerdown", e => { svg.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]); moved = false;
+    start = {cx, cy, res, pts: new Map(ptrs)}; svg.classList.add("drag"); });
+  svg.addEventListener("pointermove", e => { if(!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+    const a = [...start.pts.values()], b = [...ptrs.values()];
+    if(ptrs.size === 1 && a.length === 1){ const dx = b[0][0] - a[0][0], dy = b[0][1] - a[0][1]; if(Math.hypot(dx, dy) > 6) moved = true;
+      if(moved){ cx = start.cx - dx * start.res; cy = start.cy + dy * start.res; res = start.res; draw(); } }
+    else if(ptrs.size === 2 && a.length === 2){ moved = true; const d0 = Math.hypot(a[0][0] - a[1][0], a[0][1] - a[1][1]), d1 = Math.hypot(b[0][0] - b[1][0], b[0][1] - b[1][1]);
+      const m0 = [(a[0][0] + a[1][0]) / 2, (a[0][1] + a[1][1]) / 2], m1 = [(b[0][0] + b[1][0]) / 2, (b[0][1] + b[1][1]) / 2];
+      cx = start.cx; cy = start.cy; res = start.res; const [mx, my] = toMap(m0[0], m0[1]);
+      res = Math.min(Math.max(start.res * d0 / Math.max(d1, 1), 0.03), 200);
+      const r = svg.getBoundingClientRect(), [w, h] = size(); cx = mx - (m1[0] - r.left - w / 2) * res; cy = my + (m1[1] - r.top - h / 2) * res; draw(); } });
+  const up = e => { if(!ptrs.has(e.pointerId)) return; ptrs.delete(e.pointerId); svg.classList.remove("drag");
+    if(!moved && ptrs.size === 0 && e.type === "pointerup") tap(e.clientX, e.clientY);
+    start = {cx, cy, res, pts: new Map(ptrs)}; };
+  svg.addEventListener("pointerup", up); svg.addEventListener("pointercancel", up);
+  svg.addEventListener("wheel", e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, Math.exp(e.deltaY * 0.0015)); }, {passive: false});
+  $("zin").onclick = () => { const r = svg.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 0.5); };
+  $("zout").onclick = () => { const r = svg.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 2); };
+  $("zall").onclick = () => fit(shownBox());
+  // Tap: the smallest shown place under the finger (areas by inside, lines and points by distance)
+  const segD = (p, a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = dx * dx + dy * dy, t = l ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l)) : 0; return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy); };
+  const inside = (p, r) => { let c = false; for(let i = 0, j = r.length - 1; i < r.length; j = i++){ const a = r[i], b = r[j]; if((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; };
+  function tap(px, py){
+    const m = toMap(px, py), tol = 14 * res; let best = -1, bs = Infinity;
+    P.forEach(p => { if(!keep(p)) return; const b = p.b; if(m[0] < b[0] - tol || m[0] > b[2] + tol || m[1] < b[1] - tol || m[1] > b[3] + tol) return;
+      let d = Infinity;
+      if(p.k === "P") p.g.forEach(c => d = Math.min(d, Math.hypot(c[0] - m[0], c[1] - m[1])));
+      else { p.g.forEach(r => { for(let i = 1; i < r.length; i++) d = Math.min(d, segD(m, r[i - 1], r[i])); }); if(p.k === "A" && p.g.some(r => inside(m, r))) d = 0; }
+      if(d > tol) return; const s = (b[2] - b[0]) * (b[3] - b[1]) + d * 1e3; if(s < bs){ bs = s; best = p.i; } });
+    select(best, false);
+  }
+  function select(i, zoom){
+    sel = i; drawSel(); renderList();
+    if(i < 0){ $("info").innerHTML = "Tryk på et sted på kortet for at se status og datoer."; return; }
+    const p = P[i];
+    $("info").innerHTML = `<div style="font-size:16px;color:var(--ink)"><b>${esc(p.t)}</b></div>${p.w ? `<div>${esc(p.w)}</div>` : ""}
+      <div style="margin-top:4px;color:var(--ink)"><span class="dot" style="background:${C[p.st]}"></span><span class="st">${L[p.st]}</span>${p.r ? `: ${esc(p.r)}` : ""}${p.d && p.st !== "todo" ? ` · siden ${esc(p.d)}` : ""}</div>
+      <div>${p.n ? `Meldt færdig ${p.n === 1 ? "1 gang" : p.n + " gange"} siden ${esc(D.sinceShort)}, sidst ${esc(p.l)}` : `Ikke meldt færdig siden ${esc(D.sinceShort)}`}</div>`;
+    if(zoom){ const b = p.b, pad = 40; fit([b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad]); }
+  }
+  const shownBox = () => { const s = P.filter(keep); if(!s.length) return all;
+    return s.reduce((a, p) => [Math.min(a[0], p.b[0]), Math.min(a[1], p.b[1]), Math.max(a[2], p.b[2]), Math.max(a[3], p.b[3])], [Infinity, Infinity, -Infinity, -Infinity]); };
+
+  // ---- numbers and tables, for what the filters let through ----
+  let listN = 200;
+  function apply(refit){
+    P.forEach(p => els[p.i].style.display = keep(p) ? "" : "none");
+    if(sel >= 0 && !keep(P[sel])) sel = -1;
+    const shownSt = new Set(P.filter(keep).map(p => p.sk)); labs.forEach(l => l.off = !shownSt.has(l.s)); // no names of streets with nothing shown
+    const s = P.filter(keep), n = s.length, c = {done:0, doing:0, blocked:0, todo:0}; s.forEach(p => c[p.st]++);
+    const on = F.st || F.street || F.type;
+    $("fClear").hidden = !on;
+    $("fCount").textContent = on ? `Viser ${n} af ${P.length} steder` : `${P.length} steder`;
+    const fl = [F.st && L[F.st], F.street, F.type].filter(Boolean);
+    $("fPrint").hidden = !fl.length; $("fPrint").textContent = fl.length ? "Udsnit: " + fl.join(" · ") : "";
+    $("tiles").innerHTML = ORDER.map(k => `<button data-st="${k}" class="${F.st === k ? "on" : ""}" style="--c:${C[k]}" aria-pressed="${F.st === k}"><b>${c[k]}</b><span>${L[k]} · ${n ? Math.round(c[k] / n * 100) : 0} %</span></button>`).join("");
+    $("tiles").querySelectorAll("button").forEach(b => b.onclick = () => { F.st = F.st === b.dataset.st ? null : b.dataset.st; apply(true); });
+    $("bar").innerHTML = n ? ORDER.map(k => `<i style="width:${c[k] / n * 100}%;background:${C[k]}"></i>`).join("") : "";
+    $("legend").innerHTML = ORDER.filter(k => c[k]).map(k => `<span><span class="dot" style="background:${C[k]}"></span>${L[k]}</span>`).join("") + (D.outline ? `<span>- - - opgavens område</span>` : "");
+    // Per type
+    const ty = new Map(); s.forEach(p => { const q = ty.get(p.t) || {n:0, d:0}; q.n++; if(p.st === "done") q.d++; ty.set(p.t, q); });
+    $("typeCard").hidden = types.length < 2;
+    $("types").innerHTML = [...ty].sort((a, b) => b[1].n - a[1].n).map(([k, q]) => `<tr class="go" data-type="${esc(k)}"><td>${esc(k)}</td><td class="n">${q.n}</td><td class="n">${q.d}</td></tr>`).join("");
+    $("types").querySelectorAll("tr").forEach(r => r.onclick = () => { F.type = F.type === r.dataset.type ? "" : r.dataset.type; $("fType").value = F.type; apply(true); scrollMap(); });
+    // Blocked by reason and street
+    const bl = s.filter(p => p.st === "blocked"), rs = new Map();
+    bl.forEach(p => { const m = rs.get(p.r) || new Map(), q = m.get(p.sk) || {n:0, l:"", lk:""}; q.n++; if((p.dk || "") > q.lk){ q.lk = p.dk; q.l = p.d; } m.set(p.sk, q); rs.set(p.r, m); });
+    $("blocked").innerHTML = bl.length ? [...rs].map(([why, m]) => { const k = [...m.values()].reduce((a, q) => a + q.n, 0);
+      return `<p style="margin:6px 0"><b>${esc(D.reasonIcon[why] || "")}${esc(why)}</b>: ${k} ${k === 1 ? "sted" : "steder"}</p><table><tbody>${[...m].sort((a, b) => b[1].n - a[1].n).map(([st, q]) => `<tr class="go" data-street="${esc(st)}" data-bl="1"><td>${esc(st)}</td><td class="n">${q.n} ${q.n === 1 ? "sted" : "steder"}</td><td class="n">${esc(q.l)}</td></tr>`).join("")}</tbody></table>`; }).join("")
+      : `<p class="small" style="margin:0">Ingen steder er blokeret${on ? " i dette udsnit" : ""}.</p>`;
+    $("blocked").querySelectorAll("tr").forEach(r => r.onclick = () => { F.st = "blocked"; F.street = r.dataset.street; $("fStreet").value = F.street; apply(true); scrollMap(); });
+    // Per street
+    const sm = new Map(); s.forEach(p => { const q = sm.get(p.sk) || {n:0, d:0, b:0, l:"", lk:""}; q.n++; if(p.st === "done") q.d++; if(p.st === "blocked") q.b++; if((p.lk || "") > q.lk){ q.lk = p.lk; q.l = p.l; } sm.set(p.sk, q); });
+    $("streets").innerHTML = [...sm].sort((a, b) => a[0] === NONE ? 1 : b[0] === NONE ? -1 : a[0].localeCompare(b[0], "da"))
+      .map(([k, q]) => `<tr class="go${F.street === k ? " on" : ""}" data-street="${esc(k)}"><td>${esc(k)}</td><td class="n">${q.n}</td><td class="n">${q.d}</td><td class="n">${q.b || ""}</td><td class="n">${q.l ? esc(q.l) : "–"}</td></tr>`).join("");
+    $("streets").querySelectorAll("tr").forEach(r => r.onclick = () => { F.street = F.street === r.dataset.street ? "" : r.dataset.street; $("fStreet").value = F.street; apply(true); scrollMap(); });
+    listN = 200; renderList();
+    if(refit) fit(shownBox());
+  }
+  const scrollMap = () => wrap.scrollIntoView({behavior: "smooth", block: "center"});
+  function renderList(){
+    const s = P.filter(keep).sort((a, b) => (a.s || "~").localeCompare(b.s || "~", "da") || a.t.localeCompare(b.t, "da"));
+    $("list").innerHTML = s.slice(0, listN).map(p => `<tr class="go${p.i === sel ? " on" : ""}" data-i="${p.i}"><td>${esc(p.t)}${p.w ? `<div class="small">${esc(p.w)}</div>` : ""}</td>
+      <td><span class="dot" style="background:${C[p.st]}"></span>${L[p.st]}${p.st === "blocked" || p.st === "doing" ? `<div class="small">${[p.r, p.d ? "siden " + p.d : ""].filter(Boolean).map(esc).join(", ")}</div>` : ""}</td>
+      <td class="n">${p.n ? `${p.n === 1 ? "1 gang" : p.n + " gange"}, sidst ${esc(p.l)}` : "–"}</td></tr>`).join("");
+    $("list").querySelectorAll("tr").forEach(r => r.onclick = () => { select(+r.dataset.i, true); scrollMap(); });
+    $("more").hidden = s.length <= listN; $("more").textContent = `Vis flere (${s.length - listN} til)`;
+  }
+  $("more").onclick = () => { listN += 500; renderList(); };
+  let printing = false; // keep the view while printing; the print layout scales it, so the map is the one on screen
+  window.addEventListener("resize", () => { if(!printing) draw(); });
+  window.addEventListener("afterprint", () => { printing = false; draw(); });
+  // Print the whole list, not just the first rows
+  window.addEventListener("beforeprint", () => { printing = true; listN = Infinity; renderList(); });
+  apply(false); fit(all);
+})();
+</script>
+</template>
 <!-- Rapport til kommunen (2026-11-18): what, where and when for a task; no names, no clock times, no notes, no photos -->
 <div class="panel" id="pReport" hidden>
   <header class="noprint"><div class="row"><button class="btn ghost" id="btnReportClose">‹ Tilbage</button><div class="grow"><div class="eyebrow">Rapport til kommunen</div><h2 id="reportTitle"></h2></div></div></header>
   <div class="body" id="reportBody"></div>
   <footer class="noprint">
     <div class="muted" style="font-size:13px">Rapporten har ingen navne, klokkeslæt, noter eller billeder. Tjek at opgavens navn heller ikke nævner en person.</div>
-    <button class="btn primary" id="btnReportPrint">🖨 Gem som PDF eller print</button>
+    <div class="twobtn"><button class="btn" id="btnReportFile">⬇ Hent som fil</button><button class="btn primary" id="btnReportPrint">🖨 Gem som PDF</button></div>
   </footer>
 </div>
 <!-- Noter og billeder for one element (or the marked ones): earlier notes with who wrote them and when, and a box for a new one -->
@@ -4445,8 +4743,10 @@ function reportMap(rows, t){
     <g transform="translate(${W-bar-20} ${H-20})" font-family="system-ui,sans-serif" font-size="${Math.round(Math.max(W,H)/45)}" fill="#17221c">
       <rect width="${bar}" height="6" fill="#17221c"/><text x="${bar/2}" y="-6" text-anchor="middle">${lab}</text></g></svg>`;
 }
+let lastReport = null; // the report on screen, for ⬇ Hent som fil
 async function showReport(){
   if(!task) return;
+  lastReport = null;
   if(!elsReady){ toast("Stederne er ikke hentet endnu. Prøv igen om lidt.", 3500); return; }
   const t = task, B = $("reportBody");
   $("reportTitle").textContent = t.name;
@@ -4460,6 +4760,7 @@ async function showReport(){
   try{ days = await doneDays(rows.map(r=>r.id), since); } catch(e){ console.error(e); logFail = true; }
   if($("pReport").hidden || task !== t) return;
   rows.forEach(r=>{ const s = new Set(days.get(r.id) || []); if(r.st==="done" && r.day) s.add(r.day); r.done = [...s].sort(); r.last = r.done.at(-1) || ""; });
+  lastReport = {t, rows, since, logFail};
   const n = rows.length, c = {done:0, doing:0, blocked:0, todo:0}; rows.forEach(r=>c[r.st]++);
   const pct = k => n ? Math.round(c[k]/n*100) : 0;
   const stCell = s => `<span class="st"><i style="background:${COLORS[s]};${s==="done" ? `box-shadow:0 0 0 1px ${DONE_EDGE}` : ""}"></i>${LABEL[s]}</span>`;
@@ -4500,6 +4801,41 @@ async function showReport(){
 }
 $("btnReport").onclick = showReport;
 $("btnReportClose").onclick = ()=>{ $("pReport").hidden = true; };
+// ⬇ Hent som fil: one stand-alone HTML file (the #rptTpl page plus the data), to email to the kommune. It opens in any browser
+// without a login; only the aerial photo behind the map needs the internet. Same data as the page: no names, times, notes or photos.
+function reportData({t, rows, since, logFail}){
+  const r1 = v => Math.round(v*10)/10, pt = c => [r1(c[0]), r1(c[1])];
+  const geo = g => { const ty = g.getType(), c = g.getCoordinates();
+    if(ty==="Polygon") return {k:"A", g:c.map(r=>r.map(pt))};
+    if(ty==="MultiPolygon") return {k:"A", g:c.flat().map(r=>r.map(pt))};
+    if(ty==="LineString") return {k:"L", g:[c.map(pt)]};
+    if(ty==="MultiLineString") return {k:"L", g:c.map(l=>l.map(pt))};
+    if(ty==="Point") return {k:"P", g:[pt(c)]};
+    if(ty==="MultiPoint") return {k:"P", g:c.map(pt)};
+    return {k:"P", g:[pt(ol.extent.getCenter(g.getExtent()))]}; };
+  const outline = !t.spots ? shapeGeom(t).getCoordinates().map(r=>r.map(pt)) : null;
+  const firstDone = rows.flatMap(r=>r.done).sort()[0];
+  return {name: t.name, made: today(),
+    meta: [packCodes(t.codes || []) + scopeOf(t), `Opgaven oprettet ${longDate(since)}${firstDone ? ` · første færdige ${longDate(firstDone)}` : ""}`, `Status pr. ${longDate(today())} · ${rows.length} ${rows.length===1 ? "sted" : "steder"}`],
+    foot: `Lavet med Holdkort ${longDate(today())}. Kun hvad, hvor og hvilken dag: ingen navne, klokkeslæt, noter eller billeder. "Meldt færdig" tæller de dage, et sted er meldt færdigt siden opgaven blev oprettet (${longDate(since)}), også i andre opgaver.${logFail ? " Historikken kunne ikke hentes, så tallene for meldt færdig er ufuldstændige." : ""}`,
+    sinceShort: dayShort(since), colors: {done:COLORS.done, doing:COLORS.doing, blocked:COLORS.blocked, todo:COLORS.todo},
+    edge: {done:DONE_EDGE, todo:"#8f2626", doing:"#9a6b00", blocked:"#000"}, labels: {done:LABEL.done, doing:LABEL.doing, blocked:LABEL.blocked, todo:LABEL.todo},
+    reasonIcon: {"Bil parkeret":"🚗 ", "Vejarbejde":"🚧 "}, wms: WMS_URL, wmsService: WMS_SERVICE, wmsLayer: LAYER_ORTO, outline,
+    places: rows.map(r=>({t:r.name, s:r.street, w:r.where, st:r.st, r:r.reason || "", dk:r.day, d:r.day ? dayShort(r.day) : "", n:r.done.length, lk:r.last, l:r.last ? dayShort(r.last) : "", ...geo(r.f.getGeometry())}))};
+}
+function reportHtml(d){
+  const json = JSON.stringify(d).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029"); // can't close the script tag
+  const body = $("rptTpl").innerHTML.replace("/*HK-DATA*/null", ()=>json);
+  return `<!doctype html>\n<html lang="da"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(d.name)} · rapport</title></head><body>\n${body}</body></html>\n`;
+}
+$("btnReportFile").onclick = ()=>{
+  if(!lastReport){ toast("Vent til rapporten er færdig.", 2500); return; }
+  const html = reportHtml(reportData(lastReport));
+  const name = `Rapport ${lastReport.t.name} ${today()}`.replace(/[\\/:*?"<>|]+/g, "-").trim() + ".html";
+  const u = URL.createObjectURL(new Blob([html], {type:"text/html"})), a = document.createElement("a");
+  a.href = u; a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u), 60000);
+  toast("Filen er hentet (ligger under Overførsler). Send den som vedhæftet fil; den åbner i en browser uden login.", 6000);
+};
 $("btnReportPrint").onclick = ()=>{
   const title = document.title; document.title = `Rapport ${task ? task.name : ""} ${today()}`.trim(); // the PDF's file name
   document.body.classList.add("printing");
