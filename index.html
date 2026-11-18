@@ -80,6 +80,14 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
 #btnNorth{position:absolute;top:calc(env(safe-area-inset-top,0px) + 64px);right:12px;width:44px;height:44px;border-radius:50%;padding:0;display:flex;align-items:center;justify-content:center;
   background:#ffffff8c;-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);border:1px solid #0000001f;box-shadow:0 1px 3px #0000001f}
 #btnNorth[hidden]{display:none}
+/* "Henter …" (2026-11-18, Captain wanted to know whether everything is loaded): a small sign at the top while the map
+   still waits for something, never in the way of the map; turns orange with "Prøv igen" if it didn't come */
+#loadChip{position:absolute;top:calc(env(safe-area-inset-top,0px) + 70px);left:50%;transform:translateX(-50%);z-index:4;display:flex;align-items:center;gap:8px;
+  max-width:calc(100% - 170px);min-height:0;padding:7px 13px;border-radius:999px;border:0;background:#fffffff0;color:#1f2a1f;font:inherit;font-size:14px;
+  box-shadow:0 1px 5px #0004;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#loadChip.err{background:#b45309;color:#fff;pointer-events:auto;white-space:normal;text-align:center;border-radius:16px;line-height:1.3;display:block}
+#loadChip .spin{flex:none}
+#loadChip[hidden]{display:none}
 /* "🗂 Lag": the layer menu from the right, like the old kommune map (Captain 2026-10-29), so you can just look without making a task */
 #btnLayers{position:absolute;top:calc(env(safe-area-inset-top,0px) + 64px);right:12px;width:56px}
 #btnLayers[hidden]{display:none}
@@ -322,6 +330,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   :root{--side:clamp(400px,32vw,500px)}
   #map{left:var(--side)}
   .top{left:calc(var(--side) + 12px)}
+  #loadChip{left:calc(var(--side) + (100% - var(--side)) / 2)}
   .basemap{left:calc(var(--side) + 12px)}
   .basemap .seg2{display:flex}
   .basemap .flip{display:none}
@@ -357,6 +366,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <button class="chip help" id="btnHelp" aria-label="Vis vejledning" title="Vejledning" hidden>?</button>
 </div>
 <button class="flip" id="btnLayers" hidden aria-label="Vælg hvad kortet viser" title="Kortlag"><span class="ic">🗂</span><span class="tx">Lag</span></button>
+<button id="loadChip" hidden></button>
 <button id="btnNorth" hidden aria-label="Drej kortet så nord vender op" title="Nord op"><svg viewBox="0 0 30 30" aria-hidden="true"><path d="M15 2 L20 15 L10 15 Z" fill="#d23a2a"/><path d="M15 28 L20 15 L10 15 Z" fill="#f4f4f4" stroke="#8a8a8a" stroke-width="1"/><text x="15" y="12.5" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" font-family="sans-serif">N</text></svg></button>
 <div class="basemap">
   <button class="flip" id="btnFlip"><span class="ic"></span><span class="tx"></span></button>
@@ -1684,13 +1694,18 @@ async function archiveTask(t){
   store.set("tasks",tasks); renderTasks(); renderOutbox();
   toast("Opgaven er afsluttet, og markeringerne er slettet");
 }
+// The marks kept on the phone count at once; the server's replace them in one go when they come (no flash of all-red).
+// A stuck answer gives up after 20 s and leaves the kept ones. Returns false if the server's didn't come.
+const giveUp = ms => AbortSignal.timeout?.(ms); // older phones without it just wait
+const storedProgress = taskId => new Map(store.get("prog:"+taskId,[]).map(r=>[r.element_id,r]));
 async function loadProgress(taskId){
-  progress = new Map();
-  if(sb){
-    const {data,error} = await sb.from("progress").select("*").eq("task_id",taskId);
-    if(!error){ data.forEach(r=>progress.set(r.element_id,r)); store.set("prog:"+taskId,data); return; }
-  }
-  store.get("prog:"+taskId,[]).forEach(r=>progress.set(r.element_id,r));
+  if(!sb){ progress = storedProgress(taskId); return true; }
+  let res;
+  try{ res = await sb.from("progress").select("*").eq("task_id",taskId).abortSignal(giveUp(20000)); }
+  catch(e){ res = {error:e}; }
+  if(task && task.id!==taskId) return true; // another task was opened meanwhile
+  if(res.error){ console.error(res.error); if(!progress.size) progress = storedProgress(taskId); return false; }
+  progress = new Map(res.data.map(r=>[r.element_id,r])); store.set("prog:"+taskId,res.data); return true;
 }
 function setStatus(ids, status, note, reason, photo, parts){
   ids.forEach(id=>{ const prev = eff(id) || {}, key = task.id+"|"+id;
@@ -1754,7 +1769,8 @@ const fmt = new ol.format.GeoJSON({dataProjection:proj, featureProjection:proj})
 function wfs(layer, extra){
   const q = new URLSearchParams({service:"WFS",version:"1.0.0",request:"GetFeature",typeName:"entreprenoer_udbud:"+layer,
     outputFormat:"application/json",srsName:"EPSG:25832", ...extra});
-  return fetch(WFS_URL + "?" + q).then(async res=>{
+  // A stuck answer (weak signal) gives up after 90 s, so the map says so instead of waiting for ever
+  return fetch(WFS_URL + "?" + q, {signal:giveUp(90000)}).then(async res=>{
     if(!res.ok) throw new Error(`${layer}: HTTP ${res.status}`);
     const txt = await readText(res);
     if(!txt.trim().startsWith("{")) throw new Error(`${layer}: serveren svarede ikke med data`);
@@ -2106,6 +2122,44 @@ function askRemove(n){
   };
 }
 
+// ---- "Henter …": a small sign while the map waits for something (busy() returns the function that ends that wait) ----
+// Only shows after 0.4 s, so what comes at once from the phone doesn't flash it
+const loading = new Map(); let loadSeq = 0, loadErr = null, loadT = null;
+function busy(text){ const k = ++loadSeq; loading.set(k, text); showLoad(); return ()=>{ loading.delete(k); showLoad(); }; }
+function loadFailed(text, fn){ loadErr = text ? {text, fn} : null; showLoad(); }
+function showLoad(){
+  const c = $("loadChip"); clearTimeout(loadT);
+  if(loading.size){
+    const text = [...loading.values()].pop();
+    if(c.hidden || c.classList.contains("err")) loadT = setTimeout(()=>{ c.className = ""; c.innerHTML = `<span class="spin"></span>${esc(text)}`; c.hidden = false; c.onclick = null; }, 400);
+    else c.innerHTML = `<span class="spin"></span>${esc(text)}`;
+    return;
+  }
+  if(loadErr){ c.className = "err"; c.innerHTML = `⚠️ ${esc(loadErr.text)}<br><b>Tryk for at prøve igen</b>`; c.hidden = false;
+    c.onclick = ()=>{ const f = loadErr?.fn; loadErr = null; showLoad(); f?.(); }; return; }
+  c.hidden = true;
+}
+// Chrome on Android may wipe the pictures OpenLayers draws once and reuses for every dot (circles: trees, pins, the GPS
+// dot) while the page is in the background, and the map went on drawing them blank until F5 (2026-11-18, Captain:
+// only 🚧, 📷 and "!" left on a task, about every 4th or 5th time). So coming back throws them away and draws them again,
+// also the copies used to tell which dot a tap hit. Away a minute or more: the open task's marks are asked for again,
+// since the live updates may have stopped meanwhile.
+let markEpoch = 0, hiddenAt = 0;
+{ const RS = ol.style.RegularShape.prototype, hit = RS.getHitDetectionImage;
+  RS.getHitDetectionImage = function(){ if(this._ep !== markEpoch){ this._ep = markEpoch; this.hitDetectionCanvas_ = null; } return hit.call(this); }; }
+function redrawMarks(){
+  markEpoch++;
+  try{ ol.style.IconImageCache.shared.clear(); }catch(e){ console.error(e); }
+  map.getAllLayers().forEach(l=>l.changed()); map.render();
+}
+document.addEventListener("visibilitychange", ()=>{
+  if(document.visibilityState==="hidden"){ hiddenAt = Date.now(); return; }
+  redrawMarks();
+  const t = task;
+  if(t && hiddenAt && Date.now() - hiddenAt > 60e3 && elSrc.getFeatures().length) loadProgress(t.id).then(()=>{ if(task===t) refresh(); });
+});
+window.addEventListener("pageshow", e=>{ if(e.persisted) redrawMarks(); });
+
 // ---- Element data is stored on the phone (Cache API) and refreshed at most once a day, never in the morning rush ----
 const EL_CACHE = "elements-v1", DAY = 864e5;
 const elKey = id => new Request("https://holdkort.cache/elements/" + encodeURIComponent(id));
@@ -2145,12 +2199,14 @@ function swapElements(fs){
   selSet = new Set(fs.filter(f=>ids.has(f.getId()))); selected = [...selSet][0] || null;
   refresh();
 }
-let refreshTimer = null;
+let refreshTimer = null, elsReady = false; // elsReady: the open task's places are on the map
 async function refreshElements(t, manual){
   clearTimeout(refreshTimer);
   if(manual) $("dataAge").innerHTML = `<span class="spin"></span> Henter fra kommunen …`;
+  const done = manual ? busy("Henter steder …") : ()=>{};
   try{ const fs = await downloadElements(t); if(task !== t) return; swapElements(fs); showDataAge(Date.now()); if(manual) toast("Kortdata opdateret"); }
   catch(e){ console.error(e); if(manual){ toast("Kunne ikke hente fra kommunen. Prøv igen senere.", 4000); showDataAge((await elCacheGet(t.id))?.saved); } }
+  finally{ done(); }
 }
 async function openTask(t){
   closeOverview();
@@ -2170,19 +2226,25 @@ async function openTask(t){
   // Only jump to the task area the first time; after that the map stays where you left it
   const seen = store.get("seen:"+t.id, false);
   if(!seen){ map.getView().fit(t.extent, {padding:[70,16,sheetPad(),16], duration:300}); store.set("seen:"+t.id, true); }
-  await loadProgress(t.id);
+  // Places and marks kept on the phone are drawn at once; the server's marks follow (they used to hold up the whole map)
+  progress = storedProgress(t.id); loadFailed(null); elsReady = false;
+  let shown = false;
+  const doneP = busy("Henter markeringer …");
+  loadProgress(t.id).then(ok=>{ if(task!==t) return; if(shown) refresh(); if(!ok) loadFailed("Markeringerne kom ikke", ()=>{ if(task===t) openTask(t); }); }).finally(doneP);
   // Stored data only counts if it was fetched for the area the task has now (a boss may have redrawn it)
   const stored = await elCacheGet(t.id);
   const cached = stored && (stored.key ?? JSON.stringify(t.extent)) === areaKey(t) ? stored : null;
   let feats;
   if(cached){ feats = fmt.readFeatures(cached.geojson); showDataAge(cached.saved); }
   else {
+    const done = busy("Henter steder …");
     try { feats = await downloadElements(t); showDataAge(Date.now()); }
-    catch(e){ console.error(e); toast("Kunne ikke hente elementer fra kommunen. Prøv igen om lidt.", 5000); $("workCount").textContent="–"; return; }
+    catch(e){ console.error(e); if(task===t){ $("workCount").textContent="–"; loadFailed("Stederne kom ikke", ()=>{ if(task===t) openTask(t); }); } return; }
+    finally{ done(); }
   }
   if(task !== t) return;
   taskAll = feats = feats.filter(f=>surfOk(t.surface, f)); feats = onlyPicked(t, feats);
-  elSrc.addFeatures(feats);
+  elSrc.addFeatures(feats); shown = elsReady = true;
   refresh();
   loadLastTended(feats.map(f=>f.getId())).then(m=>{ if(task===t){ lastTended = m; refresh(); } });
   loadTaskMedia(t);
@@ -2194,11 +2256,11 @@ async function openTask(t){
     refreshTimer = setTimeout(()=>{ if(task===t && navigator.onLine && !rushHour()) refreshElements(t, false); }, 15000 + Math.random()*180000);
 }
 $("btnRefresh").onclick = ()=>{ if(task) refreshElements(task, true); };
-$("btnBack").onclick = ()=>{ clearTimeout(refreshTimer); task=null; selected=null; selSet.clear(); elSrc.clear(); areaSrc.clear(); pinMode(false); pinSrc.clear(); pins = []; $("btnPin").hidden = true; pane("pTasks"); loadTasks(); };
+$("btnBack").onclick = ()=>{ clearTimeout(refreshTimer); loadFailed(null); task=null; selected=null; selSet.clear(); elSrc.clear(); areaSrc.clear(); pinMode(false); pinSrc.clear(); pins = []; $("btnPin").hidden = true; pane("pTasks"); loadTasks(); };
 
 function refresh(){
   elLayer.changed();
-  if(!task || pick) return;
+  if(!task || pick || !elsReady) return; // before the places are in, the count would say 0/0 (and be kept for the task list)
   const ids = elSrc.getFeatures().map(f=>f.getId()), n = ids.length;
   const c = {todo:0,doing:0,done:0,blocked:0}; ids.forEach(id=>c[statusOf(id)]++);
   $("workCount").innerHTML = `${c.done}<span class="muted" style="font-size:18px">/${n}</span>`;
@@ -4021,10 +4083,11 @@ let logOk = true; // false if the database has no log yet: then no photo button 
 const RECENT = 14; // days: a todo element done this recently gets a warning
 async function loadLastTended(ids){
   const m = new Map(); if(!sb || !ids.length) return m;
-  for(let i=0; i<ids.length; i+=100){
-    const {data, error} = await sb.from("last_tended").select("element_id,last_day").in("element_id", ids.slice(i, i+100));
-    logOk = !error; if(error) break;
-    data.forEach(r=>{ if(!(m.get(r.element_id) > r.last_day)) m.set(r.element_id, r.last_day); });
+  const parts = []; for(let i=0; i<ids.length; i+=100) parts.push(ids.slice(i, i+100));
+  for(let i=0; i<parts.length; i+=4){ // four at a time, not one after another (a big task asked 7+ times in a row)
+    const res = await Promise.all(parts.slice(i, i+4).map(p=>sb.from("last_tended").select("element_id,last_day").in("element_id", p)));
+    const bad = res.find(r=>r.error); logOk = !bad; if(bad) break;
+    res.forEach(({data})=>data.forEach(r=>{ if(!(m.get(r.element_id) > r.last_day)) m.set(r.element_id, r.last_day); }));
   }
   return m;
 }
