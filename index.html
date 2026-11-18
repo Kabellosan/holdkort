@@ -353,6 +353,40 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   #pLayers{right:0;left:auto;width:400px;border-right:0}
   #pLogin .body{max-width:440px;width:100%;margin:0 auto}
   .ask>div{max-width:420px}
+  #pReport:not([hidden]){width:min(860px,calc(100vw - 300px))}
+}
+/* Rapport til kommunen: a page of its own that prints (or saves as PDF) on white, whatever the phone's dark mode */
+.rpt{display:flex;flex-direction:column;gap:18px}
+.rpt h1{font-size:24px;margin:0}
+.rpt h3{font-size:17px;margin:0 0 6px}
+.rpt .meta{color:var(--ink2);font-size:14px;display:flex;flex-direction:column;gap:2px}
+.rtiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.rtiles div{border-radius:12px;padding:10px 8px;background:var(--paper);border-top:6px solid var(--c);text-align:center}
+.rtiles b{display:block;font-size:24px;font-variant-numeric:tabular-nums}
+.rtiles span{font-size:13px;color:var(--ink2)}
+.rpt .bar{height:12px}
+.rmap{width:100%;height:auto;border:1px solid var(--line);border-radius:12px;background:#fbfcf9;display:block}
+.rlegend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--ink2);margin-top:6px}
+.rlegend i{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.rtab{width:100%;border-collapse:collapse;font-size:14px}
+.rtab th{text-align:left;font-weight:600;font-size:13px;color:var(--ink2);border-bottom:2px solid var(--line);padding:6px 4px}
+.rtab td{border-bottom:1px solid var(--line);padding:6px 4px;vertical-align:top}
+.rtab .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rtab .st{white-space:nowrap}
+.rtab .st i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
+.rpt .small{font-size:13px;color:var(--ink2)}
+@media (max-width:420px){.rtiles{grid-template-columns:repeat(2,1fr)}}
+@media print{
+  @page{margin:14mm}
+  html,body{height:auto;overflow:visible;background:#fff}
+  body.printing>*:not(#pReport){display:none!important}
+  body.printing #pReport{position:static;display:block;width:auto;border:0;box-shadow:none;color-scheme:light;
+    --ink:#17221c;--ink2:#55645b;--paper:#f2f4ee;--card:#fff;--line:#d3d9cc;color:var(--ink);background:#fff}
+  #pReport .noprint{display:none!important}
+  #pReport .body{overflow:visible;padding:0}
+  .rpt *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .rpt tr,.rpt .rtiles,.rpt svg{break-inside:avoid}
+  .rpt section{break-inside:auto}
 }
 </style>
 </head>
@@ -488,6 +522,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="bar" id="bar"></div>
     <div class="legend" id="workLegend" hidden></div>
     <div class="row"><span class="muted grow" id="dataAge"></span><button class="btn ghost" id="btnRefresh" style="min-height:36px;padding:4px 8px">Opdater</button></div>
+    <button class="btn" id="btnReport" hidden>📄 Rapport til kommunen</button>
     <div class="row" data-keep>
       <button class="btn primary fill" id="btnNext">Næste ▸</button>
       <button class="btn" id="btnList">Liste</button>
@@ -879,6 +914,15 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 <div class="panel" id="pHist" hidden>
   <header><div class="row"><div class="grow"><div class="eyebrow" id="histEyebrow">Historik</div><h2 id="histTitle"></h2></div><button class="btn ghost" id="btnHistClose">Luk</button></div></header>
   <div class="body" id="histList"></div>
+</div>
+<!-- Rapport til kommunen (2026-11-18): what, where and when for a task; no names, no clock times, no notes, no photos -->
+<div class="panel" id="pReport" hidden>
+  <header class="noprint"><div class="row"><button class="btn ghost" id="btnReportClose">‹ Tilbage</button><div class="grow"><div class="eyebrow">Rapport til kommunen</div><h2 id="reportTitle"></h2></div></div></header>
+  <div class="body" id="reportBody"></div>
+  <footer class="noprint">
+    <div class="muted" style="font-size:13px">Rapporten har ingen navne, klokkeslæt, noter eller billeder. Tjek at opgavens navn heller ikke nævner en person.</div>
+    <button class="btn primary" id="btnReportPrint">🖨 Gem som PDF eller print</button>
+  </footer>
 </div>
 <!-- Noter og billeder for one element (or the marked ones): earlier notes with who wrote them and when, and a box for a new one -->
 <div class="panel" id="pNotes" hidden>
@@ -2215,6 +2259,7 @@ async function openTask(t){
   geo.setTracking(true);
   if(!t.spots) areaSrc.addFeature(new ol.Feature(shapeGeom(t))); // hand-picked spots have no area to outline
   $("btnPick").hidden = !canManage(t); $("btnEditArea").hidden = !canManage(t) || !!t.spots;
+  $("btnReport").hidden = !isBoss();
   $("btnTaskPhotos").hidden = !sb || !logOk; taskMedia = new Map(); $("taskPhotoN").textContent = "Noter";
   pinMode(false); loadPins(t);
   if(!partsOk) checkParts().then(()=>{ if(task===t) refresh(); });
@@ -4336,6 +4381,134 @@ $("btnTaskPhotos").onclick = showTaskPhotos;
 $("btnHistClose").onclick = ()=>{ $("pHist").hidden = true; };
 $("btnPhotoClose").onclick = $("photoView").onclick = ()=>{ $("photoView").hidden = true; };
 
+// ================= RAPPORT TIL KOMMUNEN (2026-11-18) =================
+// For the koordinator to send on to the kommune: what, where and when. Never who: no names, no clock times (only days),
+// no notes (free text may name people) and no photos (may show people). Blocked reasons are the fixed choices only.
+// A page of its own in the app; 🖨 prints it or saves it as PDF (the print dialog on phones and computers).
+const REPORT_LIST_MAX = 300; // more places than this: only the table per street, a list of every place gets too long
+// Street, size and the kommune's number for one place, so two places on the same street can be told apart
+const placeBits = f => { const p = f.getProperties(), b = [streetOfF(f)];
+  if(p.geometri_areal) b.push(`${Math.round(p.geometri_areal)} m²`); else if(p.geometri_laengde) b.push(`${Math.round(p.geometri_laengde)} m`);
+  if(p.ogc_fid != null) b.push(`nr. ${p.ogc_fid}`); return b.filter(Boolean).join(" · "); };
+const dayShort = day => new Date(day + "T12:00").toLocaleDateString("da-DK",{day:"numeric", month:"short"});
+const streetOfF = f => { const v = f.get("vejnavn") || f.get("_street"); return v ? String(v).split(",")[0].trim() : ""; };
+// Days each place was sent as done since `since`, in any task; only element_id and day are asked for
+async function doneDays(ids, since){
+  const m = new Map(); if(!sb || !ids.length) return m;
+  const parts = []; for(let i=0; i<ids.length; i+=100) parts.push(ids.slice(i, i+100));
+  for(let i=0; i<parts.length; i+=4){
+    const res = await Promise.all(parts.slice(i, i+4).map(p=>sb.from("element_log").select("element_id,day").in("element_id", p).eq("done", true).gte("day", since).limit(10000)));
+    const bad = res.find(r=>r.error); if(bad) throw bad.error;
+    res.forEach(({data})=>data.forEach(r=>{ let s = m.get(r.element_id); if(!s) m.set(r.element_id, s = new Set()); s.add(r.day); }));
+  }
+  return m;
+}
+// The task's places as a small map on their own (no background map, so nothing else is in the picture), with street names
+function reportMap(rows, t){
+  const ext = ol.extent.createEmpty();
+  rows.forEach(r=>ol.extent.extend(ext, r.f.getGeometry().getExtent()));
+  const outline = !t.spots ? shapeGeom(t) : null; // drawn, but the map fits the places (a big rectangle with a few places left them tiny)
+  if(ol.extent.isEmpty(ext) && outline) ol.extent.extend(ext, outline.getExtent());
+  if(ol.extent.isEmpty(ext)) return "";
+  const pad = Math.max(ol.extent.getWidth(ext), ol.extent.getHeight(ext)) * 0.04 + 15;
+  const [x0, y0, x1, y1] = ol.extent.buffer(ext, pad), S = 1000 / Math.max(x1-x0, y1-y0);
+  const W = Math.round((x1-x0)*S), H = Math.round((y1-y0)*S);
+  const P = ([x, y]) => `${((x-x0)*S).toFixed(1)} ${((y1-y)*S).toFixed(1)}`;
+  const path = (g) => { const ty = g.getType(), c = g.getCoordinates();
+    if(ty==="Polygon") return c.map(r=>"M"+r.map(P).join("L")+"Z").join("");
+    if(ty==="MultiPolygon") return c.flat().map(r=>"M"+r.map(P).join("L")+"Z").join("");
+    if(ty==="LineString") return "M"+c.map(P).join("L");
+    if(ty==="MultiLineString") return c.map(l=>"M"+l.map(P).join("L")).join("");
+    return ""; };
+  const dots = g => g.getType()==="Point" ? [g.getCoordinates()] : g.getType()==="MultiPoint" ? g.getCoordinates() : [];
+  const edge = {done:DONE_EDGE, todo:"#8f2626", doing:"#9a6b00", blocked:"#000"};
+  let out = outline ? `<path d="${path(outline)}" fill="none" stroke="#1f3a2e" stroke-width="2" stroke-dasharray="8 5" vector-effect="non-scaling-stroke"/>` : "";
+  // Done first, problems on top, so a blocked or missing place isn't hidden under a done one
+  for(const s of ["done","doing","todo","blocked"]){
+    let d = "", line = "", pts = "";
+    rows.filter(r=>r.st===s).forEach(r=>{ const g = r.f.getGeometry(), ty = g.getType();
+      if(/Polygon/.test(ty)) d += path(g); else if(/Line/.test(ty)) line += path(g);
+      else dots(g).forEach(c=>{ const [x, y] = P(c).split(" "); pts += `<circle cx="${x}" cy="${y}" r="5"/>`; }); });
+    if(d) out += `<path d="${d}" fill="${COLORS[s]}" stroke="${COLORS[s]}" stroke-width="3" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+    if(line) out += `<path d="${line}" fill="none" stroke="${COLORS[s]}" stroke-width="4" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
+    if(pts) out += `<g fill="${COLORS[s]}" stroke="${edge[s]}" stroke-width="1.5">${pts}</g>`;
+  }
+  // Street names where most of the task's places are, so the reader knows where it is without a background map
+  const by = new Map(); rows.forEach(r=>{ if(!r.street) return; const c = ol.extent.getCenter(r.f.getGeometry().getExtent()), q = by.get(r.street) || {n:0, x:0, y:0}; q.n++; q.x += c[0]; q.y += c[1]; by.set(r.street, q); });
+  const labels = [...by].sort((a,b)=>b[1].n-a[1].n).slice(0, 14).map(([n, q])=>{ const [x, y] = P([q.x/q.n, q.y/q.n]).split(" ");
+    return `<text x="${x}" y="${y}" text-anchor="middle" dy="-8">${esc(n)}</text>`; }).join("");
+  // Scale bar about a fifth of the width
+  const want = (x1-x0) / 5, e = 10 ** Math.floor(Math.log10(want)), len = [5, 2, 1].map(k=>k*e).find(v=>v <= want) || e;
+  const bar = len*S, lab = len >= 1000 ? `${len/1000} km` : `${len} m`;
+  return `<svg class="rmap" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Kort over opgavens steder efter status">${out}
+    <g font-family="system-ui,sans-serif" font-size="${Math.round(Math.max(W,H)/40)}" fill="#17221c" stroke="#fff" stroke-width="4" paint-order="stroke" font-weight="600">${labels}</g>
+    <g transform="translate(${W-bar-20} ${H-20})" font-family="system-ui,sans-serif" font-size="${Math.round(Math.max(W,H)/45)}" fill="#17221c">
+      <rect width="${bar}" height="6" fill="#17221c"/><text x="${bar/2}" y="-6" text-anchor="middle">${lab}</text></g></svg>`;
+}
+async function showReport(){
+  if(!task) return;
+  if(!elsReady){ toast("Stederne er ikke hentet endnu. Prøv igen om lidt.", 3500); return; }
+  const t = task, B = $("reportBody");
+  $("reportTitle").textContent = t.name;
+  B.innerHTML = `<p class="muted"><span class="spin"></span> Laver rapporten …</p>`;
+  $("pReport").hidden = false;
+  const since = String(t.created_at || "").slice(0, 10) || today();
+  const rows = elSrc.getFeatures().map(f=>{ const id = f.getId(), p = eff(id) || {};
+    return {f, id, st: p.status || "todo", day: (p.updated_at || "").slice(0, 10), reason: p.status==="blocked" ? (p.reason || "Andet") : "",
+      street: streetOfF(f), where: placeBits(f), name: f.get("_own")!=null ? (f.get("_own") || "Eget punkt") : typeName(f.get("elementkode")), code: f.get("elementkode") || ""}; });
+  let days = new Map(), logFail = false;
+  try{ days = await doneDays(rows.map(r=>r.id), since); } catch(e){ console.error(e); logFail = true; }
+  if($("pReport").hidden || task !== t) return;
+  rows.forEach(r=>{ const s = new Set(days.get(r.id) || []); if(r.st==="done" && r.day) s.add(r.day); r.done = [...s].sort(); r.last = r.done.at(-1) || ""; });
+  const n = rows.length, c = {done:0, doing:0, blocked:0, todo:0}; rows.forEach(r=>c[r.st]++);
+  const pct = k => n ? Math.round(c[k]/n*100) : 0;
+  const stCell = s => `<span class="st"><i style="background:${COLORS[s]};${s==="done" ? `box-shadow:0 0 0 1px ${DONE_EDGE}` : ""}"></i>${LABEL[s]}</span>`;
+  const times = r => r.done.length ? `${r.done.length===1 ? "1 gang" : `${r.done.length} gange`}, sidst ${dayShort(r.last)}` : "–";
+  // Per street (or "Uden vejnavn"), sorted by name
+  const streets = new Map(); rows.forEach(r=>{ const k = r.street || "Uden vejnavn", q = streets.get(k) || {n:0, done:0, blocked:0, last:""}; q.n++; if(r.st==="done") q.done++; if(r.st==="blocked") q.blocked++; if(r.last > q.last) q.last = r.last; streets.set(k, q); });
+  const streetRows = [...streets].sort((a,b)=>a[0]==="Uden vejnavn" ? 1 : b[0]==="Uden vejnavn" ? -1 : a[0].localeCompare(b[0], "da"));
+  // Per type, when the task has more than one
+  const types = new Map(); rows.forEach(r=>{ const q = types.get(r.name) || {n:0, done:0}; q.n++; if(r.st==="done") q.done++; types.set(r.name, q); });
+  // Blocked: by reason, then by street
+  const blocked = rows.filter(r=>r.st==="blocked"), reasons = new Map();
+  blocked.forEach(r=>{ const m = reasons.get(r.reason) || new Map(), k = r.street || "Uden vejnavn", q = m.get(k) || {n:0, last:""}; q.n++; if(r.day > q.last) q.last = r.day; m.set(k, q); reasons.set(r.reason, m); });
+  const REASON_IC = {"Bil parkeret":"🚗 ", "Vejarbejde":"🚧 "};
+  const list = [...rows].sort((a,b)=>(a.street||"~").localeCompare(b.street||"~", "da") || a.name.localeCompare(b.name, "da"));
+  const firstDone = rows.flatMap(r=>r.done).sort()[0];
+  B.innerHTML = `<div class="rpt">
+    <div><h1>${esc(t.name)}</h1>
+      <div class="meta"><span>${esc(packCodes(t.codes || []) + scopeOf(t))}</span>
+      <span>Opgaven oprettet ${esc(longDate(since))}${firstDone ? ` · første færdige ${esc(longDate(firstDone))}` : ""}</span>
+      <span>Status pr. ${esc(longDate(today()))} · ${n} ${n===1 ? "sted" : "steder"}</span></div></div>
+    <div class="rtiles">${["done","doing","blocked","todo"].map(k=>`<div style="--c:${COLORS[k]}"><b>${c[k]}</b><span>${LABEL[k]} · ${pct(k)} %</span></div>`).join("")}</div>
+    <div class="bar">${n ? ["done","doing","blocked","todo"].map(s=>`<i style="width:${c[s]/n*100}%;background:${COLORS[s]}"></i>`).join("") : ""}</div>
+    <section><h3>Kort</h3>${reportMap(rows, t)}
+      <div class="rlegend">${["done","doing","blocked","todo"].filter(k=>c[k]).map(k=>`<span><i style="background:${COLORS[k]}"></i>${LABEL[k]}</span>`).join("")}${!t.spots ? `<span>- - - opgavens område</span>` : ""}</div></section>
+    ${types.size > 1 ? `<section><h3>Pr. type</h3><table class="rtab"><thead><tr><th>Type</th><th class="n">Steder</th><th class="n">Færdige</th></tr></thead><tbody>
+      ${[...types].sort((a,b)=>b[1].n-a[1].n).map(([k, q])=>`<tr><td>${esc(k)}</td><td class="n">${q.n}</td><td class="n">${q.done}</td></tr>`).join("")}</tbody></table></section>` : ""}
+    <section><h3>Blokeret</h3>${blocked.length ? [...reasons].map(([why, m])=>`<p><b>${REASON_IC[why] || ""}${esc(why)}</b>: ${(k=>`${k} ${k===1 ? "sted" : "steder"}`)([...m.values()].reduce((s, q)=>s + q.n, 0))}</p>
+      <table class="rtab"><tbody>${[...m].sort((a,b)=>b[1].n-a[1].n).map(([k, q])=>`<tr><td>${esc(k)}</td><td class="n">${q.n} ${q.n===1 ? "sted" : "steder"}</td><td class="n">${q.last ? esc(dayShort(q.last)) : ""}</td></tr>`).join("")}</tbody></table>`).join("")
+      : `<p class="small">Ingen steder er blokeret.</p>`}</section>
+    <section><h3>Pr. vej</h3><table class="rtab"><thead><tr><th>Vej</th><th class="n">Steder</th><th class="n">Færdig</th><th class="n">Blok.</th><th class="n">Sidst færdig</th></tr></thead><tbody>
+      ${streetRows.map(([k, q])=>`<tr><td>${esc(k)}</td><td class="n">${q.n}</td><td class="n">${q.done}</td><td class="n">${q.blocked || ""}</td><td class="n">${q.last ? esc(dayShort(q.last)) : "–"}</td></tr>`).join("")}</tbody></table></section>
+    ${n <= REPORT_LIST_MAX ? `<section><h3>Hvert sted</h3><table class="rtab"><thead><tr><th>Sted</th><th>Status</th><th class="n">Meldt færdig</th></tr></thead><tbody>
+      ${list.map(r=>`<tr><td>${esc(r.name)}${r.where ? `<div class="small">${esc(r.where)}</div>` : ""}</td><td>${stCell(r.st)}${(r.st==="blocked" || r.st==="doing") ? `<div class="small">${[r.st==="blocked" ? esc(r.reason) : "", r.day ? `siden ${esc(dayShort(r.day))}` : ""].filter(Boolean).join(", ")}</div>` : ""}</td><td class="n">${times(r)}</td></tr>`).join("")}</tbody></table></section>`
+      : `<p class="small">${n} steder er for mange til en liste over hvert sted; se tabellen pr. vej.</p>`}
+    ${logFail ? `<p class="small">Historikken kunne ikke hentes, så "gange" og "sidst færdig" tæller kun det, opgaven viser nu.</p>` : ""}
+    <p class="small">Lavet med Holdkort. Kun hvad, hvor og hvilken dag: ingen navne, klokkeslæt, noter eller billeder. "Meldt færdig" tæller de dage, et sted er meldt færdigt siden opgaven blev oprettet (${esc(longDate(since))}), også i andre opgaver.</p>
+  </div>`;
+}
+$("btnReport").onclick = showReport;
+$("btnReportClose").onclick = ()=>{ $("pReport").hidden = true; };
+$("btnReportPrint").onclick = ()=>{
+  const title = document.title; document.title = `Rapport ${task ? task.name : ""} ${today()}`.trim(); // the PDF's file name
+  document.body.classList.add("printing");
+  const end = ()=>{ document.body.classList.remove("printing"); document.title = title; window.removeEventListener("afterprint", end); };
+  window.addEventListener("afterprint", end);
+  window.print();
+  setTimeout(end, 60000); // some phones never send afterprint
+};
+
 // ================= PART OF A LONG ELEMENT DONE =================
 // A long hedge, path or kerb done a bit at a time: the worker taps where they started and where they stopped.
 // Lines: the stretch along the line between the two taps. Areas: what lies within r metres of the taps' path
@@ -5719,7 +5892,7 @@ window.addEventListener("online", ()=>{ if(autoSend) sendPending(); });
 const BACK = [["photoView","btnPhotoClose"], ["guide",closeGuide], [()=>!$("moreBox").hidden, ()=>moreOpen(false)],
   ...[...document.querySelectorAll(".ask")].reverse().map(a=>[a.id, a.querySelector("[id$=No]")]),
   ["pPerson","btnPersonNo","btnPersonCancel"], ["pProfile","btnProfClose"], ["pLogin"],
-  ["pFind","btnFindClose"], ["pSearch","btnSearchClose"], ["pNotes","btnNotesClose"], ["pHist","btnHistClose"],
+  ["pFind","btnFindClose"], ["pSearch","btnSearchClose"], ["pNotes","btnNotesClose"], ["pReport","btnReportClose"], ["pHist","btnHistClose"],
   ["pLayers","btnLayersClose"], ["pShow","btnShowClose"], ["pType","btnTypeClose"], ["pPack","btnPackClose"], ["pNew","btnNewCancel"],
   [()=>pinDrop, "btnPin"], [()=>ringOn, ()=>ringMode(false)], [()=>flawDrop, "btnFlaw"],
   ["pEl","btnElClose"], ["pList","btnListClose"], ["pPart","btnPartCancel"], ["pPick","btnPickCancel"],
