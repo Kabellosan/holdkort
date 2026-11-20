@@ -2000,7 +2000,17 @@ function renderOutbox(){
   $("outCount").textContent = n; $("outLabel").textContent = n===1 ? "ændring" : "ændringer";
 }
 const sendFail = () => { sendFailed = true; renderOutbox(); toast("Ikke sendt. Prøv igen, når du har forbindelse.", 4000); };
+// One send at a time. Marks made while a send is under way (uploading photos takes seconds) stay in the
+// outbox and go with the next send; they used to be wiped when the send finished (Captain 2026-11-20:
+// a place marked right after another, while its photo was still uploading, was lost).
+let sending = false, sendAgain = false;
 async function sendPending(manual){
+  if(sending){ sendAgain = true; return; }
+  sending = true;
+  try{ await sendNow(manual); } finally { sending = false; }
+  if(sendAgain){ sendAgain = false; if(pending.size && (autoSend || manual) && !sendFailed) sendPending(manual); }
+}
+async function sendNow(manual){
   if(!pending.size) return;
   const now = new Date().toISOString();
   const all = [...pending.values()];
@@ -2023,8 +2033,20 @@ async function sendPending(manual){
     }
   }
   rows.forEach(r=>{ if(task && r.task_id===task.id) progress.set(r.element_id, r); if(ANON) sentAt.set(r.task_id+"|"+r.element_id+"|"+r.status, Date.now()); });
-  all.forEach(r=>(r._photos||[]).forEach(photoDel));
-  pending.clear(); store.set("pending", []); sendFailed = false;
+  // Take out only what was sent. A row changed meanwhile stays, minus the photos and notes that went, and counts from what was sent
+  const gone = new Set();
+  all.forEach(r=>{ const k = r.task_id+"|"+r.element_id, now = pending.get(k);
+    (r._photos||[]).forEach(p=>gone.add(p));
+    if(now === r){ pending.delete(k); return; }
+    if(!now) return;
+    now._photos = (now._photos||[]).filter(p=>!(r._photos||[]).includes(p));
+    const sentNotes = [...(r._notes||[])]; now._notes = (now._notes||[]).filter(n=>{ const i = sentNotes.indexOf(n); if(i < 0) return true; sentNotes.splice(i, 1); return false; });
+    now._was = r.status==="done"; now._st0 = r.status; now._reason0 = r.reason || null; now._note0 = r.note || "";
+    if("parts" in r) now._parts0 = (r.parts||[]).map(partKey);
+  });
+  pending.forEach(r=>(r._photos||[]).forEach(p=>gone.delete(p))); // one photo on several places: keep it while any still waits
+  gone.forEach(photoDel);
+  store.set("pending", [...pending.values()]); sendFailed = false;
   renderOutbox(); refresh();
   if(!manual) return; // sent on its own: nothing to say (a failure does say so)
   // Sending on its own right after a mark: keep the Fortryd toast up instead of covering it
