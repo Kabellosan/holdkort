@@ -286,6 +286,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 #noteIn,#editNoteIn{font:inherit;font-size:17px;width:100%;min-height:76px;padding:12px;border-radius:var(--r);border:1px solid var(--line);background:var(--paper);color:var(--ink);resize:vertical;box-sizing:border-box}
 #multiHint{font-size:14px}
 .shotbtn{width:100%;min-height:60px;font-size:18px}
+#pWork.shot-more>.row:has(#btnNext),#pWork.shot-more>[data-multi]{display:none}
 .shotimg{width:100%;max-height:140px;object-fit:cover;border-radius:10px;background:var(--line)}
 .shotlist{display:flex;flex-direction:column;gap:8px}
 .shotlist .btn{justify-content:flex-start;text-align:left;gap:12px;min-height:76px;padding:8px 12px}
@@ -301,7 +302,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .camBottom{position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;gap:10px;padding:16px 14px calc(env(safe-area-inset-bottom,0px) + 16px);background:linear-gradient(#0000,#000b 35%)}
 .camNear{font-size:16px;text-align:center;text-shadow:0 1px 3px #000;min-height:22px}
 .camLast{background:#000c;border:1px solid #fff4;border-radius:16px;padding:10px 12px;width:100%;max-width:420px;display:flex;flex-direction:column;gap:8px;font-size:16px}
-#camAlso{background:#fff;color:#1d2a20;border-color:#fff;font-weight:700}
+#camMore{background:#fff;color:#1d2a20;border-color:#fff;font-weight:700}
 .camActs{display:flex;gap:8px}.camActs .btn{flex:1}
 .camShut{width:96px;height:96px;border-radius:50%;border:6px solid #fff;background:var(--done,#bfd830);box-shadow:0 0 0 3px #0006;font-size:40px;color:#26320a;display:flex;align-items:center;justify-content:center}
 .camShut:active{transform:scale(.94)}
@@ -545,6 +546,8 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="row"><span class="muted grow" id="dataAge"></span><button class="btn ghost" id="btnRefresh" style="min-height:36px;padding:4px 8px">Opdater</button></div>
     <button class="btn" id="btnReport" hidden>📄 Rapport til kommunen</button>
     <div class="row" id="shotWaitRow" data-keep hidden><span class="grow"><b>📷 Tryk på stedet på kortet</b><br><span class="muted">Så bliver det Færdig med billedet.</span></span><button class="btn" id="btnShotWaitNo">Annullér</button></div>
+    <div class="row" id="shotMoreRow" data-keep hidden><span class="grow"><b>📷 Tryk på de andre steder på billedet</b><br><span class="muted" id="shotMoreN"></span></span></div>
+    <div class="row" id="shotMoreBtns" data-keep hidden><button class="btn" id="btnShotMoreNo">Annullér</button><button class="btn primary fill" id="btnShotMoreOk">✓ Færdig</button></div>
     <button class="btn primary shotbtn" id="btnShot" data-keep hidden>📷 Færdig med billede</button>
     <div class="row" data-keep>
       <button class="btn fill" id="btnNext">Næste ▸</button>
@@ -780,7 +783,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <div class="camTop"><button class="btn" id="btnCamClose">✕ Luk</button><span class="grow"></span><button class="btn" id="btnCamNative">Telefonens kamera</button></div>
   <div class="camBottom">
     <div class="camNear" id="camNear"></div>
-    <div class="camLast" id="camLast" hidden><div id="camLastTxt"></div><div class="camActs"><button class="btn" id="camUndo">↶ Fortryd</button><button class="btn" id="camWrong">Forkert sted?</button><button class="btn" id="camSave" hidden>💾 Gem</button></div><button class="btn" id="camAlso" hidden></button></div>
+    <div class="camLast" id="camLast" hidden><div id="camLastTxt"></div><div class="camActs"><button class="btn" id="camUndo">↶ Fortryd</button><button class="btn" id="camWrong">Forkert sted?</button><button class="btn" id="camSave" hidden>💾 Gem</button></div><button class="btn" id="camMore">Flere på billedet?</button></div>
     <button class="camShut" id="camShut" aria-label="Tag billede og sæt stedet Færdig"><span>✓</span></button>
     <div class="camCap">Tag billede = Færdig</div>
   </div>
@@ -1526,6 +1529,7 @@ function elStyle(f, res){
     if(!pick.spots) return shapeStyle(on ? ty || "pick" : "off", false, res);
     return [...(on || f===pick.sel ? shapeStyle("pick", true, res) : ty ? shapeStyle(ty, false, res) : spotOff(res)), ...pin];
   }
+  if(shotMore?.set.has(f)) return shapeStyle("pick", true, res); // "Flere på billedet?": the places on the photo, clear blue
   const st = statusOf(f.getId()), k = byTypeNow() && st!=="done" ? tcol[f.get("elementkode")] || "none" : st;
   const s = shapeStyle(k, selSet.has(f), res, k===st ? null : st);
   const p = partStyle(f); // a long element partly done gets its done stretch drawn green on top
@@ -1728,7 +1732,7 @@ const curPane = () => PANES.find(p=>!$(p).hidden);
 function pane(id){ if(id!==curPane()) fold(false); if(ringOn && !["pPick","pSpots","pWork","pEl"].includes(id)) ringMode(false); PANES.forEach(p=>$(p).hidden = p!==id);
   $("sheet").classList.toggle("can-fold", !!$(id).querySelector(":scope>[data-keep]")); showTbl(); showFlawBtn(); showLayersBtn();
   if(typeof syncTint==="function") syncTint(); if(typeof homeMap==="function") homeMap();
-  if(id==="pWork") $("btnShot").hidden = !!shotWait || !task || !sb || !logOk; }
+  if(id==="pWork") $("btnShot").hidden = !!shotWait || !!shotMore || !task || !sb || !logOk; }
 // Fold the sheet down to the rows marked data-keep (its main buttons), so more of the map shows
 // on = 2 folds it all the way: only the bar is left ("mini"); panes without data-keep rows go straight there
 function fold(on){ const s = $("sheet"); if(!s) return; const lv = on === 2 || (on && !s.classList.contains("can-fold")) ? 2 : on ? 1 : 0;
@@ -5223,7 +5227,8 @@ map.on("singleclick", e=>{
     return;
   }
   if(!task) return;
-  if(shotWait){ const all = underFinger(e); if(all.length) shotTapped(all[0]); return; } // a photo waits for its place
+  if(shotWait){ const all = underFinger(e); if(all.length) shotTapped(all[0]); return; }
+  if(shotMore){ const all = underFinger(e); if(all.length) shotMoreTap(all[0]); return; } // places the photo also covers // a photo waits for its place
   const pinHit = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===pinLayer, hitTolerance:16}).find(f=>f.get("pin"));
   if(pinHit){ openPin(pinHit.get("pin")); return; }
   const hits = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:12});
@@ -5855,13 +5860,10 @@ async function shotPhoto(blob, cam){
 }
 function shotAsk(s, r, wrong){
   $("askShotQ").textContent = r.list ? "Hvilket sted er billedet fra?" : "Hvor er billedet fra?";
-  $("askShotSub").textContent = wrong ? "Tryk på det rigtige sted." : r.list ? "Der er flere steder lige ved. Tryk på det, du har lavet."
+  $("askShotSub").textContent = wrong ? "Tryk på det rigtige sted." : r.list ? "Der er flere steder lige ved. Tryk på et af dem. Er flere på billedet, kan du tilføje dem bagefter."
     : SHOT_WHY[r.why] + (r.why==="gps" ? ` (± ${Math.round(r.acc)} m)` : "");
   $("askShotImg").src = s.url;
-  const L = $("askShotList"), all = (r.list||[]).map(x=>x[0]);
-  const allBtn = all.length > 1 && Object.assign(document.createElement("button"), {className:"btn primary",
-    textContent: all.length === 2 ? "✓ Begge er på billedet" : `✓ Alle ${all.length} er på billedet`, onclick: ()=>{ shotAskClose(); shotCommit(s, all); }});
-  L.replaceChildren(...[allBtn].filter(Boolean), ...(r.list||[]).map(([f, d])=>{
+  const L = $("askShotList"); L.replaceChildren(...(r.list||[]).map(([f, d])=>{
     const b = document.createElement("button"); b.className = "btn";
     const sub = [subOf(f).split(" · ").slice(0, 2).join(" · "), d < 1 ? "lige her" : `${Math.round(d)} m væk`, LABEL[statusOf(f.getId())]].filter(Boolean).join(" · ");
     b.innerHTML = `${shotMini(r.list.map(x=>x[0]), f)}<span class="txt"><b>${esc(titleOf(f))}</b><span class="muted">${esc(sub)}</span></span>`;
@@ -5883,10 +5885,8 @@ function shotMap(s, msg){
 function shotWaitEnd(){ shotWait = null; $("shotWaitRow").hidden = true; if(curPane()==="pWork") $("btnShot").hidden = !task || !sb || !logOk; }
 function shotTapped(f){ const s = shotWait; shotWaitEnd(); fold(false); if(s.cam) camOpen(true); shotCommit(s, f); } // the camera first, so the result shows in it
 $("btnShotWaitNo").onclick = ()=>{ const s = shotWait; shotWaitEnd(); if(s) photoDel(s.id); toast("Billedet er ikke gemt"); };
-function shotReset(){ if(shotWait){ photoDel(shotWait.id); shotWaitEnd(); } if(camOn()) camClose(); $("askShot").hidden = true; }
-// One photo often shows several places (Captain, 2026-11-20: two trees in one picture): fs can be several, and
-// "+ Også …" adds the nearest unfinished place within SHOT_ALSO of them to the same photo.
-const SHOT_ALSO = 15;
+function shotReset(){ if(shotMore) shotMoreEnd(); if(shotWait){ photoDel(shotWait.id); shotWaitEnd(); } if(camOn()) camClose(); $("askShot").hidden = true; }
+// One photo often shows several places (Captain, 2026-11-20): fs can be several (see "Flere på billedet?" below).
 function shotCommit(s, fs){
   if(task !== s.t) return;
   fs = [fs].flat();
@@ -5906,26 +5906,36 @@ function shotCommit(s, fs){
     else ids.forEach(id=>{ const w = before.get(id).was || {status:"todo"}; setStatus([id], w.status||"todo", undefined, w.reason); }); // already sent: send the old status back
     if(!keep) photoDel(s.id);
     return true; };
-  s.also = shotAlso(fs);
   navigator.vibrate?.(40);
   const msg = `✓ Færdig: ${titleOf(fs[0])}${fs.length > 1 ? ` + ${fs.length-1} mere` : ""}`;
   if(camOn()) return camShowLast(s, msg);
   toast(`${msg} · med billede`, SHOT_HOLD, [{label:"↶ Fortryd", fn:()=>{ if(s.undo()) toast("Fortrudt"); }}, {label:"Forkert sted?", fn:()=>shotWrong(s)},
-    s.also && {label:"+ Også det ved siden af", fn:()=>shotAddAlso(s)}, SHOT_IOS && {label:"💾 Gem", fn:()=>shotSave(s, true)}].filter(Boolean));
+    {label:"Flere på billedet?", fn:()=>shotMoreOpen(s)}, SHOT_IOS && {label:"💾 Gem", fn:()=>shotSave(s, true)}].filter(Boolean));
 }
-// The nearest place that isn't Færdig, within SHOT_ALSO metres of the places just marked
-function shotAlso(fs){
-  const has = new Set(fs.map(f=>f.getId())); let best = null, bd = Infinity;
-  for(const g of elSrc.getFeatures()){
-    if(has.has(g.getId()) || statusOf(g.getId())==="done") continue;
-    const c = ol.extent.getCenter(g.getGeometry().getExtent());
-    const d = Math.min(...fs.map(f=>distTo(g, f.getGeometry().getClosestPoint(c))));
-    const rank = d + (statusOf(g.getId())==="blocked" ? 5 : 0); // blocked ones only when nothing else is as near
-    if(d <= SHOT_ALSO && rank < bd){ bd = rank; best = g; best._gap = d; }
-  }
-  return best;
+// "Flere på billedet?" (Captain, 2026-11-20: one photo often covers several places, not only trees; keep it clean):
+// the map opens around the marked place, with it marked; taps add or take away places; "✓ Færdig" puts the same photo on all.
+var shotMore = null;
+function shotMoreOpen(s){
+  if(!s?.fs || task !== s.t) return;
+  clearTimeout(s.saveT); // the copy on the phone waits until we know every place on it
+  if(camOn()){ camStop(); $("pCam").hidden = true; }
+  select(null);
+  shotMore = {s, set: new Set(s.fs)}; selSet = new Set(shotMore.set); selected = null; elLayer.changed();
+  $("shotMoreRow").hidden = $("shotMoreBtns").hidden = false; $("btnShot").hidden = true; $("pWork").classList.add("shot-more"); shotMoreCount();
+  const ext = ol.extent.buffer(ol.extent.boundingExtent(s.fs.flatMap(f=>{ const e = f.getGeometry().getExtent(); return [[e[0],e[1]],[e[2],e[3]]]; })), 40);
+  fold(1); map.getView().fit(ext, {padding:[90,30,sheetPad(),30], maxZoom:11, duration:300});
 }
-function shotAddAlso(s){ const g = s.also, fs = s.fs; if(!g || !s.undo(true)) return; shotCommit(s, [...fs, g]); }
+function shotMoreCount(){ const n = shotMore.set.size;
+  $("shotMoreN").textContent = n === 1 ? "1 sted er markeret" : `${n} steder er markeret`; $("btnShotMoreOk").disabled = !n; }
+function shotMoreTap(f){ const st = shotMore.set; st.has(f) ? st.delete(f) : st.add(f); selSet = new Set(st); elLayer.changed(); shotMoreCount(); }
+function shotMoreEnd(){ shotMore = null; fold(false); selSet = new Set(); selected = null; elLayer.changed();
+  $("shotMoreRow").hidden = $("shotMoreBtns").hidden = true; $("pWork").classList.remove("shot-more"); if(curPane()==="pWork") $("btnShot").hidden = !task || !sb || !logOk; }
+$("btnShotMoreNo").onclick = ()=>{ const s = shotMore?.s; shotMoreEnd(); if(!s) return; shotSaveSoon(s); if(s.cam) camOpen(true); };
+$("btnShotMoreOk").onclick = ()=>{ const m = shotMore; if(!m) return; const fs = [...m.set]; shotMoreEnd();
+  const same = fs.length === m.s.fs.length && fs.every(f=>m.s.fs.includes(f));
+  if(m.s.cam) camOpen(true);
+  if(!same && fs.length && m.s.undo(true)) shotCommit(m.s, fs);
+  else { shotSaveSoon(m.s); if(m.s.cam) camShowLast(m.s, $("camLastTxt").textContent); } };
 function shotWrong(s){
   if(!s.undo(true)) return;
   const r = shotFind(new Set(s.fs.map(f=>f.getId())), true);
@@ -5982,10 +5992,10 @@ geo.on("change:position", camNear);
 function camShowLast(s, msg){
   camLast = s; $("camLast").hidden = false; $("camLastTxt").textContent = msg;
   $("camUndo").hidden = $("camWrong").hidden = false; $("camSave").hidden = !SHOT_IOS;
-  $("camAlso").hidden = !s.also; if(s.also) $("camAlso").textContent = `+ Også ${titleOf(s.also)} (${Math.round(s.also._gap)} m væk)`; camNear();
+  $("camMore").hidden = false; camNear();
 }
-$("camUndo").onclick = ()=>{ const s = camLast; if(s?.undo()){ $("camLastTxt").textContent = "Fortrudt. Stedet er sat tilbage."; $("camUndo").hidden = $("camWrong").hidden = $("camSave").hidden = $("camAlso").hidden = true; camNear(); } };
-$("camAlso").onclick = ()=>{ if(camLast) shotAddAlso(camLast); };
+$("camUndo").onclick = ()=>{ const s = camLast; if(s?.undo()){ $("camLastTxt").textContent = "Fortrudt. Stedet er sat tilbage."; $("camUndo").hidden = $("camWrong").hidden = $("camSave").hidden = $("camMore").hidden = true; camNear(); } };
+$("camMore").onclick = ()=>{ if(camLast) shotMoreOpen(camLast); };
 $("camSave").onclick = ()=>{ if(camLast) shotSave(camLast, true); };
 $("camWrong").onclick = ()=>{ const s = camLast; if(!s) return; $("camLast").hidden = true; shotWrong(s); };
 $("camShut").onclick = async ()=>{
@@ -6490,7 +6500,7 @@ window.addEventListener("online", ()=>{ if(autoSend) sendPending(); });
 // and put the entry back if something is still open. On the task list back leaves as usual.
 // Top first: the photo, the guide, the questions, the full-screen panels (later in the page = on top), then the sheet.
 const BACK = [["photoView","btnPhotoClose"], ["guide",closeGuide], [()=>!$("moreBox").hidden, ()=>moreOpen(false)],
-  ...[...document.querySelectorAll(".ask")].reverse().map(a=>[a.id, a.querySelector("[id$=No]")]), ["pCam","btnCamClose"], ["shotWaitRow","btnShotWaitNo"],
+  ...[...document.querySelectorAll(".ask")].reverse().map(a=>[a.id, a.querySelector("[id$=No]")]), ["pCam","btnCamClose"], ["shotWaitRow","btnShotWaitNo"], ["shotMoreRow","btnShotMoreNo"],
   ["pPerson","btnPersonNo","btnPersonCancel"], ["pProfile","btnProfClose"], ["pLogin"],
   ["pFind","btnFindClose"], ["pSearch","btnSearchClose"], ["pNotes","btnNotesClose"], ["pReport","btnReportClose"], ["pHist","btnHistClose"],
   ["pLayers","btnLayersClose"], ["pShow","btnShowClose"], ["pType","btnTypeClose"], ["pPack","btnPackClose"], ["pNew","btnNewCancel"],
