@@ -286,7 +286,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 #noteIn,#editNoteIn{font:inherit;font-size:17px;width:100%;min-height:76px;padding:12px;border-radius:var(--r);border:1px solid var(--line);background:var(--paper);color:var(--ink);resize:vertical;box-sizing:border-box}
 #multiHint{font-size:14px}
 .shotbtn{width:100%;min-height:60px;font-size:18px}
-#pWork.shot-more>.row:has(#btnNext),#pWork.shot-more>[data-multi]{display:none}
+#pWork.shot-more>.row:has(#btnNext){display:none}
 .shotimg{width:100%;max-height:140px;object-fit:cover;border-radius:10px;background:var(--line)}
 .shotlist{display:flex;flex-direction:column;gap:8px}
 .shotlist .btn{justify-content:flex-start;text-align:left;gap:12px;min-height:76px;padding:8px 12px}
@@ -1499,7 +1499,7 @@ const osmLayer = new ol.layer.Tile({source:new ol.source.OSM({attributions:[], m
 
 // done: idverde's lime green (#bfd830, their brand colour) with a dark olive edge (DONE_EDGE), so it reads on the pale map and on the photo
 const COLORS = {todo:"#d64545", doing:"#e8a317", done:"#bfd830", blocked:"#2b2b33", none:"#7c5cff", // none: not in any task (overview)
-                pick:"#1f6feb", off:"#9aa0a6"}; // while a boss picks a task's spots: in it / not in it
+                pick:"#1f6feb", off:"#9aa0a6", photo:"#c2188f"}; // photo: "Flere på billedet?", magenta so it isn't taken for the blue GPS dot // while a boss picks a task's spots: in it / not in it
 const DONE_EDGE = "#3d4f00";
 const LABEL  = {todo:"Mangler", doing:"I gang", done:"Færdig", blocked:"Blokeret", none:"Ikke i en opgave"};
 // Overview "Sidst passet": days since an element was last sent as done, fresh green to old red; grey = not in the log
@@ -1529,7 +1529,7 @@ function elStyle(f, res){
     if(!pick.spots) return shapeStyle(on ? ty || "pick" : "off", false, res);
     return [...(on || f===pick.sel ? shapeStyle("pick", true, res) : ty ? shapeStyle(ty, false, res) : spotOff(res)), ...pin];
   }
-  if(shotMore?.set.has(f)) return shapeStyle("pick", true, res); // "Flere på billedet?": the places on the photo, clear blue
+  if(shotMore?.set.has(f)) return shapeStyle("photo", true, res); // "Flere på billedet?": the places on the photo, magenta (blue looked like the GPS dot)
   const st = statusOf(f.getId()), k = byTypeNow() && st!=="done" ? tcol[f.get("elementkode")] || "none" : st;
   const s = shapeStyle(k, selSet.has(f), res, k===st ? null : st);
   const p = partStyle(f); // a long element partly done gets its done stretch drawn green on top
@@ -2874,15 +2874,17 @@ $("askOverlapNo").onclick = ()=>{ $("askOverlap").hidden = true; };
 const MULTI_PANES = ["pPick","pSpots","pWork","pEl"];
 const multiOk = () => !!(pick || task) && MULTI_PANES.includes(curPane()) && !areaEd && !partEd && !pinDrop && !flawDrop && !pick?.own;
 const canMulti = f => pick ? f.get("_own")==null && (!pick.spots || (!spotHidden(f) && !!f.get("elementkode"))) : elSrc.hasFeature(f);
-const isOn = f => pick ? pick.ids.has(f.getId()) : selSet.has(f);
+const isOn = f => pick ? pick.ids.has(f.getId()) : shotMore ? shotMore.set.has(f) : selSet.has(f);
 function setOn(f, on){
   if(isOn(f)===on) return;
   if(pick?.spots) spotToggle(f);
   else if(pick) on ? pick.ids.add(f.getId()) : pick.ids.delete(f.getId());
+  else if(shotMore){ on ? shotMore.set.add(f) : shotMore.set.delete(f); on ? selSet.add(f) : selSet.delete(f); } // "Flere på billedet?": the photo's places
   else on ? selSet.add(f) : selSet.delete(f);
 }
 function multiShow(){
   if(pick){ pick.spots ? spotsCount() : pickCount(); return; }
+  if(shotMore){ selSet = new Set(shotMore.set); selected = null; elLayer.changed(); shotMoreCount(); return; } // stay on the map, never the element pane (it would mark them without the photo)
   if(!selSet.size){ select(null); return; }
   if(!selSet.has(selected)) selected = [...selSet][0];
   elLayer.changed(); showEl(false);
@@ -2891,11 +2893,13 @@ function multiShow(){
 function multiSnap(){
   const p = pick, t = task;
   if(p){ const ids = new Set(p.ids), info = p.info && new Map(p.info); return ()=>{ if(pick!==p) return; p.ids = ids; if(info) p.info = info; multiShow(); }; }
+  if(shotMore){ const m = shotMore, was = new Set(m.set); return ()=>{ if(shotMore!==m) return; m.set = new Set(was); multiShow(); }; }
   const was = new Set(selSet), sel = selected;
   return ()=>{ if(task!==t || pick) return; selSet = new Set([...was].filter(f=>elSrc.hasFeature(f))); selected = selSet.has(sel) ? sel : [...selSet][0] || null; multiShow(); };
 }
 function multiToast(n, on, undo){
   const word = pick ? "ting" : n===1 ? "sted" : "steder";
+  if(shotMore){ toast(`${n} ${word} ${on ? "taget med på billedet" : "taget af billedet"} · ${shotMore.set.size} i alt`, 6000, {label:"↶ Fortryd", fn:undo}); return; }
   toast(pick ? `${n} ting ${on ? "taget med" : "taget ud"}` : on ? `${n} ${word} markeret · ${selSet.size} i alt` : `${n} ${word} fjernet fra markeringen`, 6000, {label:"↶ Fortryd", fn:undo});
 }
 // Mark (or, if every one is marked already, unmark) the things whose middle passes test
@@ -2961,7 +2965,7 @@ brushCv.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointe
 brushCv.hidden = true; map.getViewport().appendChild(brushCv);
 function brushPaint(f, on){
   const x = brushCv.getContext("2d"), g = f.getGeometry(), P = c=>map.getPixelFromCoordinate(c);
-  x.fillStyle = on ? "#2b6cd4cc" : "#8a939ccc"; x.strokeStyle = on ? "#2b6cd4" : "#8a939c"; x.lineJoin = x.lineCap = "round";
+  const c = !on ? "#8a939c" : shotMore ? COLORS.photo : "#2b6cd4"; x.fillStyle = c + "cc"; x.strokeStyle = c; x.lineJoin = x.lineCap = "round";
   const ring = r=>r.forEach((c, i)=>{ const [a, b] = P(c); i ? x.lineTo(a, b) : x.moveTo(a, b); });
   const ty = g.getType(); x.beginPath();
   if(/Point/.test(ty)) (ty==="Point" ? [g.getCoordinates()] : g.getCoordinates()).forEach(c=>{ const [a, b] = P(c); x.moveTo(a + 9, b); x.arc(a, b, 9, 0, 7); });
@@ -5928,7 +5932,7 @@ function shotMoreOpen(s){
 function shotMoreCount(){ const n = shotMore.set.size;
   $("shotMoreN").textContent = n === 1 ? "1 sted er markeret" : `${n} steder er markeret`; $("btnShotMoreOk").disabled = !n; }
 function shotMoreTap(f){ const st = shotMore.set; st.has(f) ? st.delete(f) : st.add(f); selSet = new Set(st); elLayer.changed(); shotMoreCount(); }
-function shotMoreEnd(){ shotMore = null; fold(false); selSet = new Set(); selected = null; elLayer.changed();
+function shotMoreEnd(){ shotMore = null; if(ringOn) ringMode(false); fold(false); selSet = new Set(); selected = null; elLayer.changed();
   $("shotMoreRow").hidden = $("shotMoreBtns").hidden = true; $("pWork").classList.remove("shot-more"); if(curPane()==="pWork") $("btnShot").hidden = !task || !sb || !logOk; }
 $("btnShotMoreNo").onclick = ()=>{ const s = shotMore?.s; shotMoreEnd(); if(!s) return; shotSaveSoon(s); if(s.cam) camOpen(true); };
 $("btnShotMoreOk").onclick = ()=>{ const m = shotMore; if(!m) return; const fs = [...m.set]; shotMoreEnd();
