@@ -1744,7 +1744,7 @@ const curPane = () => PANES.find(p=>!$(p).hidden);
 function pane(id){ if(id!==curPane()) fold(false); if(ringOn && !["pPick","pSpots","pWork","pEl"].includes(id)) ringMode(false); PANES.forEach(p=>$(p).hidden = p!==id);
   $("sheet").classList.toggle("can-fold", !!$(id).querySelector(":scope>[data-keep]")); showTbl(); showFlawBtn(); showLayersBtn();
   if(typeof syncTint==="function") syncTint(); if(typeof homeMap==="function") homeMap();
-  if(id==="pWork") $("btnShot").hidden = !!shotWait || !!shotMore || !task || !sb || !logOk; }
+  if(id==="pWork") $("btnShot").hidden = ANON || !!shotWait || !!shotMore || !task || !sb || !logOk; }
 // Fold the sheet down to the rows marked data-keep (its main buttons), so more of the map shows
 // on = 2 folds it all the way: only the bar is left ("mini"); panes without data-keep rows go straight there
 function fold(on){ const s = $("sheet"); if(!s) return; const lv = on === 2 || (on && !s.classList.contains("can-fold")) ? 2 : on ? 1 : 0;
@@ -5937,7 +5937,7 @@ function shotMap(s, msg){
   if(msg) toast(msg, 4000);
   goMe(); // the map goes to where you are, so the place is near
 }
-function shotWaitEnd(){ shotWait = null; $("shotWaitRow").hidden = true; if(curPane()==="pWork") $("btnShot").hidden = !task || !sb || !logOk; }
+function shotWaitEnd(){ shotWait = null; $("shotWaitRow").hidden = true; if(curPane()==="pWork") $("btnShot").hidden = ANON || !task || !sb || !logOk; }
 function shotTapped(f){ const s = shotWait; shotWaitEnd(); fold(false); if(s.cam) camOpen(true); shotCommit(s, f); } // the camera first, so the result shows in it
 $("btnShotWaitNo").onclick = ()=>{ const s = shotWait; shotWaitEnd(); if(s) photoDel(s.id); toast("Billedet er ikke gemt"); };
 function shotReset(){ if(shotMore) shotMoreEnd(); if(shotWait){ photoDel(shotWait.id); shotWaitEnd(); } if(camOn()) camClose(); $("askShot").hidden = true; }
@@ -5949,7 +5949,7 @@ function shotCommit(s, fs){
   const before = new Map(ids.map(id=>[id, {row: pending.get(key(id)), was: eff(id)}]));
   // auto-send waits a little, so Fortryd or Forkert sted? just takes it back out of the outbox
   const a = autoSend; autoSend = false;
-  try{ setStatus(ids, "done", undefined, undefined, s.id); } finally { autoSend = a; }
+  try{ setStatus(ids, "done", undefined, undefined, s.id); } finally { autoSend = a; renderOutbox(); } // with Send automatisk the bar stays hidden during the hold
   if(a){ clearTimeout(shotSendT); shotSendT = setTimeout(()=>{ if(autoSend) sendPending(); }, SHOT_HOLD); }
   const after = new Map(ids.map(id=>[id, pending.get(key(id))]));
   lastAt = ol.extent.getCenter(fs[0].getGeometry().getExtent());
@@ -5984,7 +5984,7 @@ function shotMoreCount(){ const n = shotMore.set.size;
   $("shotMoreN").textContent = n === 1 ? "1 sted er markeret" : `${n} steder er markeret`; $("btnShotMoreOk").disabled = !n; }
 function shotMoreTap(f){ const st = shotMore.set; st.has(f) ? st.delete(f) : st.add(f); selSet = new Set(st); elLayer.changed(); shotMoreCount(); }
 function shotMoreEnd(){ shotMore = null; if(ringOn) ringMode(false); fold(false); selSet = new Set(); selected = null; elLayer.changed();
-  $("shotMoreRow").hidden = $("shotMoreBtns").hidden = true; $("pWork").classList.remove("shot-more"); if(curPane()==="pWork") $("btnShot").hidden = !task || !sb || !logOk; }
+  $("shotMoreRow").hidden = $("shotMoreBtns").hidden = true; $("pWork").classList.remove("shot-more"); if(curPane()==="pWork") $("btnShot").hidden = ANON || !task || !sb || !logOk; }
 $("btnShotMoreNo").onclick = ()=>{ const s = shotMore?.s; shotMoreEnd(); if(!s) return; shotSaveSoon(s); if(s.cam) camOpen(true); };
 $("btnShotMoreOk").onclick = ()=>{ const m = shotMore; if(!m) return; const fs = [...m.set]; shotMoreEnd();
   const same = fs.length === m.s.fs.length && fs.every(f=>m.s.fs.includes(f));
