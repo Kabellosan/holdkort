@@ -1461,7 +1461,7 @@ AGES.forEach(a=>COLORS[a.k] = a.c);
 const ageKey = day => day ? AGES.find(a=>daysSince(day) <= a.max).k : "never";
 const elSrc = new ol.source.Vector();
 const styleCache = {};
-// A task with several types can be coloured by type instead (workMode): done ones still turn idverde green and blocked ones keep 🚧
+// A task with several types can be coloured by type instead (workMode): done ones keep their type colour with a lime ring, blocked ones keep 🚧
 // Colours follow the order the types were ticked in, so they stay put; null for a one-type task.
 // Green, yellow and red come last so a type isn't mistaken for Færdig / I gang / Mangler (also used by Overblik's Typer)
 const WORK_TY = [0,1,3,5,6,7,9,10,11,2,4,8];
@@ -1481,7 +1481,7 @@ function elStyle(f, res){
     if(!pick.spots) return shapeStyle(on ? ty || "pick" : "off", false, res);
     return [...(on || f===pick.sel ? shapeStyle("pick", true, res) : ty ? shapeStyle(ty, false, res) : spotOff(res)), ...pin];
   }
-  const st = statusOf(f.getId()), k = byTypeNow() && st!=="done" ? tcol[f.get("elementkode")] || "none" : st;
+  const st = statusOf(f.getId()), k = byTypeNow() ? tcol[f.get("elementkode")] || "none" : st;
   const s = shapeStyle(k, selSet.has(f), res, k===st ? null : st);
   const p = partStyle(f); // a long element partly done gets its done stretch drawn green on top
   const m = mediaMark(f.getId());
@@ -1517,21 +1517,28 @@ function shapeStyle(s, sel, res, st){ // res: the map resolution (m per pixel); 
   const key = s + sel + (far ? "far" : "near") + r + (st || "");
   if(!styleCache[key]){
     const c = COLORS[s], done = s==="done", low = done || s==="off" || st==="done"; // done and not-picked sit underneath
+    // tyDone: coloured by type and done (2026-11-20, Captain: done should still show its type): the type colour stays whole,
+    // and an idverde lime ring with the dark olive edge says Færdig, like the legend's swatch
+    const tyDone = st==="done" && !done, ringR = r + (r < 4 ? 1 : 1.5);
     styleCache[key] = [
+      ...(tyDone ? [new ol.style.Style({ // olive edge outside the lime ring, so it reads on the pale map and the photo
+        stroke:new ol.style.Stroke({color: DONE_EDGE, width: (sel ? 9 : far ? 6 : 5) + 3}),
+        image:new ol.style.Circle({radius: ringR + 2.5, fill:new ol.style.Fill({color: DONE_EDGE})}),
+        zIndex: sel ? 30 : 0})] : []),
       new ol.style.Style({ // white halo so shapes pop on the aerial photo; done gets a dark edge so the lime reads on the pale map too
-        stroke:new ol.style.Stroke({color: done ? DONE_EDGE : "#ffffffcc", width: sel ? 9 : far ? 6 : 5}),
-        image:new ol.style.Circle({radius: r + (r < 4 ? 1 : 1.5), fill:new ol.style.Fill({color: done ? DONE_EDGE : "#fff"})}),
+        stroke:new ol.style.Stroke({color: done ? DONE_EDGE : tyDone ? COLORS.done : "#ffffffcc", width: sel ? 9 : far ? 6 : 5}),
+        image:new ol.style.Circle({radius: tyDone ? ringR + 1.5 : ringR, fill:new ol.style.Fill({color: done ? DONE_EDGE : tyDone ? COLORS.done : "#fff"})}),
         zIndex: sel ? 30 : low ? 0 : 10
       }),
       new ol.style.Style({
-        fill:new ol.style.Fill({color: c + (sel || done ? "cc" : st==="done" ? "33" : low ? "66" : "99")}),
-        stroke:new ol.style.Stroke({color: st==="done" && !sel ? c + "99" : c, width: sel ? 5 : far ? 4 : 3}),
+        fill:new ol.style.Fill({color: c + (sel || done || tyDone ? "cc" : low ? "66" : "99")}),
+        stroke:new ol.style.Stroke({color: c, width: sel ? 5 : far ? 4 : 3}),
         image:new ol.style.Circle({radius: r, fill:new ol.style.Fill({color:c})}),
         zIndex: sel ? 31 : low ? 1 : 11
       })];
     if(far) styleCache[key].push(new ol.style.Style({ // a dot on every element so small hedges are findable zoomed out
       geometry: f => { const g = f.getGeometry(); return g.getType()==="Point" ? null : new ol.geom.Point(ol.extent.getCenter(g.getExtent())); },
-      image:new ol.style.Circle({radius: r, fill:new ol.style.Fill({color:c}), stroke:new ol.style.Stroke({color: done ? DONE_EDGE : "#fff",width:1.5})}),
+      image:new ol.style.Circle({radius: r, fill:new ol.style.Fill({color:c}), stroke:new ol.style.Stroke({color: done ? DONE_EDGE : tyDone ? COLORS.done : "#fff",width: tyDone ? 2.5 : 1.5})}),
       zIndex: sel ? 32 : low ? 2 : 12
     }));
     if(s==="blocked" || st==="blocked") styleCache[key].push(new ol.style.Style({ // a roadwork sign in the middle, so blocked stands out from far away too
@@ -1555,8 +1562,8 @@ function overStyle(f, res){
     const s = shapeStyle(k, f===place.sel, res);
     return f.get("_m") ? [...s, ...badgeStyle(f.get("_m"), res)] : s;
   }
-  // a package by type: each type its own colour, done ones turn idverde green and blocked keep 🚧, so progress still shows
-  const s = over?.mode==="type" && f.get("_s")!=="done" ? shapeStyle(over.tcol?.[f.get("elementkode")] || "none", false, res, f.get("_s"))
+  // a package by type: each type its own colour, done ones keep it with a lime ring and blocked keep 🚧, so progress still shows
+  const s = over?.mode==="type" ? shapeStyle(over.tcol?.[f.get("elementkode")] || "none", false, res, f.get("_s"))
     : shapeStyle((over?.mode==="age" ? f.get("_a") : f.get("_s")) || "none", false, res);
   return f.get("_m") ? [...s, ...badgeStyle(f.get("_m"), res)] : s;
 }
@@ -2622,7 +2629,7 @@ function workLegend(fs){
   if(!byType){ $("workLegend").innerHTML = ""; return; }
   const per = {}; fs.forEach(f=>{ const k = f.get("elementkode"), q = per[k] ||= {n:0, done:0}; q.n++; if(statusOf(f.getId())==="done") q.done++; });
   $("workLegend").innerHTML = task.codes.filter(k=>per[k]).map(k=>`<span><i style="background:${COLORS[tc[k]]}"></i>${esc(CODES[k] || k)} <b class="num">${per[k].done}/${per[k].n}</b></span>`).join("")
-    + `<span><i style="background:${COLORS.done};box-shadow:0 0 0 2px ${DONE_EDGE}"></i>Færdig</span>`;
+    + `<span><i style="background:#fff;box-shadow:0 0 0 2.5px ${COLORS.done},0 0 0 4px ${DONE_EDGE}"></i>Færdig = grøn ring</span>`;
 }
 // The switch is a map button under Mig (2026-11-13, Captain: it vanished when the sheet was folded): it shows the other choice, like Foto/Kort
 function syncTint(){
@@ -2634,7 +2641,7 @@ function syncTint(){
 }
 $("btnTint").onclick = ()=>{
   const ty = !byTypeNow(); store.set("workMode", ty ? "type" : "status"); refresh();
-  toast(ty ? "Farve pr. type. Færdige er stadig grønne." : "Farve efter status", 2500);
+  toast(ty ? "Farve pr. type. Færdige får en grøn ring." : "Farve efter status", 2500);
 };
 
 // ================= PICKING SPOTS: a boss chooses which elements of the area are in the task =================
@@ -4223,7 +4230,7 @@ async function overPaint(){
     const tys = o.codes.filter(k=>types[k]);
     $("overBar").innerHTML = n ? tys.map(k=>`<i style="width:${types[k].n/n*100}%;background:${COLORS[o.tcol[k]]}"></i>`).join("") : "";
     $("overLegend").innerHTML = tys.map(k=>`<span><i style="background:${COLORS[o.tcol[k]]}"></i>${esc(CODES[k]||k)} <b class="num">${types[k].done}/${types[k].n}</b></span>`).join("")
-      + (tys.length ? `<span><i style="background:${COLORS.done};box-shadow:0 0 0 2px ${DONE_EDGE}"></i>Færdig</span><span class="muted">tal = færdige / alle</span>` : "");
+      + (tys.length ? `<span><i style="background:#fff;box-shadow:0 0 0 2.5px ${COLORS.done},0 0 0 4px ${DONE_EDGE}"></i>Færdig = grøn ring</span><span class="muted">tal = færdige / alle</span>` : "");
   } else if(ages){
     $("overBar").innerHTML = n ? AGES.map(a=>`<i style="width:${(c[a.k]||0)/n*100}%;background:${a.c}"></i>`).join("") : "";
     $("overLegend").innerHTML = AGES.map(a=>`<span><i style="background:${a.c}"></i><b class="num">${c[a.k]||0}</b> ${a.l}</span>`).join("");
