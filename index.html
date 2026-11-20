@@ -4592,6 +4592,7 @@ $("photoIn").onchange = $("photoCam").onchange = async e=>{
   const file = e.target.files[0], cam = e.target.id === "photoCam"; e.target.value = "";
   if(noteCtx){ if(file) threadPhoto(file, cam); return; }
   const ids = [...selSet].map(g=>g.getId()); if(!file || !ids.length) return;
+  const label = photoPlace(selected || [...selSet][0]) + (ids.length > 1 ? `_og-${ids.length-1}-mere` : "");
   try{
     const id = uuid(); await photoPut(id, await shrink(file));
     setStatus(ids, null, null, undefined, id); // also redraws Noter og billeder if it's open
@@ -4599,24 +4600,33 @@ $("photoIn").onchange = $("photoCam").onchange = async e=>{
     // the quick 📷 in the element panel: done with the place; if they aren't all Færdig yet, the toast offers it (Captain, 2026-11-16)
     if($("pNotes").hidden){ const fs = [...selSet], t = task, open = ids.some(id=>(eff(id)?.status||"todo")!=="done");
       const done = open && {label:"✓ Færdig", fn:()=>{ if(task!==t) return; reselect(fs); if(selSet.size) markAndClear("done", undefined, undefined, true); }};
-      doneWith(msg, 8000, [done, cam && keepAct(file)].filter(Boolean)); }
-    else { notesDirty = msg; toast(msg, cam ? 8000 : 3000, cam && keepAct(file)); }
+      doneWith(msg, 8000, [done, cam && keepAct(file, label)].filter(Boolean)); }
+    else { notesDirty = msg; toast(msg, cam ? 8000 : 3000, cam && keepAct(file, label)); }
   }catch(err){ console.error(err); toast("Billedet kunne ikke gemmes. Prøv igen.", 4000); }
 };
-// A web page can't put a camera photo in the phone's gallery by itself, so the toast offers it:
-// iPhones get the share sheet ("Gem billede" puts it in Fotos), other phones download it (it shows under Downloads in the gallery).
-// The original is kept, full size; it never leaves the phone this way.
-const keepAct = file => ({label:"💾 Gem på telefonen", fn: async ()=>{
-  const f = new File([file], `holdkort-${today()}-${Date.now().toString(36)}.jpg`, {type: file.type || "image/jpeg"});
-  if(/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent))){
+// Camera photos also go on the phone (Captain, 2026-11-20: the crew all have Android and upload the photos to Inspectly):
+// Android saves them at once as a download (gallery → Download; Chrome asks once to allow several), full size,
+// named by day, time and place. A web page can't save to an iPhone's Fotos by itself, so iPhones get "💾 Gem på telefonen"
+// (share sheet → "Gem billede"). Returns the toast button, or nothing when it was saved already. Gallery picks are on the phone already.
+const fileLabel = s => String(s||"").replace(/[()]/g, "").split(" · ").map(x=>x.trim().replace(/\s+/g, "-")).filter(Boolean).join("_").replace(/[^\wæøåÆØÅéü-]/g, "") || "Holdkort";
+const photoPlace = f => f ? fileLabel(titleOf(f)) + (f.get("ogc_fid") != null ? "_nr" + f.get("ogc_fid") : "") : "Holdkort";
+function photoName(label, d=new Date()){ const p = n => String(n).padStart(2, "0");
+  return `${today()}_${p(d.getHours())}${p(d.getMinutes())}_${label}.jpg`; }
+function saveToPhone(blob, name){
+  const a = document.createElement("a"), u = URL.createObjectURL(blob);
+  a.href = u; a.download = name; document.body.append(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(u), 60000);
+}
+const keepAct = (file, label) => {
+  const name = photoName(label || "Holdkort");
+  if(!SHOT_IOS){ saveToPhone(file, name); return null; }
+  return {label:"💾 Gem på telefonen", fn: async ()=>{
+    const f = new File([file], name, {type: file.type || "image/jpeg"});
     try{ if(navigator.canShare?.({files:[f]})){ await navigator.share({files:[f]}); return; } }
     catch(err){ if(err.name === "AbortError") return; console.error(err); }
-  }
-  const a = document.createElement("a"), u = URL.createObjectURL(f);
-  a.href = u; a.download = f.name; document.body.append(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(u), 60000);
-  toast("Billedet er gemt på telefonen", 3000);
-}});
+    saveToPhone(f, name);
+  }};
+};
 // Older lines have only "done"; newer ones carry the status they were set to
 const histPill = r => { const st = r.status || (r.done ? "done" : null); if(!st) return "";
   return `<span class="pill ${st}">${st==="blocked" ? "🚧 " : ""}${LABEL[st]}${st==="blocked" && r.reason ? ": " + esc(r.reason) : ""}</span>`; };
@@ -5460,7 +5470,9 @@ async function threadPhoto(file, cam){
     if(up.error) throw up.error;
     const {error} = await sb.from("element_log").insert(threadLine(c, {photo:path}));
     if(error) throw error;
-    toast("Billedet er sendt", cam ? 8000 : 2600, cam && keepAct(file)); if(task) loadTaskMedia(task);
+    const where = c.feat ? photoPlace(c.feat) : c.pin?.what ? fileLabel(c.pin.what) : fileLabel(task?.name || "");
+    const label = (c.flaw ? "Kortfejl_" : c.pin ? "Pin_" : "Opgave_") + where;
+    toast("Billedet er sendt", cam ? 8000 : 2600, cam && keepAct(file, label)); if(task) loadTaskMedia(task);
   }catch(e){ console.error(e); toast("Billedet kunne ikke sendes. Tjek forbindelsen og prøv igen.", 4000); }
   if(noteCtx === c) showThread();
 }
@@ -5904,11 +5916,7 @@ function shotWrong(s){
 // they get a "💾 Gem" button instead (Fotos via "Gem billede").
 const SHOT_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
 let shotSaveQ = null;
-function shotName(s){
-  const d = s.at, p = n => String(n).padStart(2, "0"), f = s.f, fid = f.get("ogc_fid");
-  const what = titleOf(f).replace(/[()]/g, "").split(" · ").map(x=>x.trim().replace(/\s+/g, "-")).join("_").replace(/[^\wæøåÆØÅéü-]/g, "");
-  return `${today()}_${p(d.getHours())}${p(d.getMinutes())}_${what}${fid != null ? "_nr" + fid : ""}.jpg`;
-}
+const shotName = s => photoName(photoPlace(s.f), s.at);
 function shotSaveSoon(s){
   if(shotSaveQ && shotSaveQ !== s) shotSave(shotSaveQ); // the one before is settled now
   if(SHOT_IOS) return;
@@ -5920,9 +5928,7 @@ async function shotSave(s, ios){
   s.saved = true;
   const f = new File([s.full], shotName(s), {type: s.full.type || "image/jpeg"});
   if(ios){ try{ if(navigator.canShare?.({files:[f]})) await navigator.share({files:[f]}); }catch(err){ s.saved = false; } return; }
-  const a = document.createElement("a"), u = URL.createObjectURL(f);
-  a.href = u; a.download = f.name; document.body.append(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(u), 60000);
+  saveToPhone(f, f.name);
 }
 const shotFlush = () => { if(shotSaveQ) shotSave(shotSaveQ); };
 // ---- the camera inside the app ----
