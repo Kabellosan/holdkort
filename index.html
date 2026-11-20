@@ -540,11 +540,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <div class="grow"><div class="eyebrow" id="workCodes"></div><h2 id="workName"></h2></div>
       <div style="text-align:right"><div class="big num" id="workCount">–</div><div class="muted">færdige</div></div>
     </div>
-    <div class="row"><span class="grow" id="workWho"></span></div>
     <div class="bar" id="bar"></div>
-    <div class="legend" id="workLegend" hidden></div>
-    <div class="row"><span class="muted grow" id="dataAge"></span><button class="btn ghost" id="btnRefresh" style="min-height:36px;padding:4px 8px">Opdater</button></div>
-    <button class="btn" id="btnReport" hidden>📄 Rapport til kommunen</button>
     <div class="row" id="shotWaitRow" data-keep hidden><span class="grow"><b>📷 Tryk på stedet på kortet</b><br><span class="muted">Så bliver det Færdig med billedet.</span></span><button class="btn" id="btnShotWaitNo">Annullér</button></div>
     <div class="row" id="shotMoreRow" data-keep hidden><span class="grow"><b>📷 Tryk på de andre steder på billedet</b><br><span class="muted" id="shotMoreN"></span></span></div>
     <div class="row" id="shotMoreBtns" data-keep hidden><button class="btn" id="btnShotMoreNo">Annullér</button><button class="btn primary fill" id="btnShotMoreOk">✓ Færdig</button></div>
@@ -555,6 +551,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <button class="btn" id="btnTaskPhotos" hidden>💬 <span id="taskPhotoN">Noter</span></button>
     </div>
     <button class="btn ringbtn" data-multi data-keep aria-pressed="false">☰ Markér flere</button>
+    <div class="row"><span class="grow" id="workWho"></span></div>
+    <div class="legend" id="workLegend" hidden></div>
+    <div class="row"><span class="muted grow" id="dataAge"></span><button class="btn ghost" id="btnRefresh" style="min-height:36px;padding:4px 8px">Opdater</button></div>
+    <button class="btn" id="btnReport" hidden>📄 Rapport til kommunen</button>
   </div>
 
   <!-- A boss picks which elements of the area belong to the task -->
