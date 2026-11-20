@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Holdkort · anonym</title>
+<style>body{font:17px system-ui,sans-serif;margin:0;padding:40px 20px;color:#1d2b22;background:#f4f4ef}</style>
+</head>
+<body>
+<p id="msg">Henter Holdkort …</p>
+<script>
+// The anonymous version of Holdkort: the same app as one folder up (main), but because it runs under /anonym/ it sets ANON
+// (see index.html): its own database that keeps no names (supabase/anon_beta.sql), login with the code alone, no photos.
+// <base> makes the app's files (sw.js, icons) load from the folder above; the manifest is this folder's own.
+(async () => {
+  try {
+    const r = await fetch("../index.html", {cache: "no-cache"});
+    if (!r.ok) throw new Error(r.status);
+    const html = (await r.text())
+      .replace("<head>", '<head><base href="../">')
+      .replace('<link rel="manifest" href="manifest.json">', '<link rel="manifest" href="anonym/manifest.json">');
+    document.open(); document.write(html); document.close();
+  } catch (e) {
+    document.getElementById("msg").textContent = "Holdkort kunne ikke hentes (" + e.message + "). Tjek forbindelsen og prøv igen.";
+  }
+})();
+</script>
+</body>
+</html>
