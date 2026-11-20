@@ -285,6 +285,26 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .msg .ednote{align-self:flex-end;min-height:40px;padding:4px 12px;font-size:14px}
 #noteIn,#editNoteIn{font:inherit;font-size:17px;width:100%;min-height:76px;padding:12px;border-radius:var(--r);border:1px solid var(--line);background:var(--paper);color:var(--ink);resize:vertical;box-sizing:border-box}
 #multiHint{font-size:14px}
+.shotbtn{width:100%;min-height:60px;font-size:18px}
+.shotimg{width:100%;max-height:140px;object-fit:cover;border-radius:10px;background:var(--line)}
+.shotlist{display:flex;flex-direction:column;gap:8px}
+.shotlist .btn{justify-content:flex-start;text-align:left;gap:12px;min-height:76px;padding:8px 12px}
+.shotlist .btn .txt{display:flex;flex-direction:column;gap:2px}
+.shotlist .mini{width:60px;height:60px;flex:none;background:#eef0ec;border-radius:8px}
+.shotlist .btn .muted{font-weight:400;font-size:14px}
+.cam{position:absolute;inset:0;background:#000;z-index:19;color:#fff}
+.cam video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.camFlash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
+.camFlash.on{opacity:.7;transition:none}
+.camTop{position:absolute;left:0;right:0;top:0;display:flex;gap:8px;padding:calc(env(safe-area-inset-top,0px) + 10px) 12px 10px;background:linear-gradient(#0008,#0000)}
+.camTop .btn,.camActs .btn{background:#000a;color:#fff;border-color:#fff6}
+.camBottom{position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;gap:10px;padding:16px 14px calc(env(safe-area-inset-bottom,0px) + 16px);background:linear-gradient(#0000,#000b 35%)}
+.camNear{font-size:16px;text-align:center;text-shadow:0 1px 3px #000;min-height:22px}
+.camLast{background:#000c;border:1px solid #fff4;border-radius:16px;padding:10px 12px;width:100%;max-width:420px;display:flex;flex-direction:column;gap:8px;font-size:16px}
+.camActs{display:flex;gap:8px}.camActs .btn{flex:1}
+.camShut{width:96px;height:96px;border-radius:50%;border:6px solid #fff;background:var(--done,#bfd830);box-shadow:0 0 0 3px #0006;font-size:40px;color:#26320a;display:flex;align-items:center;justify-content:center}
+.camShut:active{transform:scale(.94)}
+.camCap{font-size:15px;opacity:.9;text-shadow:0 1px 3px #000}
 .ask{position:absolute;inset:0;background:#0007;display:flex;align-items:center;justify-content:center;padding:18px;z-index:30}
 .ask>div{background:var(--card);border-radius:20px;padding:20px;max-width:360px;width:100%;display:flex;flex-direction:column;gap:12px;box-shadow:0 10px 40px #0005}
 .ask h2{font-size:20px}
@@ -523,8 +543,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="legend" id="workLegend" hidden></div>
     <div class="row"><span class="muted grow" id="dataAge"></span><button class="btn ghost" id="btnRefresh" style="min-height:36px;padding:4px 8px">Opdater</button></div>
     <button class="btn" id="btnReport" hidden>📄 Rapport til kommunen</button>
+    <div class="row" id="shotWaitRow" data-keep hidden><span class="grow"><b>📷 Tryk på stedet på kortet</b><br><span class="muted">Så bliver det Færdig med billedet.</span></span><button class="btn" id="btnShotWaitNo">Annullér</button></div>
+    <button class="btn primary shotbtn" id="btnShot" data-keep hidden>📷 Færdig med billede</button>
     <div class="row" data-keep>
-      <button class="btn primary fill" id="btnNext">Næste ▸</button>
+      <button class="btn fill" id="btnNext">Næste ▸</button>
       <button class="btn" id="btnList">Liste</button>
       <button class="btn" id="btnTaskPhotos" hidden>💬 <span id="taskPhotoN">Noter</span></button>
     </div>
@@ -611,6 +633,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <button class="notepeek" id="notePeek" hidden><span id="notePeekTxt"></span><small id="notePeekBy"></small></button>
     <input type="file" id="photoIn" accept="image/*" hidden>
     <input type="file" id="photoCam" accept="image/*" capture="environment" hidden>
+    <input type="file" id="shotCam" accept="image/*" capture="environment" hidden>
     <div class="row selrow"><div class="grow"><div class="tended" id="elTended"></div><div class="muted" id="multiHint">Tryk på flere for at markere dem.</div></div><button class="btn clear" id="btnClearSel">✕ Ryd markerede</button></div>
     <details class="reqs" id="reqs"><summary>📋 Krav og sikkerhed</summary><div class="rbody" id="reqsBody"></div></details>
   </div>
@@ -750,6 +773,27 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   </div>
 </div>
 
+<div class="cam" id="pCam" hidden role="dialog" aria-label="Kamera">
+  <video id="camVideo" playsinline muted autoplay></video>
+  <div class="camFlash" id="camFlash"></div>
+  <div class="camTop"><button class="btn" id="btnCamClose">✕ Luk</button><span class="grow"></span><button class="btn" id="btnCamNative">Telefonens kamera</button></div>
+  <div class="camBottom">
+    <div class="camNear" id="camNear"></div>
+    <div class="camLast" id="camLast" hidden><div id="camLastTxt"></div><div class="camActs"><button class="btn" id="camUndo">↶ Fortryd</button><button class="btn" id="camWrong">Forkert sted?</button></div></div>
+    <button class="camShut" id="camShut" aria-label="Tag billede og sæt stedet Færdig"><span>✓</span></button>
+    <div class="camCap">Tag billede = Færdig</div>
+  </div>
+</div>
+<div class="ask" id="askShot" hidden role="dialog" aria-modal="true" aria-labelledby="askShotQ">
+  <div>
+    <h2 id="askShotQ">Hvilket sted?</h2>
+    <p class="muted" id="askShotSub"></p>
+    <img id="askShotImg" class="shotimg" alt="Billedet du tog">
+    <div id="askShotList" class="shotlist"></div>
+    <button class="btn" id="askShotMap">🗺 Tryk på stedet på kortet</button>
+    <button class="btn ghost" id="askShotNo">Annullér, gem ikke billedet</button>
+  </div>
+</div>
 <div class="ask" id="askPhoto" hidden role="dialog" aria-modal="true" aria-labelledby="askPhotoQ">
   <div>
     <h2 id="askPhotoQ">Billede</h2>
@@ -1682,7 +1726,8 @@ const PANES = ["pTasks","pWork","pEl","pList","pArea","pOver","pPick","pPlace","
 const curPane = () => PANES.find(p=>!$(p).hidden);
 function pane(id){ if(id!==curPane()) fold(false); if(ringOn && !["pPick","pSpots","pWork","pEl"].includes(id)) ringMode(false); PANES.forEach(p=>$(p).hidden = p!==id);
   $("sheet").classList.toggle("can-fold", !!$(id).querySelector(":scope>[data-keep]")); showTbl(); showFlawBtn(); showLayersBtn();
-  if(typeof syncTint==="function") syncTint(); if(typeof homeMap==="function") homeMap(); }
+  if(typeof syncTint==="function") syncTint(); if(typeof homeMap==="function") homeMap();
+  if(id==="pWork") $("btnShot").hidden = !!shotWait || !task || !sb || !logOk; }
 // Fold the sheet down to the rows marked data-keep (its main buttons), so more of the map shows
 // on = 2 folds it all the way: only the bar is left ("mini"); panes without data-keep rows go straight there
 function fold(on){ const s = $("sheet"); if(!s) return; const lv = on === 2 || (on && !s.classList.contains("can-fold")) ? 2 : on ? 1 : 0;
@@ -1886,7 +1931,7 @@ const COLOR_STEP = {ic:"🎨", t:"Farverne på kortet", h:`<div class="gcol">
   ${dotC("var(--doing)")}<span><b>Gul</b> = i gang</span>
   ${dotC("var(--done)")}<span><b>Grøn</b> = færdig</span>
   ${dotC("var(--blocked)")}<span><b>Sort</b> = blokeret, fx en bil holder der</span></div>`};
-const MARK_STEP = {ic:"👆", t:"Marker et sted", h:`<p>Tryk på et sted på kortet. Tryk så <b>Færdig</b>, <b>I gang</b>, <b>Mangler</b> eller <b>🚧 Blokeret</b>. Markeringen forsvinder af sig selv; trykkede du forkert, så tryk <b>↶ Fortryd</b>.</p><p>Mange på én gang: hold fingeren på et sted, til telefonen summer, og stryg hen over de andre. Flere måder under <b>☰ Markér flere</b>.</p>
+const MARK_STEP = {ic:"👆", t:"Marker et sted", h:`<p><b>Hurtigst:</b> tryk <b>📷 Færdig med billede</b>, og tag et billede af hvert sted, når det er lavet. Appen finder stedet med GPS'en og sætter det Færdig med billedet. Er der flere steder lige ved, spørger den.</p><p>Eller tryk på et sted på kortet. Tryk så <b>Færdig</b>, <b>I gang</b>, <b>Mangler</b> eller <b>🚧 Blokeret</b>. Markeringen forsvinder af sig selv; trykkede du forkert, så tryk <b>↶ Fortryd</b>.</p><p>Mange på én gang: hold fingeren på et sted, til telefonen summer, og stryg hen over de andre. Flere måder under <b>☰ Markér flere</b>.</p>
   <p>Tryk på flere steder for at markere dem på én gang. <b>Næste ▸</b> viser det nærmeste sted, der mangler.</p>
   <p>Kun nået et stykke af en lang hæk eller sti? Tryk <b>📏 Stykke</b>, og tryk så, hvor du startede, og hvor du stoppede.</p>`};
 const SEND_STEP = {ic:"📤", t:"Husk at sende", h:`<p>Det, du markerer, bliver på telefonen, til du trykker <b>Send</b>. Så kan du vente, til du har forbindelse.</p>
@@ -2552,7 +2597,7 @@ async function refreshElements(t, manual){
 }
 async function openTask(t){
   closeOverview();
-  task = t; selected = null; lastAt = null; selSet.clear(); elSrc.clear(); areaSrc.clear(); clearTimeout(refreshTimer);
+  shotReset(); task = t; selected = null; lastAt = null; selSet.clear(); elSrc.clear(); areaSrc.clear(); clearTimeout(refreshTimer);
   taskAll = []; pick = null;
   geo.setTracking(true);
   if(!t.spots) areaSrc.addFeature(new ol.Feature(shapeGeom(t))); // hand-picked spots have no area to outline
@@ -2599,7 +2644,7 @@ async function openTask(t){
     refreshTimer = setTimeout(()=>{ if(task===t && navigator.onLine && !rushHour()) refreshElements(t, false); }, 15000 + Math.random()*180000);
 }
 $("btnRefresh").onclick = ()=>{ if(task) refreshElements(task, true); };
-$("btnBack").onclick = ()=>{ clearTimeout(refreshTimer); loadFailed(null); task=null; selected=null; selSet.clear(); elSrc.clear(); areaSrc.clear(); pinMode(false); pinSrc.clear(); pins = []; $("btnPin").hidden = true; pane("pTasks"); loadTasks(); };
+$("btnBack").onclick = ()=>{ shotReset(); clearTimeout(refreshTimer); loadFailed(null); task=null; selected=null; selSet.clear(); elSrc.clear(); areaSrc.clear(); pinMode(false); pinSrc.clear(); pins = []; $("btnPin").hidden = true; pane("pTasks"); loadTasks(); };
 
 function refresh(){
   elLayer.changed();
@@ -5167,6 +5212,7 @@ map.on("singleclick", e=>{
     return;
   }
   if(!task) return;
+  if(shotWait){ const all = underFinger(e); if(all.length) shotTapped(all[0]); return; } // a photo waits for its place
   const pinHit = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===pinLayer, hitTolerance:16}).find(f=>f.get("pin"));
   if(pinHit){ openPin(pinHit.get("pin")); return; }
   const hits = map.getFeaturesAtPixel(e.pixel, {layerFilter:l=>l===elLayer, hitTolerance:12});
@@ -5744,6 +5790,159 @@ function next(){
   toast(`${fmtDist(distTo(pool[0],p))} væk`);
 }
 $("btnNext").onclick = next; $("btnNext2").onclick = next;
+// ================= FÆRDIG MED BILLEDE =================
+// Captain, 2026-11-20: "take a picture and if everything is as it should be, that's all you have to do".
+// "📷 Færdig med billede" opens a camera inside the app. Each press of its big button takes a picture, finds the
+// nearest place in the task that isn't Færdig from the GPS, marks it Færdig and puts the picture on it. One press per place.
+// A web page can't read the GPS of photos in the gallery (iPhone and Android both strip it), so the app has to be the camera.
+// When the GPS can't tell places apart (they lie within its margin of each other) it asks "Hvilket sted?" instead of guessing;
+// no GPS or nothing near: it asks, or (outside the camera) waits for a tap on the map. The GPS position never leaves the phone.
+// "Telefonens kamera" (and phones without a camera for web pages) uses the phone's own camera app, one picture at a time.
+const SHOT_TOL = [5, 10], SHOT_NEAR = 15, SHOT_BADGPS = 40, SHOT_HOLD = 10000;
+var shotWait = null; // a photo waiting for a tap on its place
+let shotSendT = 0, camStream = null, camBusy = false, camLast = null;
+const camOn = () => !$("pCam").hidden;
+function shotDist(f, p){ const g = f.getGeometry(); return /Polygon/.test(g.getType()) && g.intersectsCoordinate(p) ? 0 : distTo(f, p); }
+// The places the photo can be of. wide: every place near (after "Forkert sted?"), not just those within the GPS margin of the nearest
+function shotFind(skip, wide){
+  const p = geo.getPosition(), acc = geo.getAccuracy();
+  if(!p) return {why:"nogps"};
+  if(acc == null || acc > SHOT_BADGPS) return {why:"gps", acc};
+  const ds = elSrc.getFeatures().filter(f=>statusOf(f.getId())!=="done" && !skip?.has(f.getId()))
+    .map(f=>[f, shotDist(f, p)]).sort((a,b)=>a[1]-b[1]);
+  if(!ds.length) return {why:"none", acc};
+  const d0 = ds[0][1], near = SHOT_NEAR + Math.min(acc, 25), tol = Math.min(SHOT_TOL[1], Math.max(SHOT_TOL[0], acc));
+  if(d0 > near) return {why:"far", d0, acc};
+  return {list: ds.filter(([,d])=>d <= (wide ? near : d0 + tol)).slice(0, 5), acc};
+}
+// A tiny north-up map for each choice: this place blue, the other choices grey, you as a dot, since the names are often the same
+function shotMini(fs, f){
+  const p = geo.getPosition(), ext = ol.extent.createEmpty();
+  fs.forEach(g=>ol.extent.extend(ext, g.getGeometry().getExtent())); if(p) ol.extent.extendCoordinate(ext, p);
+  const c = ol.extent.getCenter(ext), half = Math.max(ol.extent.getWidth(ext), ol.extent.getHeight(ext), 8) / 2 + 3, k = 64 / (2*half);
+  const xy = q => `${((q[0]-c[0]+half)*k).toFixed(1)},${((c[1]+half-q[1])*k).toFixed(1)}`;
+  const shape = (g, on) => { const t = g.getType(), cs = g.getCoordinates(), col = on ? "#1f6fd1" : "#9aa29c", w = on ? 3 : 2;
+    if(/Point/.test(t)) return (t==="Point" ? [cs] : cs).map(q=>{ const [x,y] = xy(q).split(","); return `<circle cx="${x}" cy="${y}" r="${on?5:4}" fill="${col}"/>`; }).join("");
+    if(/Polygon/.test(t)) return (t==="Polygon" ? [cs] : cs).map(pg=>`<path d="M${pg[0].map(xy).join("L")}Z" fill="${col}" fill-opacity="${on?.55:.3}" stroke="${col}" stroke-width="${w}"/>`).join("");
+    return (t==="LineString" ? [cs] : cs).map(l=>`<path d="M${l.map(xy).join("L")}" fill="none" stroke="${col}" stroke-width="${w+1}" stroke-linecap="round"/>`).join(""); };
+  const me = p ? (([x,y])=>`<circle cx="${x}" cy="${y}" r="5" fill="#fff"/><circle cx="${x}" cy="${y}" r="3.5" fill="#d33"/>`)(xy(p).split(",")) : "";
+  return `<svg class="mini" viewBox="0 0 64 64" aria-hidden="true">${fs.filter(g=>g!==f).map(g=>shape(g.getGeometry())).join("")}${shape(f.getGeometry(), true)}${me}</svg>`;
+}
+const SHOT_WHY = {nogps:"Telefonen har ikke fundet din position endnu.", gps:"GPS'en er for usikker lige nu.",
+  far:"Intet sted i opgaven, der mangler, er tæt på dig.", none:"Alt i opgaven er færdigt."};
+async function shotPhoto(blob, cam){
+  if(!task) return;
+  const s = {id: uuid(), t: task, cam, url: URL.createObjectURL(blob)};
+  try{ await photoPut(s.id, await shrink(blob)); }
+  catch(err){ console.error(err); toast("Billedet kunne ikke gemmes. Prøv igen.", 4000); return; }
+  const r = shotFind();
+  if(r.list?.length === 1) return shotCommit(s, r.list[0][0]);
+  if(!r.list && !cam) return shotMap(s, SHOT_WHY[r.why]);
+  shotAsk(s, r);
+}
+function shotAsk(s, r, wrong){
+  $("askShotQ").textContent = r.list ? "Hvilket sted er billedet fra?" : "Hvor er billedet fra?";
+  $("askShotSub").textContent = wrong ? "Tryk på det rigtige sted." : r.list ? "Der er flere steder lige ved. Tryk på det, du har lavet."
+    : SHOT_WHY[r.why] + (r.why==="gps" ? ` (± ${Math.round(r.acc)} m)` : "");
+  $("askShotImg").src = s.url;
+  const L = $("askShotList"); L.replaceChildren(...(r.list||[]).map(([f, d])=>{
+    const b = document.createElement("button"); b.className = "btn";
+    const sub = [subOf(f).split(" · ").slice(0, 2).join(" · "), d < 1 ? "lige her" : `${Math.round(d)} m væk`, LABEL[statusOf(f.getId())]].filter(Boolean).join(" · ");
+    b.innerHTML = `${shotMini(r.list.map(x=>x[0]), f)}<span class="txt"><b>${esc(titleOf(f))}</b><span class="muted">${esc(sub)}</span></span>`;
+    b.onclick = ()=>{ shotAskClose(); shotCommit(s, f); };
+    return b; }));
+  $("askShotMap").onclick = ()=>{ shotAskClose(); shotMap(s); };
+  $("askShotNo").onclick = ()=>{ shotAskClose(); photoDel(s.id); toast("Billedet er ikke gemt"); };
+  if(!camOn() && r.list){ selSet = new Set(r.list.map(x=>x[0])); selected = null; elLayer.changed(); } // shows them on the map behind
+  $("askShot").hidden = false;
+}
+function shotAskClose(){ $("askShot").hidden = true; if(selSet.size && !selected){ selSet.clear(); elLayer.changed(); } }
+// Wait for a tap on the map (the camera closes and comes back after, if it was open)
+function shotMap(s, msg){
+  if(camOn()) camClose();
+  select(null); shotWait = s; $("shotWaitRow").hidden = false; $("btnShot").hidden = true; fold(1);
+  if(msg) toast(msg, 4000);
+  goMe(); // the map goes to where you are, so the place is near
+}
+function shotWaitEnd(){ shotWait = null; $("shotWaitRow").hidden = true; if(curPane()==="pWork") $("btnShot").hidden = !task || !sb || !logOk; }
+function shotTapped(f){ const s = shotWait; shotWaitEnd(); fold(false); if(s.cam) camOpen(true); shotCommit(s, f); } // the camera first, so the result shows in it
+$("btnShotWaitNo").onclick = ()=>{ const s = shotWait; shotWaitEnd(); if(s) photoDel(s.id); toast("Billedet er ikke gemt"); };
+function shotReset(){ if(shotWait){ photoDel(shotWait.id); shotWaitEnd(); } if(camOn()) camClose(); $("askShot").hidden = true; }
+function shotCommit(s, f){
+  if(task !== s.t) return;
+  const t = task, id = f.getId(), key = t.id+"|"+id, before = {row: pending.get(key), was: eff(id)};
+  // auto-send waits a little, so Fortryd or Forkert sted? just takes it back out of the outbox
+  const a = autoSend; autoSend = false;
+  try{ setStatus([id], "done", undefined, undefined, s.id); } finally { autoSend = a; }
+  if(a){ clearTimeout(shotSendT); shotSendT = setTimeout(()=>{ if(autoSend) sendPending(); }, SHOT_HOLD); }
+  const after = pending.get(key);
+  lastAt = ol.extent.getCenter(f.getGeometry().getExtent());
+  if(selSet.size) select(null);
+  s.f = f;
+  s.undo = keep => { if(task !== t) return false;
+    if(pending.get(key) === after){ before.row ? pending.set(key, before.row) : pending.delete(key); store.set("pending", [...pending.values()]); renderOutbox(); refresh(); }
+    else { const w = before.was || {status:"todo"}; setStatus([id], w.status||"todo", undefined, w.reason); } // already sent: send the old status back
+    if(!keep) photoDel(s.id);
+    return true; };
+  navigator.vibrate?.(40);
+  const msg = `✓ Færdig: ${titleOf(f)}`;
+  if(camOn()) return camShowLast(s, msg);
+  toast(`${msg} · med billede`, SHOT_HOLD, [{label:"↶ Fortryd", fn:()=>{ if(s.undo()) toast("Fortrudt"); }}, {label:"Forkert sted?", fn:()=>shotWrong(s)}]);
+}
+function shotWrong(s){
+  if(!s.undo(true)) return;
+  const r = shotFind(new Set([s.f.getId()]), true);
+  if(!r.list && !s.cam) return shotMap(s, "Tryk på det rigtige sted på kortet.");
+  shotAsk(s, r, true);
+}
+// ---- the camera inside the app ----
+async function camStart(){
+  camStop();
+  camStream = await navigator.mediaDevices.getUserMedia({audio:false, video:{facingMode:{ideal:"environment"}, width:{ideal:1920}, height:{ideal:1440}}});
+  const v = $("camVideo"); v.srcObject = camStream; await v.play().catch(()=>{});
+}
+function camStop(){ camStream?.getTracks().forEach(tr=>tr.stop()); camStream = null; $("camVideo").srcObject = null; }
+async function camOpen(keepLast){
+  if(!task) return;
+  if(!navigator.mediaDevices?.getUserMedia) return $("shotCam").click();
+  geo.setTracking(true);
+  $("pCam").hidden = false; if(!keepLast) $("camLast").hidden = true; camNear();
+  try{ await camStart(); }
+  catch(err){ console.error(err); camClose();
+    toast("Kameraet i appen kan ikke åbne. Tillad kamera for siden, eller brug telefonens kamera.", 8000, {label:"📷 Telefonens kamera", fn:()=>$("shotCam").click()}); }
+}
+function camClose(){ camStop(); $("pCam").hidden = true; }
+function camNear(){
+  if(!camOn()) return;
+  const r = shotFind(), n = r.list?.length;
+  $("camNear").textContent = n === 1 ? `Tæt på: ${titleOf(r.list[0][0])}` : n ? `${n} steder lige ved. Du bliver spurgt, hvilket.`
+    : r.why==="nogps" ? "Finder din position …" : SHOT_WHY[r.why];
+}
+geo.on("change:position", camNear);
+function camShowLast(s, msg){
+  camLast = s; $("camLast").hidden = false; $("camLastTxt").textContent = msg;
+  $("camUndo").hidden = $("camWrong").hidden = false; camNear();
+}
+$("camUndo").onclick = ()=>{ const s = camLast; if(s?.undo()){ $("camLastTxt").textContent = "Fortrudt. Stedet er sat tilbage."; $("camUndo").hidden = $("camWrong").hidden = true; camNear(); } };
+$("camWrong").onclick = ()=>{ const s = camLast; if(!s) return; $("camLast").hidden = true; shotWrong(s); };
+$("camShut").onclick = async ()=>{
+  const v = $("camVideo"); if(camBusy || !v.videoWidth) return;
+  camBusy = true; $("camFlash").classList.add("on"); setTimeout(()=>$("camFlash").classList.remove("on"), 60);
+  const c = document.createElement("canvas"); c.width = v.videoWidth; c.height = v.videoHeight;
+  c.getContext("2d").drawImage(v, 0, 0);
+  const blob = await new Promise(ok=>c.toBlob(ok, "image/jpeg", 0.9));
+  camBusy = false;
+  if(blob) shotPhoto(blob, true); else toast("Billedet kunne ikke tages. Prøv igen.", 3000);
+};
+$("btnCamClose").onclick = camClose;
+$("btnCamNative").onclick = ()=>{ camClose(); $("shotCam").click(); };
+$("btnShot").onclick = ()=>camOpen();
+$("shotCam").onchange = e=>{ const file = e.target.files[0]; e.target.value = ""; if(file) shotPhoto(file, false); };
+// The camera stops while the phone shows something else, and starts again on return
+document.addEventListener("visibilitychange", ()=>{
+  if(document.visibilityState==="hidden") camStop();
+  else if(camOn()) camStart().catch(()=>camClose());
+});
 // "◎ Mig" under the map switch, on every screen. Starts GPS on first use (outside a task it isn't running yet)
 // and centres once the first position comes in.
 let meWait = false;
@@ -6226,7 +6425,7 @@ window.addEventListener("online", ()=>{ if(autoSend) sendPending(); });
 // and put the entry back if something is still open. On the task list back leaves as usual.
 // Top first: the photo, the guide, the questions, the full-screen panels (later in the page = on top), then the sheet.
 const BACK = [["photoView","btnPhotoClose"], ["guide",closeGuide], [()=>!$("moreBox").hidden, ()=>moreOpen(false)],
-  ...[...document.querySelectorAll(".ask")].reverse().map(a=>[a.id, a.querySelector("[id$=No]")]),
+  ...[...document.querySelectorAll(".ask")].reverse().map(a=>[a.id, a.querySelector("[id$=No]")]), ["pCam","btnCamClose"], ["shotWaitRow","btnShotWaitNo"],
   ["pPerson","btnPersonNo","btnPersonCancel"], ["pProfile","btnProfClose"], ["pLogin"],
   ["pFind","btnFindClose"], ["pSearch","btnSearchClose"], ["pNotes","btnNotesClose"], ["pReport","btnReportClose"], ["pHist","btnHistClose"],
   ["pLayers","btnLayersClose"], ["pShow","btnShowClose"], ["pType","btnTypeClose"], ["pPack","btnPackClose"], ["pNew","btnNewCancel"],
