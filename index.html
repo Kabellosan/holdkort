@@ -301,6 +301,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .camBottom{position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;gap:10px;padding:16px 14px calc(env(safe-area-inset-bottom,0px) + 16px);background:linear-gradient(#0000,#000b 35%)}
 .camNear{font-size:16px;text-align:center;text-shadow:0 1px 3px #000;min-height:22px}
 .camLast{background:#000c;border:1px solid #fff4;border-radius:16px;padding:10px 12px;width:100%;max-width:420px;display:flex;flex-direction:column;gap:8px;font-size:16px}
+#camAlso{background:#fff;color:#1d2a20;border-color:#fff;font-weight:700}
 .camActs{display:flex;gap:8px}.camActs .btn{flex:1}
 .camShut{width:96px;height:96px;border-radius:50%;border:6px solid #fff;background:var(--done,#bfd830);box-shadow:0 0 0 3px #0006;font-size:40px;color:#26320a;display:flex;align-items:center;justify-content:center}
 .camShut:active{transform:scale(.94)}
@@ -779,7 +780,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <div class="camTop"><button class="btn" id="btnCamClose">✕ Luk</button><span class="grow"></span><button class="btn" id="btnCamNative">Telefonens kamera</button></div>
   <div class="camBottom">
     <div class="camNear" id="camNear"></div>
-    <div class="camLast" id="camLast" hidden><div id="camLastTxt"></div><div class="camActs"><button class="btn" id="camUndo">↶ Fortryd</button><button class="btn" id="camWrong">Forkert sted?</button><button class="btn" id="camSave" hidden>💾 Gem</button></div></div>
+    <div class="camLast" id="camLast" hidden><div id="camLastTxt"></div><div class="camActs"><button class="btn" id="camUndo">↶ Fortryd</button><button class="btn" id="camWrong">Forkert sted?</button><button class="btn" id="camSave" hidden>💾 Gem</button></div><button class="btn" id="camAlso" hidden></button></div>
     <button class="camShut" id="camShut" aria-label="Tag billede og sæt stedet Færdig"><span>✓</span></button>
     <div class="camCap">Tag billede = Færdig</div>
   </div>
@@ -5857,7 +5858,10 @@ function shotAsk(s, r, wrong){
   $("askShotSub").textContent = wrong ? "Tryk på det rigtige sted." : r.list ? "Der er flere steder lige ved. Tryk på det, du har lavet."
     : SHOT_WHY[r.why] + (r.why==="gps" ? ` (± ${Math.round(r.acc)} m)` : "");
   $("askShotImg").src = s.url;
-  const L = $("askShotList"); L.replaceChildren(...(r.list||[]).map(([f, d])=>{
+  const L = $("askShotList"), all = (r.list||[]).map(x=>x[0]);
+  const allBtn = all.length > 1 && Object.assign(document.createElement("button"), {className:"btn primary",
+    textContent: all.length === 2 ? "✓ Begge er på billedet" : `✓ Alle ${all.length} er på billedet`, onclick: ()=>{ shotAskClose(); shotCommit(s, all); }});
+  L.replaceChildren(...[allBtn].filter(Boolean), ...(r.list||[]).map(([f, d])=>{
     const b = document.createElement("button"); b.className = "btn";
     const sub = [subOf(f).split(" · ").slice(0, 2).join(" · "), d < 1 ? "lige her" : `${Math.round(d)} m væk`, LABEL[statusOf(f.getId())]].filter(Boolean).join(" · ");
     b.innerHTML = `${shotMini(r.list.map(x=>x[0]), f)}<span class="txt"><b>${esc(titleOf(f))}</b><span class="muted">${esc(sub)}</span></span>`;
@@ -5880,31 +5884,51 @@ function shotWaitEnd(){ shotWait = null; $("shotWaitRow").hidden = true; if(curP
 function shotTapped(f){ const s = shotWait; shotWaitEnd(); fold(false); if(s.cam) camOpen(true); shotCommit(s, f); } // the camera first, so the result shows in it
 $("btnShotWaitNo").onclick = ()=>{ const s = shotWait; shotWaitEnd(); if(s) photoDel(s.id); toast("Billedet er ikke gemt"); };
 function shotReset(){ if(shotWait){ photoDel(shotWait.id); shotWaitEnd(); } if(camOn()) camClose(); $("askShot").hidden = true; }
-function shotCommit(s, f){
+// One photo often shows several places (Captain, 2026-11-20: two trees in one picture): fs can be several, and
+// "+ Også …" adds the nearest unfinished place within SHOT_ALSO of them to the same photo.
+const SHOT_ALSO = 15;
+function shotCommit(s, fs){
   if(task !== s.t) return;
-  const t = task, id = f.getId(), key = t.id+"|"+id, before = {row: pending.get(key), was: eff(id)};
+  fs = [fs].flat();
+  const t = task, ids = fs.map(f=>f.getId()), key = id=>t.id+"|"+id;
+  const before = new Map(ids.map(id=>[id, {row: pending.get(key(id)), was: eff(id)}]));
   // auto-send waits a little, so Fortryd or Forkert sted? just takes it back out of the outbox
   const a = autoSend; autoSend = false;
-  try{ setStatus([id], "done", undefined, undefined, s.id); } finally { autoSend = a; }
+  try{ setStatus(ids, "done", undefined, undefined, s.id); } finally { autoSend = a; }
   if(a){ clearTimeout(shotSendT); shotSendT = setTimeout(()=>{ if(autoSend) sendPending(); }, SHOT_HOLD); }
-  const after = pending.get(key);
-  lastAt = ol.extent.getCenter(f.getGeometry().getExtent());
+  const after = new Map(ids.map(id=>[id, pending.get(key(id))]));
+  lastAt = ol.extent.getCenter(fs[0].getGeometry().getExtent());
   if(selSet.size) select(null);
-  s.f = f; shotSaveSoon(s);
+  s.f = fs[0]; s.fs = fs; shotSaveSoon(s);
   s.undo = keep => { if(task !== t) return false; clearTimeout(s.saveT); if(shotSaveQ === s) shotSaveQ = null;
-    if(pending.get(key) === after){ before.row ? pending.set(key, before.row) : pending.delete(key); store.set("pending", [...pending.values()]); renderOutbox(); refresh(); }
-    else { const w = before.was || {status:"todo"}; setStatus([id], w.status||"todo", undefined, w.reason); } // already sent: send the old status back
+    if(ids.every(id=>pending.get(key(id)) === after.get(id))){ ids.forEach(id=>{ const r = before.get(id).row; r ? pending.set(key(id), r) : pending.delete(key(id)); });
+      store.set("pending", [...pending.values()]); renderOutbox(); refresh(); }
+    else ids.forEach(id=>{ const w = before.get(id).was || {status:"todo"}; setStatus([id], w.status||"todo", undefined, w.reason); }); // already sent: send the old status back
     if(!keep) photoDel(s.id);
     return true; };
+  s.also = shotAlso(fs);
   navigator.vibrate?.(40);
-  const msg = `✓ Færdig: ${titleOf(f)}`;
+  const msg = `✓ Færdig: ${titleOf(fs[0])}${fs.length > 1 ? ` + ${fs.length-1} mere` : ""}`;
   if(camOn()) return camShowLast(s, msg);
   toast(`${msg} · med billede`, SHOT_HOLD, [{label:"↶ Fortryd", fn:()=>{ if(s.undo()) toast("Fortrudt"); }}, {label:"Forkert sted?", fn:()=>shotWrong(s)},
-    SHOT_IOS && {label:"💾 Gem", fn:()=>shotSave(s, true)}].filter(Boolean));
+    s.also && {label:"+ Også det ved siden af", fn:()=>shotAddAlso(s)}, SHOT_IOS && {label:"💾 Gem", fn:()=>shotSave(s, true)}].filter(Boolean));
 }
+// The nearest place that isn't Færdig, within SHOT_ALSO metres of the places just marked
+function shotAlso(fs){
+  const has = new Set(fs.map(f=>f.getId())); let best = null, bd = Infinity;
+  for(const g of elSrc.getFeatures()){
+    if(has.has(g.getId()) || statusOf(g.getId())==="done") continue;
+    const c = ol.extent.getCenter(g.getGeometry().getExtent());
+    const d = Math.min(...fs.map(f=>distTo(g, f.getGeometry().getClosestPoint(c))));
+    const rank = d + (statusOf(g.getId())==="blocked" ? 5 : 0); // blocked ones only when nothing else is as near
+    if(d <= SHOT_ALSO && rank < bd){ bd = rank; best = g; best._gap = d; }
+  }
+  return best;
+}
+function shotAddAlso(s){ const g = s.also, fs = s.fs; if(!g || !s.undo(true)) return; shotCommit(s, [...fs, g]); }
 function shotWrong(s){
   if(!s.undo(true)) return;
-  const r = shotFind(new Set([s.f.getId()]), true);
+  const r = shotFind(new Set(s.fs.map(f=>f.getId())), true);
   if(!r.list && !s.cam) return shotMap(s, "Tryk på det rigtige sted på kortet.");
   shotAsk(s, r, true);
 }
@@ -5916,7 +5940,7 @@ function shotWrong(s){
 // they get a "💾 Gem" button instead (Fotos via "Gem billede").
 const SHOT_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
 let shotSaveQ = null;
-const shotName = s => photoName(photoPlace(s.f), s.at);
+const shotName = s => photoName(photoPlace(s.f) + (s.fs?.length > 1 ? `_og-${s.fs.length-1}-mere` : ""), s.at);
 function shotSaveSoon(s){
   if(shotSaveQ && shotSaveQ !== s) shotSave(shotSaveQ); // the one before is settled now
   if(SHOT_IOS) return;
@@ -5957,9 +5981,11 @@ function camNear(){
 geo.on("change:position", camNear);
 function camShowLast(s, msg){
   camLast = s; $("camLast").hidden = false; $("camLastTxt").textContent = msg;
-  $("camUndo").hidden = $("camWrong").hidden = false; $("camSave").hidden = !SHOT_IOS; camNear();
+  $("camUndo").hidden = $("camWrong").hidden = false; $("camSave").hidden = !SHOT_IOS;
+  $("camAlso").hidden = !s.also; if(s.also) $("camAlso").textContent = `+ Også ${titleOf(s.also)} (${Math.round(s.also._gap)} m væk)`; camNear();
 }
-$("camUndo").onclick = ()=>{ const s = camLast; if(s?.undo()){ $("camLastTxt").textContent = "Fortrudt. Stedet er sat tilbage."; $("camUndo").hidden = $("camWrong").hidden = $("camSave").hidden = true; camNear(); } };
+$("camUndo").onclick = ()=>{ const s = camLast; if(s?.undo()){ $("camLastTxt").textContent = "Fortrudt. Stedet er sat tilbage."; $("camUndo").hidden = $("camWrong").hidden = $("camSave").hidden = $("camAlso").hidden = true; camNear(); } };
+$("camAlso").onclick = ()=>{ if(camLast) shotAddAlso(camLast); };
 $("camSave").onclick = ()=>{ if(camLast) shotSave(camLast, true); };
 $("camWrong").onclick = ()=>{ const s = camLast; if(!s) return; $("camLast").hidden = true; shotWrong(s); };
 $("camShut").onclick = async ()=>{
