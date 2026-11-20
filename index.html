@@ -779,7 +779,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   <div class="camTop"><button class="btn" id="btnCamClose">✕ Luk</button><span class="grow"></span><button class="btn" id="btnCamNative">Telefonens kamera</button></div>
   <div class="camBottom">
     <div class="camNear" id="camNear"></div>
-    <div class="camLast" id="camLast" hidden><div id="camLastTxt"></div><div class="camActs"><button class="btn" id="camUndo">↶ Fortryd</button><button class="btn" id="camWrong">Forkert sted?</button></div></div>
+    <div class="camLast" id="camLast" hidden><div id="camLastTxt"></div><div class="camActs"><button class="btn" id="camUndo">↶ Fortryd</button><button class="btn" id="camWrong">Forkert sted?</button><button class="btn" id="camSave" hidden>💾 Gem</button></div></div>
     <button class="camShut" id="camShut" aria-label="Tag billede og sæt stedet Færdig"><span>✓</span></button>
     <div class="camCap">Tag billede = Færdig</div>
   </div>
@@ -5832,7 +5832,7 @@ const SHOT_WHY = {nogps:"Telefonen har ikke fundet din position endnu.", gps:"GP
   far:"Intet sted i opgaven, der mangler, er tæt på dig.", none:"Alt i opgaven er færdigt."};
 async function shotPhoto(blob, cam){
   if(!task) return;
-  const s = {id: uuid(), t: task, cam, url: URL.createObjectURL(blob)};
+  const s = {id: uuid(), t: task, cam, url: URL.createObjectURL(blob), full: blob, at: new Date()};
   try{ await photoPut(s.id, await shrink(blob)); }
   catch(err){ console.error(err); toast("Billedet kunne ikke gemmes. Prøv igen.", 4000); return; }
   const r = shotFind();
@@ -5878,8 +5878,8 @@ function shotCommit(s, f){
   const after = pending.get(key);
   lastAt = ol.extent.getCenter(f.getGeometry().getExtent());
   if(selSet.size) select(null);
-  s.f = f;
-  s.undo = keep => { if(task !== t) return false;
+  s.f = f; shotSaveSoon(s);
+  s.undo = keep => { if(task !== t) return false; clearTimeout(s.saveT); if(shotSaveQ === s) shotSaveQ = null;
     if(pending.get(key) === after){ before.row ? pending.set(key, before.row) : pending.delete(key); store.set("pending", [...pending.values()]); renderOutbox(); refresh(); }
     else { const w = before.was || {status:"todo"}; setStatus([id], w.status||"todo", undefined, w.reason); } // already sent: send the old status back
     if(!keep) photoDel(s.id);
@@ -5887,7 +5887,8 @@ function shotCommit(s, f){
   navigator.vibrate?.(40);
   const msg = `✓ Færdig: ${titleOf(f)}`;
   if(camOn()) return camShowLast(s, msg);
-  toast(`${msg} · med billede`, SHOT_HOLD, [{label:"↶ Fortryd", fn:()=>{ if(s.undo()) toast("Fortrudt"); }}, {label:"Forkert sted?", fn:()=>shotWrong(s)}]);
+  toast(`${msg} · med billede`, SHOT_HOLD, [{label:"↶ Fortryd", fn:()=>{ if(s.undo()) toast("Fortrudt"); }}, {label:"Forkert sted?", fn:()=>shotWrong(s)},
+    SHOT_IOS && {label:"💾 Gem", fn:()=>shotSave(s, true)}].filter(Boolean));
 }
 function shotWrong(s){
   if(!s.undo(true)) return;
@@ -5895,6 +5896,35 @@ function shotWrong(s){
   if(!r.list && !s.cam) return shotMap(s, "Tryk på det rigtige sted på kortet.");
   shotAsk(s, r, true);
 }
+// ---- a copy on the phone (Captain, 2026-11-20: the crew all have Android and use the photos in Inspectly too) ----
+// Every photo is also saved on the phone, full size, named by day, time and place ("2026-11-20_0932_Pur-HA3_Storegade_nr123.jpg"),
+// so they're easy to find and upload elsewhere. Android: a download, so it shows in the gallery under Download; Chrome asks once
+// whether the site may download several files. Saved 10 s after the mark (or at the next photo / when the camera closes), so
+// Fortryd saves nothing and Forkert sted? saves it under the right place. iPhones can't save without the share sheet:
+// they get a "💾 Gem" button instead (Fotos via "Gem billede").
+const SHOT_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+let shotSaveQ = null;
+function shotName(s){
+  const d = s.at, p = n => String(n).padStart(2, "0"), f = s.f, fid = f.get("ogc_fid");
+  const what = titleOf(f).replace(/[()]/g, "").split(" · ").map(x=>x.trim().replace(/\s+/g, "-")).join("_").replace(/[^\wæøåÆØÅéü-]/g, "");
+  return `${today()}_${p(d.getHours())}${p(d.getMinutes())}_${what}${fid != null ? "_nr" + fid : ""}.jpg`;
+}
+function shotSaveSoon(s){
+  if(shotSaveQ && shotSaveQ !== s) shotSave(shotSaveQ); // the one before is settled now
+  if(SHOT_IOS) return;
+  shotSaveQ = s; clearTimeout(s.saveT); s.saveT = setTimeout(()=>shotSave(s), SHOT_HOLD);
+}
+async function shotSave(s, ios){
+  clearTimeout(s.saveT); if(shotSaveQ === s) shotSaveQ = null;
+  if(!s?.full || !s.f || s.saved || (SHOT_IOS && !ios)) return;
+  s.saved = true;
+  const f = new File([s.full], shotName(s), {type: s.full.type || "image/jpeg"});
+  if(ios){ try{ if(navigator.canShare?.({files:[f]})) await navigator.share({files:[f]}); }catch(err){ s.saved = false; } return; }
+  const a = document.createElement("a"), u = URL.createObjectURL(f);
+  a.href = u; a.download = f.name; document.body.append(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(u), 60000);
+}
+const shotFlush = () => { if(shotSaveQ) shotSave(shotSaveQ); };
 // ---- the camera inside the app ----
 async function camStart(){
   camStop();
@@ -5911,7 +5941,7 @@ async function camOpen(keepLast){
   catch(err){ console.error(err); camClose();
     toast("Kameraet i appen kan ikke åbne. Tillad kamera for siden, eller brug telefonens kamera.", 8000, {label:"📷 Telefonens kamera", fn:()=>$("shotCam").click()}); }
 }
-function camClose(){ camStop(); $("pCam").hidden = true; }
+function camClose(){ camStop(); $("pCam").hidden = true; shotFlush(); }
 function camNear(){
   if(!camOn()) return;
   const r = shotFind(), n = r.list?.length;
@@ -5921,16 +5951,19 @@ function camNear(){
 geo.on("change:position", camNear);
 function camShowLast(s, msg){
   camLast = s; $("camLast").hidden = false; $("camLastTxt").textContent = msg;
-  $("camUndo").hidden = $("camWrong").hidden = false; camNear();
+  $("camUndo").hidden = $("camWrong").hidden = false; $("camSave").hidden = !SHOT_IOS; camNear();
 }
-$("camUndo").onclick = ()=>{ const s = camLast; if(s?.undo()){ $("camLastTxt").textContent = "Fortrudt. Stedet er sat tilbage."; $("camUndo").hidden = $("camWrong").hidden = true; camNear(); } };
+$("camUndo").onclick = ()=>{ const s = camLast; if(s?.undo()){ $("camLastTxt").textContent = "Fortrudt. Stedet er sat tilbage."; $("camUndo").hidden = $("camWrong").hidden = $("camSave").hidden = true; camNear(); } };
+$("camSave").onclick = ()=>{ if(camLast) shotSave(camLast, true); };
 $("camWrong").onclick = ()=>{ const s = camLast; if(!s) return; $("camLast").hidden = true; shotWrong(s); };
 $("camShut").onclick = async ()=>{
   const v = $("camVideo"); if(camBusy || !v.videoWidth) return;
   camBusy = true; $("camFlash").classList.add("on"); setTimeout(()=>$("camFlash").classList.remove("on"), 60);
-  const c = document.createElement("canvas"); c.width = v.videoWidth; c.height = v.videoHeight;
-  c.getContext("2d").drawImage(v, 0, 0);
-  const blob = await new Promise(ok=>c.toBlob(ok, "image/jpeg", 0.9));
+  // Full size from the camera itself where the phone allows it (Chrome on Android), else the picture on screen
+  let blob = null; const tr = camStream?.getVideoTracks()[0];
+  if(tr && window.ImageCapture) try{ blob = await Promise.race([new ImageCapture(tr).takePhoto(), new Promise((_, no)=>setTimeout(()=>no(new Error("slow")), 4000))]); }catch(err){ console.warn(err); }
+  if(!blob){ const c = document.createElement("canvas"); c.width = v.videoWidth; c.height = v.videoHeight;
+    c.getContext("2d").drawImage(v, 0, 0); blob = await new Promise(ok=>c.toBlob(ok, "image/jpeg", 0.92)); }
   camBusy = false;
   if(blob) shotPhoto(blob, true); else toast("Billedet kunne ikke tages. Prøv igen.", 3000);
 };
@@ -5940,7 +5973,7 @@ $("btnShot").onclick = ()=>camOpen();
 $("shotCam").onchange = e=>{ const file = e.target.files[0]; e.target.value = ""; if(file) shotPhoto(file, false); };
 // The camera stops while the phone shows something else, and starts again on return
 document.addEventListener("visibilitychange", ()=>{
-  if(document.visibilityState==="hidden") camStop();
+  if(document.visibilityState==="hidden"){ camStop(); shotFlush(); }
   else if(camOn()) camStart().catch(()=>camClose());
 });
 // "◎ Mig" under the map switch, on every screen. Starts GPS on first use (outside a task it isn't running yet)
