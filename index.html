@@ -2052,7 +2052,7 @@ function renderOutbox(){
 const sendFail = () => { sendFailed = true; renderOutbox(); toast("Ikke sendt. Prøv igen, når du har forbindelse.", 4000); };
 // One send at a time. Marks made while a send is under way (uploading photos takes seconds) stay in the
 // outbox and go with the next send; they used to be wiped when the send finished (Captain 2026-11-20:
-// a place picked in "Hvilket sted?" right after another wasn't marked).
+// a place marked right after another, while its photo was still uploading, was lost).
 let sending = false, sendAgain = false;
 async function sendPending(manual){
   if(sending){ sendAgain = true; return; }
