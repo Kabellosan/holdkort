@@ -294,7 +294,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .shotlist .mini{width:60px;height:60px;flex:none;background:#eef0ec;border-radius:8px}
 .shotlist .btn .muted{font-weight:400;font-size:14px}
 .cam{position:absolute;inset:0;background:#000;z-index:19;color:#fff}
-.cam video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.cam video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:50% 20%;background:#000} /* the whole picture, as it's saved (cover cropped it and looked zoomed in) */
 .camFlash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
 .camFlash.on{opacity:.7;transition:none}
 .camTop{position:absolute;left:0;right:0;top:0;display:flex;gap:8px;padding:calc(env(safe-area-inset-top,0px) + 10px) 12px 10px;background:linear-gradient(#0008,#0000)}
@@ -6025,6 +6025,9 @@ async function camStart(){
   camStop();
   camStream = await navigator.mediaDevices.getUserMedia({audio:false, video:{facingMode:{ideal:"environment"}, width:{ideal:1920}, height:{ideal:1440}}});
   const v = $("camVideo"); v.srcObject = camStream; await v.play().catch(()=>{});
+  // as wide as the camera goes (Captain, 2026-11-20: "weirdly zoomed in, better zoomed out than in")
+  try{ const tr = camStream.getVideoTracks()[0], z = tr.getCapabilities?.().zoom;
+    if(z && z.min < (tr.getSettings().zoom ?? z.min + 1)) await tr.applyConstraints({advanced:[{zoom:z.min}]}); }catch(err){ console.warn(err); }
 }
 function camStop(){ camStream?.getTracks().forEach(tr=>tr.stop()); camStream = null; $("camVideo").srcObject = null; }
 async function camOpen(keepLast){
