@@ -4633,9 +4633,10 @@ function saveToPhone(blob, name){
   a.href = u; a.download = name; document.body.append(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(u), 60000);
 }
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
 const keepAct = (file, label) => {
   const name = photoName(label || "Holdkort");
-  if(!SHOT_IOS){ saveToPhone(file, name); return null; }
+  if(!IS_IOS){ saveToPhone(file, name); return null; }
   return {label:"💾 Gem på telefonen", fn: async ()=>{
     const f = new File([file], name, {type: file.type || "image/jpeg"});
     try{ if(navigator.canShare?.({files:[f]})){ await navigator.share({files:[f]}); return; } }
@@ -5959,7 +5960,7 @@ function shotWrong(s){
 // whether the site may download several files. Saved 10 s after the mark (or at the next photo / when the camera closes), so
 // Fortryd saves nothing and Forkert sted? saves it under the right place. iPhones can't save without the share sheet:
 // they get a "💾 Gem" button instead (Fotos via "Gem billede").
-const SHOT_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+const SHOT_IOS = IS_IOS;
 let shotSaveQ = null;
 const shotName = s => photoName(photoPlace(s.f) + (s.fs?.length > 1 ? `_og-${s.fs.length-1}-mere` : ""), s.at);
 function shotSaveSoon(s){
