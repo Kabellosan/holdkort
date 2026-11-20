@@ -13,7 +13,7 @@
 // while the real app (the main branch, one folder up) stays as it is. Same login and same database as the real app.
 // ?b=<branch> picks another branch. The branch's own pushes show up here within a few minutes.
 (async () => {
-  const b = new URLSearchParams(location.search).get("b") || "claude/project-thread-t48ry3";
+  const b = new URLSearchParams(location.search).get("b") || "claude/project-thread-w0c9f6"; // the in-app photo camera (PR #134)
   const url = `https://raw.githubusercontent.com/Kabellosan/holdkort/${b}/index.html?t=${Date.now()}`;
   try {
     const r = await fetch(url, {cache: "no-store"});
