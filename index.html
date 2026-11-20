@@ -2050,7 +2050,17 @@ function renderOutbox(){
   $("outCount").textContent = n; $("outLabel").textContent = n===1 ? "ændring" : "ændringer";
 }
 const sendFail = () => { sendFailed = true; renderOutbox(); toast("Ikke sendt. Prøv igen, når du har forbindelse.", 4000); };
+// One send at a time. Marks made while a send is under way (uploading photos takes seconds) stay in the
+// outbox and go with the next send; they used to be wiped when the send finished (Captain 2026-11-20:
+// a place picked in "Hvilket sted?" right after another wasn't marked).
+let sending = false, sendAgain = false;
 async function sendPending(manual){
+  if(sending){ sendAgain = true; return; }
+  sending = true;
+  try{ await sendNow(manual); } finally { sending = false; }
+  if(sendAgain){ sendAgain = false; if(pending.size && (autoSend || manual) && !sendFailed) sendPending(manual); }
+}
+async function sendNow(manual){
   if(!pending.size) return;
   const now = new Date().toISOString();
   const all = [...pending.values()];
@@ -2073,8 +2083,20 @@ async function sendPending(manual){
     }
   }
   rows.forEach(r=>{ if(task && r.task_id===task.id) progress.set(r.element_id, r); if(ANON) sentAt.set(r.task_id+"|"+r.element_id+"|"+r.status, Date.now()); });
-  all.forEach(r=>(r._photos||[]).forEach(photoDel));
-  pending.clear(); store.set("pending", []); sendFailed = false;
+  // Take out only what was sent. A row changed meanwhile stays, minus the photos and notes that went, and counts from what was sent
+  const gone = new Set();
+  all.forEach(r=>{ const k = r.task_id+"|"+r.element_id, now = pending.get(k);
+    (r._photos||[]).forEach(p=>gone.add(p));
+    if(now === r){ pending.delete(k); return; }
+    if(!now) return;
+    now._photos = (now._photos||[]).filter(p=>!(r._photos||[]).includes(p));
+    const sentNotes = [...(r._notes||[])]; now._notes = (now._notes||[]).filter(n=>{ const i = sentNotes.indexOf(n); if(i < 0) return true; sentNotes.splice(i, 1); return false; });
+    now._was = r.status==="done"; now._st0 = r.status; now._reason0 = r.reason || null; now._note0 = r.note || "";
+    if("parts" in r) now._parts0 = (r.parts||[]).map(partKey);
+  });
+  pending.forEach(r=>(r._photos||[]).forEach(p=>gone.delete(p))); // one photo on several places: keep it while any still waits
+  gone.forEach(photoDel);
+  store.set("pending", [...pending.values()]); sendFailed = false;
   renderOutbox(); refresh();
   if(!manual) return; // sent on its own: nothing to say (a failure does say so)
   // Sending on its own right after a mark: keep the Fortryd toast up instead of covering it
@@ -5839,7 +5861,7 @@ function routeTo(f){
 }
 
 // ================= NEXT / LIST / GPS =================
-const geo = new ol.Geolocation({projection:proj, trackingOptions:{enableHighAccuracy:true, maximumAge:10000}});
+const geo = new ol.Geolocation({projection:proj, trackingOptions:{enableHighAccuracy:true, maximumAge:0}});
 geo.on("change:position", ()=>gpsFeat.setGeometry(new ol.geom.Point(geo.getPosition())));
 geo.on("error", ()=>toast("Ingen GPS. Tillad placering for siden i browseren."));
 // Nordpil: shows while the map is turned, pointing north; a tap turns north up again
@@ -5871,14 +5893,27 @@ $("btnNext").onclick = next; $("btnNext2").onclick = next;
 // When the GPS can't tell places apart (they lie within its margin of each other) it asks "Hvilket sted?" instead of guessing;
 // no GPS or nothing near: it asks, or (outside the camera) waits for a tap on the map. The GPS position never leaves the phone.
 // "Telefonens kamera" (and phones without a camera for web pages) uses the phone's own camera app, one picture at a time.
-const SHOT_TOL = [5, 10], SHOT_NEAR = 15, SHOT_BADGPS = 40, SHOT_HOLD = 10000;
+// Steadier GPS for the camera (Captain, 2026-11-20: "it jumps around and picks the wrong ones"): the fixes of the
+// last few seconds are averaged, the better ones counting more, and bad ones (over 40 m) left out. When the fixes
+// spread (the dot jumps), the margin grows with the spread, so the app asks "Hvilket sted?" instead of guessing.
+const GPS_KEEP = 4000, gpsFixes = [];
+geo.on("change:position", ()=>{ const p = geo.getPosition(), acc = geo.getAccuracy(), t = Date.now();
+  if(p && acc != null) gpsFixes.push({p, acc, t}); while(gpsFixes.length && t - gpsFixes[0].t > GPS_KEEP) gpsFixes.shift(); });
+function gpsNow(){
+  const t = Date.now(), fs = gpsFixes.filter(f=>t - f.t <= GPS_KEEP && f.acc <= SHOT_BADGPS);
+  if(!fs.length) return {p: geo.getPosition(), acc: geo.getAccuracy(), spread: 0};
+  let w = 0, x = 0, y = 0; fs.forEach(f=>{ const k = 1 / Math.max(f.acc, 2) ** 2; w += k; x += f.p[0]*k; y += f.p[1]*k; });
+  const p = [x/w, y/w], spread = Math.max(...fs.map(f=>Math.hypot(f.p[0]-p[0], f.p[1]-p[1])));
+  return {p, acc: Math.max(Math.min(...fs.map(f=>f.acc)), spread), spread};
+}
+const SHOT_TOL = [5, 15], SHOT_NEAR = 15, SHOT_BADGPS = 40, SHOT_HOLD = 10000;
 var shotWait = null; // a photo waiting for a tap on its place
 let shotSendT = 0, camStream = null, camBusy = false, camLast = null;
 const camOn = () => !$("pCam").hidden;
 function shotDist(f, p){ const g = f.getGeometry(); return /Polygon/.test(g.getType()) && g.intersectsCoordinate(p) ? 0 : distTo(f, p); }
 // The places the photo can be of. wide: every place near (after "Forkert sted?"), not just those within the GPS margin of the nearest
 function shotFind(skip, wide){
-  const p = geo.getPosition(), acc = geo.getAccuracy();
+  const {p, acc} = gpsNow();
   if(!p) return {why:"nogps"};
   if(acc == null || acc > SHOT_BADGPS) return {why:"gps", acc};
   const ds = elSrc.getFeatures().filter(f=>statusOf(f.getId())!=="done" && !skip?.has(f.getId()))
@@ -5890,7 +5925,7 @@ function shotFind(skip, wide){
 }
 // A tiny north-up map for each choice: this place blue, the other choices grey, you as a dot, since the names are often the same
 function shotMini(fs, f){
-  const p = geo.getPosition(), ext = ol.extent.createEmpty();
+  const p = gpsNow().p, ext = ol.extent.createEmpty();
   fs.forEach(g=>ol.extent.extend(ext, g.getGeometry().getExtent())); if(p) ol.extent.extendCoordinate(ext, p);
   const c = ol.extent.getCenter(ext), half = Math.max(ol.extent.getWidth(ext), ol.extent.getHeight(ext), 8) / 2 + 3, k = 64 / (2*half);
   const xy = q => `${((q[0]-c[0]+half)*k).toFixed(1)},${((c[1]+half-q[1])*k).toFixed(1)}`;
@@ -6043,8 +6078,9 @@ function camClose(){ camStop(); $("pCam").hidden = true; shotFlush(); }
 function camNear(){
   if(!camOn()) return;
   const r = shotFind(), n = r.list?.length;
-  $("camNear").textContent = n === 1 ? `Tæt på: ${titleOf(r.list[0][0])}` : n ? `${n} steder lige ved. Du bliver spurgt, hvilket.`
-    : r.why==="nogps" ? "Finder din position …" : SHOT_WHY[r.why];
+  const gps = r.acc != null ? `GPS ± ${Math.round(r.acc)} m · ` : "";
+  $("camNear").textContent = gps + (n === 1 ? `Tæt på: ${titleOf(r.list[0][0])}` : n ? `${n} steder lige ved. Du bliver spurgt, hvilket.`
+    : r.why==="nogps" ? "Finder din position …" : SHOT_WHY[r.why]);
 }
 geo.on("change:position", camNear);
 function camShowLast(s, msg){
