@@ -28,7 +28,8 @@
    pan-x pan-y lets panels scroll but leaves out pinch and double-tap zoom; the map's own viewport has touch-action:none (OpenLayers handles the pinch). */
 *{touch-action:pan-x pan-y}
 [hidden]{display:none!important}
-html,body{height:100%;margin:0}
+/* 100dvh = the part of the screen the browser leaves free right now (its toolbars shown or not); 100% is the fallback for old browsers, where it may reach under a bottom toolbar */
+html,body{height:100%;height:100dvh;margin:0}
 body{font-family:var(--font);font-size:16px;line-height:1.35;color:var(--ink);background:var(--paper);overflow:hidden;-webkit-tap-highlight-color:transparent}
 #map{position:absolute;inset:0}
 button{font:inherit;color:inherit;cursor:pointer}
@@ -107,7 +108,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
 
 /* Bottom sheet */
 .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--card);border-radius:20px 20px 0 0;
-  padding:10px 18px calc(env(safe-area-inset-bottom,0px) + 16px);box-shadow:0 -6px 24px #0003;max-height:58vh;display:flex;flex-direction:column}
+  padding:10px 18px calc(env(safe-area-inset-bottom,0px) + 16px);box-shadow:0 -6px 24px #0003;max-height:58vh;max-height:var(--sheet-max,58dvh);display:flex;flex-direction:column}
 /* The bar at the top of the sheet: drag it down (or tap it) to fold the sheet to its main buttons and see more map; drag up or tap again to unfold */
 .grip{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:calc(100% + 36px);margin:-10px -18px 4px;min-height:34px;
   padding:6px 0;border:0;background:transparent;color:var(--ink2);font-size:13px;touch-action:none;cursor:grab}
@@ -123,7 +124,12 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
   .sheet.mini{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 4px)}
   .sheet.mini>:not(.grip){display:none!important}
   .sheet.mini .grip{margin-bottom:0;min-height:44px}
+  /* Keep everything reachable whatever the browser's toolbars do (2026-11-25, Captain: "Markér flere" cut off below the browser bar):
+     a pane taller than the sheet scrolls instead of running off the screen, and its main buttons (.foot) stay pinned at the bottom */
+  .sheet>.pane{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}
+  .sheet>.pane>.foot{position:sticky;bottom:0;z-index:1;background:var(--card);box-shadow:0 -10px 10px -10px #0004;margin-top:-6px;padding-top:6px}
 }
+.foot{display:flex;flex-direction:column;gap:10px}
 .pane{display:flex;flex-direction:column;gap:14px;min-height:0}
 .row{display:flex;gap:10px;align-items:center}
 .wrap{flex-wrap:wrap}
@@ -176,7 +182,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .person .who h3{flex:1}
 .btn.danger{background:#b3261e;border-color:#b3261e;color:#fff;font-weight:600}
 .tended{font-size:14px;color:var(--ink2)}
-.sheet:has(#pOver:not([hidden])),.sheet:has(#pPlace:not([hidden])){max-height:68vh} /* the overviews have a legend and lists */
+.sheet:has(#pOver:not([hidden])),.sheet:has(#pPlace:not([hidden])){max-height:68vh;max-height:var(--sheet-max-tall,68dvh)} /* the overviews have a legend and lists */
 #overMode button{min-height:38px}
 #overMode.three{grid-template-columns:1fr 1fr 1fr}
 .tended.warn{color:#8a5a00;font-weight:600}
@@ -286,7 +292,7 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 #noteIn,#editNoteIn{font:inherit;font-size:17px;width:100%;min-height:76px;padding:12px;border-radius:var(--r);border:1px solid var(--line);background:var(--paper);color:var(--ink);resize:vertical;box-sizing:border-box}
 #multiHint{font-size:14px}
 .shotbtn{width:100%;min-height:60px;font-size:18px}
-#pWork.shot-more>.row:has(#btnNext){display:none}
+#pWork.shot-more .foot>.row:has(#btnNext){display:none}
 .shotimg{width:100%;max-height:140px;object-fit:cover;border-radius:10px;background:var(--line)}
 .shotlist{display:flex;flex-direction:column;gap:8px}
 .shotlist .btn{justify-content:flex-start;text-align:left;gap:12px;min-height:76px;padding:8px 12px}
@@ -541,20 +547,22 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <div style="text-align:right"><div class="big num" id="workCount">–</div><div class="muted">færdige</div></div>
     </div>
     <div class="bar" id="bar"></div>
-    <div class="row" id="shotWaitRow" data-keep hidden><span class="grow"><b>📷 Tryk på stedet på kortet</b><br><span class="muted">Så bliver det Færdig med billedet.</span></span><button class="btn" id="btnShotWaitNo">Annullér</button></div>
-    <div class="row" id="shotMoreRow" data-keep hidden><span class="grow"><b>📷 Tryk på de andre steder på billedet</b><br><span class="muted" id="shotMoreN"></span></span></div>
-    <div class="row" id="shotMoreBtns" data-keep hidden><button class="btn" id="btnShotMoreNo">Annullér</button><button class="btn primary fill" id="btnShotMoreOk">✓ Færdig</button></div>
-    <button class="btn primary shotbtn" id="btnShot" data-keep hidden>📷 Færdig med billede</button>
-    <div class="row" data-keep>
-      <button class="btn fill" id="btnNext">Næste ▸</button>
-      <button class="btn" id="btnList">Liste</button>
-      <button class="btn" id="btnTaskPhotos" hidden>💬 <span id="taskPhotoN">Noter</span></button>
-    </div>
-    <button class="btn ringbtn" data-multi data-keep aria-pressed="false">☰ Markér flere</button>
     <div class="row"><span class="grow" id="workWho"></span></div>
     <div class="legend" id="workLegend" hidden></div>
     <div class="row"><span class="muted grow" id="dataAge"></span><button class="btn ghost" id="btnRefresh" style="min-height:36px;padding:4px 8px">Opdater</button></div>
     <button class="btn" id="btnReport" hidden>📄 Rapport til kommunen</button>
+    <div class="foot" data-keep>
+      <div class="row" id="shotWaitRow" hidden><span class="grow"><b>📷 Tryk på stedet på kortet</b><br><span class="muted">Så bliver det Færdig med billedet.</span></span><button class="btn" id="btnShotWaitNo">Annullér</button></div>
+      <div class="row" id="shotMoreRow" hidden><span class="grow"><b>📷 Tryk på de andre steder på billedet</b><br><span class="muted" id="shotMoreN"></span></span></div>
+      <div class="row" id="shotMoreBtns" hidden><button class="btn" id="btnShotMoreNo">Annullér</button><button class="btn primary fill" id="btnShotMoreOk">✓ Færdig</button></div>
+      <button class="btn primary shotbtn" id="btnShot" hidden>📷 Færdig med billede</button>
+      <div class="row">
+        <button class="btn fill" id="btnNext">Næste ▸</button>
+        <button class="btn" id="btnList">Liste</button>
+        <button class="btn" id="btnTaskPhotos" hidden>💬 <span id="taskPhotoN">Noter</span></button>
+      </div>
+      <button class="btn ringbtn" data-multi aria-pressed="false">☰ Markér flere</button>
+    </div>
   </div>
 
   <!-- A boss picks which elements of the area belong to the task -->
@@ -564,10 +572,12 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="legend" id="pickLegend" hidden></div>
     <div class="row tblrow"><span class="grow" id="pickTbl">📋 Tilbudsliste: <span class="muted">ingen</span></span><button class="btn" data-tbl>Vis</button></div>
     <div class="row" data-keep><span class="grow"><b class="num" id="pickCount">0</b> <span class="muted" id="pickOf"></span></span><button class="btn" id="btnPickAll">Hele området</button></div>
-    <button class="btn ringbtn" data-multi data-keep aria-pressed="false">☰ Markér flere</button>
-    <div class="row" data-keep>
-      <button class="btn" id="btnPickCancel">Annullér</button>
-      <button class="btn primary fill" id="btnPickOk">Gem steder</button>
+    <div class="foot" data-keep>
+      <button class="btn ringbtn" data-multi aria-pressed="false">☰ Markér flere</button>
+      <div class="row">
+        <button class="btn" id="btnPickCancel">Annullér</button>
+        <button class="btn primary fill" id="btnPickOk">Gem steder</button>
+      </div>
     </div>
   </div>
 
@@ -594,8 +604,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
       <span class="grow"><b class="num" id="spotsCount">0</b> <span class="muted" id="spotsOf">steder valgt</span></span>
       <button class="btn" id="btnSpotsOwn">📍 Eget punkt</button>
     </div>
-    <button class="btn ringbtn" data-multi data-keep aria-pressed="false">☰ Markér flere</button>
-    <button class="btn primary" id="btnSpotsOk" data-keep>Videre ▸</button>
+    <div class="foot" data-keep>
+      <button class="btn ringbtn" data-multi aria-pressed="false">☰ Markér flere</button>
+      <button class="btn primary" id="btnSpotsOk">Videre ▸</button>
+    </div>
   </div>
 
   <!-- Part of one long element done: tap where you started and where you stopped -->
@@ -604,10 +616,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
     <div class="parthint" id="partHint"></div>
     <div class="row" id="partWRow"><span class="grow">Bredde <b class="num" id="partW"></b></span><button class="btn big" id="btnPartLess" aria-label="Smallere">−</button><button class="btn big" id="btnPartMore" aria-label="Bredere">+</button></div>
     <div class="row" data-keep><span class="grow" id="partSum"></span><button class="btn" id="btnPartUndo">↶ Fortryd</button></div>
-    <div class="row" data-keep>
+    <div class="foot" data-keep><div class="row">
       <button class="btn" id="btnPartCancel">Annullér</button>
       <button class="btn primary fill" id="btnPartOk">Gem stykket</button>
-    </div>
+    </div></div>
     <button class="btn ghost" id="btnPartClear" hidden>Fjern de tidligere stykker</button>
   </div>
 
@@ -1734,6 +1746,17 @@ setBase(store.get("baseChoice","map"));
 const wide = () => matchMedia("(min-width:1024px)").matches;
 const sheetH = () => wide() ? 0 : $("sheet").offsetHeight;
 const sheetPad = () => sheetH() + 20;
+// The sheet stops below the map buttons on the left (Kort, Mig, Typer, ⋯ Mere), so none of them hides under it (2026-11-25, Captain's two browsers).
+// On a short screen it still gets at least 40 % (overviews 46 %); then it scrolls, with its main buttons pinned at the bottom (.foot).
+function sheetRoom(){
+  const r = document.documentElement.style, h = document.body.clientHeight, bm = document.querySelector(".basemap");
+  if(!h || !bm || wide()){ r.removeProperty("--sheet-max"); r.removeProperty("--sheet-max-tall"); return; }
+  const room = h - (bm.getBoundingClientRect().bottom + 10);
+  r.setProperty("--sheet-max", Math.round(Math.min(.58 * h, Math.max(room, .40 * h))) + "px");
+  r.setProperty("--sheet-max-tall", Math.round(Math.min(.68 * h, Math.max(room, .46 * h))) + "px");
+}
+sheetRoom(); addEventListener("resize", sheetRoom); visualViewport?.addEventListener("resize", sheetRoom);
+if(window.ResizeObserver){ const ro = new ResizeObserver(sheetRoom); ro.observe(document.body); document.querySelector(".basemap") && ro.observe(document.querySelector(".basemap")); }
 
 // ================= HELPERS =================
 const $ = id => document.getElementById(id);
