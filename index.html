@@ -1456,6 +1456,7 @@ const osmLayer = new ol.layer.Tile({source:new ol.source.OSM({attributions:[], m
 const COLORS = {todo:"#d64545", doing:"#e8a317", done:"#bfd830", blocked:"#2b2b33", none:"#7c5cff", // none: not in any task (overview)
                 pick:"#1f6feb", off:"#9aa0a6"}; // while a boss picks a task's spots: in it / not in it
 const DONE_EDGE = "#3d4f00";
+const EDGE = "#1d2228e6"; // the dark edge every other shape gets inside its white halo (shapeStyle)
 const LABEL  = {todo:"Mangler", doing:"I gang", done:"Færdig", blocked:"Blokeret", none:"Ikke i en opgave"};
 // Overview "Sidst passet": days since an element was last sent as done, fresh green to old red; grey = not in the log
 const AGES = [{k:"a0", max:7, c:"#1a9850", l:"0–7 dage"}, {k:"a1", max:14, c:"#91cf60", l:"8–14 dage"}, {k:"a2", max:30, c:"#fee08b", l:"15–30 dage"},
@@ -1493,8 +1494,8 @@ function elStyle(f, res){
 // While tapping spots: everything the kommune has here, drawn thin and grey so the aerial photo still shows
 const SPOT_OFF = {}, spotOff = res => { const r = dotR(res, false);
   return SPOT_OFF[r] ||= [new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffaa", width:3.5}), image:new ol.style.Circle({radius:r + 1.5, fill:new ol.style.Fill({color:"#ffffffaa"})})}),
-  new ol.style.Style({stroke:new ol.style.Stroke({color:"#5f6368", width:1.5}), fill:new ol.style.Fill({color:"#9aa0a633"}),
-    image:new ol.style.Circle({radius:r, fill:new ol.style.Fill({color:"#9aa0a6"}), stroke:new ol.style.Stroke({color:"#5f6368", width:1})})})]; };
+  new ol.style.Style({stroke:new ol.style.Stroke({color:"#3c4043", width:2}), fill:new ol.style.Fill({color:"#9aa0a666"}),
+    image:new ol.style.Circle({radius:r, fill:new ol.style.Fill({color:"#80868b"}), stroke:new ol.style.Stroke({color:"#3c4043", width:1.5})})})]; };
 const centerPoint = f => { const g = f.getGeometry(), t = g.getType();
   if(t==="Point") return g;
   if(t==="Polygon") return g.getInteriorPoint();
@@ -1522,15 +1523,19 @@ function shapeStyle(s, sel, res, st){ // res: the map resolution (m per pixel); 
     const c = COLORS[s], done = s==="done", low = done || s==="off" || st==="done"; // done and not-picked sit underneath
     // tyDone: coloured by type and done (2026-11-20, Captain: done should still show its type): the type colour stays whole,
     // and an idverde lime ring with the dark olive edge says Færdig, like the legend's swatch
-    const tyDone = st==="done" && !done, ringR = r + (r < 4 ? 1 : 1.5);
+    const tyDone = st==="done" && !done, ringR = r + (r < 4 ? 1 : 1.5), edge = !done && !tyDone;
     styleCache[key] = [
       ...(tyDone ? [new ol.style.Style({ // olive edge outside the lime ring, so it reads on the pale map and the photo
         stroke:new ol.style.Stroke({color: DONE_EDGE, width: (sel ? 9 : far ? 6 : 5) + 3}),
         image:new ol.style.Circle({radius: ringR + 2.5, fill:new ol.style.Fill({color: DONE_EDGE})}),
         zIndex: sel ? 30 : 0})] : []),
-      new ol.style.Style({ // white halo so shapes pop on the aerial photo; done gets a dark edge so the lime reads on the pale map too
-        stroke:new ol.style.Stroke({color: done ? DONE_EDGE : tyDone ? COLORS.done : "#ffffffcc", width: sel ? 9 : far ? 6 : 5}),
-        image:new ol.style.Circle({radius: tyDone ? ringR + 1.5 : ringR, fill:new ol.style.Fill({color: done ? DONE_EDGE : tyDone ? COLORS.done : "#fff"})}),
+      // white halo outside, so shapes pop on the aerial photo (2026-11-25: wider, with a dark edge inside it, below)
+      ...(edge ? [new ol.style.Style({stroke:new ol.style.Stroke({color:"#ffffffdd", width: (sel ? 9 : far ? 6 : 5) + 3}),
+        image:new ol.style.Circle({radius: ringR + 1.5, fill:new ol.style.Fill({color:"#fff"})}), zIndex: sel ? 30 : low ? 0 : 10})] : []),
+      new ol.style.Style({ // a dark edge between halo and colour, so every colour reads on the pale plain map too (Captain 2026-11-25:
+        // grey roses vanished there); done keeps its own dark olive edge so the lime reads on both maps
+        stroke:new ol.style.Stroke({color: done ? DONE_EDGE : tyDone ? COLORS.done : EDGE, width: sel ? 9 : far ? 6 : 5}),
+        image:new ol.style.Circle({radius: tyDone ? ringR + 1.5 : ringR, fill:new ol.style.Fill({color: done ? DONE_EDGE : tyDone ? COLORS.done : EDGE})}),
         zIndex: sel ? 30 : low ? 0 : 10
       }),
       new ol.style.Style({
@@ -1541,7 +1546,7 @@ function shapeStyle(s, sel, res, st){ // res: the map resolution (m per pixel); 
       })];
     if(far) styleCache[key].push(new ol.style.Style({ // a dot on every element so small hedges are findable zoomed out
       geometry: f => { const g = f.getGeometry(); return g.getType()==="Point" ? null : new ol.geom.Point(ol.extent.getCenter(g.getExtent())); },
-      image:new ol.style.Circle({radius: r, fill:new ol.style.Fill({color:c}), stroke:new ol.style.Stroke({color: done ? DONE_EDGE : tyDone ? COLORS.done : "#fff",width: tyDone ? 2.5 : 1.5})}),
+      image:new ol.style.Circle({radius: r, fill:new ol.style.Fill({color:c}), stroke:new ol.style.Stroke({color: done ? DONE_EDGE : tyDone ? COLORS.done : EDGE, width: tyDone ? 2.5 : 1.5})}),
       zIndex: sel ? 32 : low ? 2 : 12
     }));
     if(s==="blocked" || st==="blocked") styleCache[key].push(new ol.style.Style({ // a roadwork sign in the middle, so blocked stands out from far away too
@@ -1555,7 +1560,8 @@ function shapeStyle(s, sel, res, st){ // res: the map resolution (m per pixel); 
 const elLayer = new ol.layer.Vector({source:elSrc, style:elStyle, renderBuffer:200});
 const overSrc = new ol.source.Vector(); // overview: one type in the whole kommune
 // Place view, "Typer": each type its own colour (COLORS.ty0, ty1 …); a highlighted type keeps its colour, the rest go grey
-const TYPE_COLORS = ["#2f6fe0","#e05a1f","#2e9e5b","#c2338a","#e8a317","#0e8f9e","#7c5cff","#8b5a2b","#d64545","#2c2f8f","#1fb8d6","#56636f"];
+// No greys (2026-11-25, Captain: grey vanishes on the pale plain map); the last one was slate grey, now deep purple
+const TYPE_COLORS = ["#2f6fe0","#e05a1f","#2e9e5b","#c2338a","#e8a317","#0e8f9e","#7c5cff","#8b5a2b","#d64545","#2c2f8f","#1fb8d6","#9c27b0"];
 TYPE_COLORS.forEach((c,i)=>COLORS["ty"+i] = c);
 function overStyle(f, res){
   if(f.get("_out")) return null;
@@ -3082,7 +3088,7 @@ map.addInteraction(new (class extends ol.interaction.Interaction{
 map.getViewport().addEventListener("contextmenu", e=>{ if(multiOk()) e.preventDefault(); });
 // While picking, every type gets a type colour in the order it turns up on the map, kept while panning, so you
 // see at once what things are. With Vis alt there are too many types for that, so each group gets one instead
-// (Græs, Hæk og pur, Fast belægning …, the kommune map's folders). One type alone stays grey.
+// (Græs, Hæk og pur, Fast belægning …, the kommune map's folders). One type alone gets a colour too.
 // The blues are left out: blue means "picked"
 const SPOT_TY = [1,2,3,4,5,6,7,8,9,11];
 const pickKey = f => { const c = f.get("elementkode"); return !c ? null : pick.spots && !pick.show ? groupOf(c) || "Andet" : c; };
@@ -3091,7 +3097,7 @@ function spotColors(){
   p.tcol ||= new Map();
   elSrc.getFeatures().forEach(f=>{ const k = pickKey(f);
     if(k && !(p.show && !p.show.has(f.get("elementkode"))) && !p.tcol.has(k)) p.tcol.set(k, "ty" + SPOT_TY[p.tcol.size % SPOT_TY.length]); });
-  if(p.tcol.size < 2) p.tcol = new Map(); // one colour tells nothing
+  // one type alone gets a colour too (2026-11-25, Captain: roses alone were grey and vanished on the plain map)
 }
 function pickLegend(el){
   const p = pick, groups = p.spots && !p.show;
