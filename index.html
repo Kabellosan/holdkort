@@ -2706,7 +2706,7 @@ async function openTask(t){
   geo.setTracking(true);
   if(!t.spots) areaSrc.addFeature(new ol.Feature(shapeGeom(t))); // hand-picked spots have no area to outline
   $("btnPick").hidden = !canManage(t); $("btnEditArea").hidden = !canManage(t) || !!t.spots;
-  $("btnReport").hidden = !isBoss();
+  $("btnReport").hidden = !canManage(t);
   $("btnTaskPhotos").hidden = !sb || !logOk; taskMedia = new Map(); $("taskPhotoN").textContent = "Noter";
   pinMode(false); loadPins(t);
   if(!partsOk) checkParts().then(()=>{ if(task===t) refresh(); });
