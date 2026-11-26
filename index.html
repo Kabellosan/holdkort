@@ -1006,6 +1006,38 @@ tr.on{background:#e6efff}
 #big{position:fixed;inset:0;background:#000d;display:flex;align-items:center;justify-content:center;z-index:9;cursor:zoom-out}
 #big[hidden]{display:none}
 #big img{max-width:96vw;max-height:94vh}
+.toc{position:sticky;top:0;z-index:5;background:var(--paper);margin:-16px -16px 0;padding:8px 16px;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--line)}
+.toc::-webkit-scrollbar{display:none}
+.toc b{align-self:center;font-size:13px;color:var(--ink2);margin-right:2px;display:none}
+.toc a{flex:none;min-height:36px;display:inline-flex;align-items:center;padding:4px 12px;border-radius:18px;background:var(--card);border:1px solid var(--line);color:var(--ink);text-decoration:none;font-size:14px;font-weight:600}
+.toc a.on{background:var(--moss);color:#fff;border-color:var(--moss)}
+[data-toc]{scroll-margin-top:64px}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:14px}
+.chart{border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px;break-inside:avoid;min-width:0}
+.chart h3{margin:0;font-size:15px}
+.chart .sub{font-size:13px;color:var(--ink2);margin-top:-6px}
+.hero{display:flex;align-items:baseline;gap:8px}
+.hero b{font-size:34px;font-variant-numeric:tabular-nums;line-height:1}
+.area{position:relative;height:170px;margin:10px 0 0 40px}
+.area svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.area .yl{position:absolute;left:-40px;font-size:11px;color:var(--ink2);transform:translateY(-50%);width:36px;text-align:right;white-space:nowrap}
+.area .hit{position:absolute;top:0;bottom:0}
+.area .hit:hover{background:#0000000a}
+.xl{display:flex;justify-content:space-between;font-size:11px;color:var(--ink2);margin-left:40px}
+.cols{display:flex;align-items:flex-end;justify-content:space-around;gap:2px;height:150px;border-bottom:1px solid var(--line)}
+.cols div{flex:1;min-width:2px;max-width:48px;background:var(--done,#bfd830);box-shadow:inset 0 2px 0 var(--done-edge,#3d4f00);border-radius:4px 4px 0 0;position:relative}
+.cols div:hover{opacity:.8}
+.cols div span{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);font-size:11px;color:var(--ink2);white-space:nowrap;padding-bottom:2px}
+.hbars{display:grid;grid-template-columns:minmax(80px,38%) 1fr auto;gap:6px 8px;align-items:center;font-size:13px}
+.hbars .lab{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hbars .trk{display:flex;gap:2px;height:14px}
+.hbars .trk i{display:block;height:100%;min-width:3px}
+.hbars .trk i:first-child{border-radius:4px 0 0 4px}
+.hbars .trk i:last-child{border-radius:0 4px 4px 0}
+.hbars .trk i:only-child{border-radius:4px}
+.hbars .num{font-variant-numeric:tabular-nums;color:var(--ink2);text-align:right}
+.hbars .go{cursor:pointer}
+.clegend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--ink2)}
 .pinno{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#d32f2f;color:#fff;font-size:12px;font-weight:700;margin-right:6px}
 @media (max-width:520px){.tiles{grid-template-columns:repeat(2,1fr)} main{padding:12px}}
 @media print{
@@ -1013,6 +1045,11 @@ tr.on{background:#e6efff}
   body{background:#fff}
   .noprint,.mapbtns,.maptop{display:none!important}
   .card{box-shadow:none;padding:0}
+  .toc{position:static;margin:0;padding:0 0 6px;border:0;flex-wrap:wrap;background:none}
+  .toc b{display:inline}
+  .toc a{min-height:0;padding:0 4px 0 0;border:0;background:none;font-weight:400;color:var(--ink2)}
+  .toc a:not(:last-child)::after{content:" ·"}
+  .area .hit{display:none}
   main{padding:0;gap:12px}
   .mapwrap{height:auto;aspect-ratio:var(--ar,1.5);width:min(100%,calc(140mm * var(--ar,1.5)));margin:0 auto;break-inside:avoid} /* same view as on screen */
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -1020,11 +1057,12 @@ tr.on{background:#e6efff}
 }
 </style>
 <main>
-  <div class="card top">
+  <nav class="toc" id="toc" aria-label="Indhold"></nav>
+  <div class="card top" data-toc="Overblik" id="s-top">
     <div><h1 id="name"></h1><div class="meta" id="meta"></div></div>
     <button class="btn primary noprint" id="print">🖨 Gem som PDF</button>
   </div>
-  <div class="card" id="aboutCard" hidden><h2>Om opgaven</h2><p class="about" id="about"></p></div>
+  <div class="card" id="aboutCard" hidden data-toc="Om opgaven"><h2>Om opgaven</h2><p class="about" id="about"></p></div>
   <div class="card">
     <div class="tiles" id="tiles"></div>
     <div class="bar" id="bar"></div>
@@ -1036,7 +1074,8 @@ tr.on{background:#e6efff}
     <span class="muted" id="fCount"></span>
   </div>
   <div class="small" id="fPrint" hidden></div>
-  <div class="card">
+  <div class="card" data-toc="Grafer" id="s-graf"><h2>Grafer</h2><div class="charts" id="charts"></div></div>
+  <div class="card" data-toc="Kort" id="s-kort">
     <h2>Kort</h2>
     <div class="mapwrap" id="wrap">
       <svg id="map" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Kort over stederne efter status">
@@ -1050,14 +1089,14 @@ tr.on{background:#e6efff}
     <div class="legend" id="legend"></div>
     <div id="info" class="small" style="margin-top:10px">Tryk på et sted på kortet for at se status og datoer. Træk for at flytte, knib eller rul for at zoome.</div>
   </div>
-  <div class="card" id="typeCard"><h2>Pr. type</h2><table><thead><tr><th>Type</th><th class="n">Steder</th><th class="n">Færdig</th></tr></thead><tbody id="types"></tbody></table></div>
-  <div class="card"><h2>Blokeret</h2><div id="blocked"></div><div id="notes"></div></div>
-  <div class="card" id="pinCard" hidden><h2>Pins</h2><div class="small noprint" style="margin-bottom:6px">Tryk på en pin for at se den på kortet.</div><div id="pinList"></div></div>
-  <div class="card" id="picCard" hidden><h2>Billeder</h2><div class="pics" id="pics"></div></div>
+  <div class="card" id="typeCard" data-toc="Pr. type"><h2>Pr. type</h2><table><thead><tr><th>Type</th><th class="n">Steder</th><th class="n">Færdig</th></tr></thead><tbody id="types"></tbody></table></div>
+  <div class="card" data-toc="Blokeret" id="s-blok"><h2>Blokeret</h2><div id="blocked"></div><div id="notes"></div></div>
+  <div class="card" id="pinCard" hidden data-toc="Pins"><h2>Pins</h2><div class="small noprint" style="margin-bottom:6px">Tryk på en pin for at se den på kortet.</div><div id="pinList"></div></div>
+  <div class="card" id="picCard" hidden data-toc="Billeder"><h2>Billeder</h2><div class="pics" id="pics"></div></div>
   <div id="big" hidden><img alt=""></div>
-  <div class="card"><h2>Pr. vej</h2><div class="small noprint" style="margin-bottom:6px">Tryk på en vej for at se den på kortet.</div>
+  <div class="card" data-toc="Pr. vej" id="s-vej"><h2>Pr. vej</h2><div class="small noprint" style="margin-bottom:6px">Tryk på en vej for at se den på kortet.</div>
     <table><thead><tr><th>Vej</th><th class="n">Steder</th><th class="n">Færdig</th><th class="n">Blok.</th><th class="n">Sidst færdig</th></tr></thead><tbody id="streets"></tbody></table></div>
-  <div class="card"><h2>Hvert sted</h2>
+  <div class="card" data-toc="Hvert sted" id="s-liste"><h2>Hvert sted</h2>
     <table><thead><tr><th>Sted</th><th>Status</th><th class="n">Meldt færdig</th></tr></thead><tbody id="list"></tbody></table>
     <button class="btn noprint" id="more" hidden style="margin-top:10px">Vis flere</button></div>
   <div class="foot" id="foot"></div>
@@ -1255,8 +1294,80 @@ tr.on{background:#e6efff}
     $("streets").innerHTML = [...sm].sort((a, b) => a[0] === NONE ? 1 : b[0] === NONE ? -1 : a[0].localeCompare(b[0], "da"))
       .map(([k, q]) => `<tr class="go${F.street === k ? " on" : ""}" data-street="${esc(k)}"><td>${esc(k)}</td><td class="n">${q.n}</td><td class="n">${q.d}</td><td class="n">${q.b || ""}</td><td class="n">${q.l ? esc(q.l) : "–"}</td></tr>`).join("");
     $("streets").querySelectorAll("tr").forEach(r => r.onclick = () => { F.street = F.street === r.dataset.street ? "" : r.dataset.street; $("fStreet").value = F.street; apply(true); scrollMap(); });
-    listN = 200; renderList();
+    listN = 200; renderList(); charts(s);
     if(refit) fit(shownBox());
+  }
+  // ---- charts (2026-11-26): what the filters let through, days only (never clock times) ----
+  const dayMs = 864e5, D0 = new Date((D.sinceKey || D.made) + "T12:00"), D1 = new Date(D.made + "T12:00");
+  const span = Math.max(0, Math.round((D1 - D0) / dayMs));
+  const byWeek = span > 28; // a young task by day, an older one by week
+  const monday = d => { const x = new Date(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
+  const isoWeek = d => { const x = new Date(d); x.setDate(x.getDate() + 3 - ((x.getDay() + 6) % 7)); const y = new Date(x.getFullYear(), 0, 4); return 1 + Math.round(((x - y) / dayMs - 3 + ((y.getDay() + 6) % 7)) / 7); };
+  const dShort = d => d.toLocaleDateString("da-DK", {day: "numeric", month: "short"});
+  const bins = []; // {from, to, label}
+  if(byWeek){ for(let w = monday(D0); w <= D1; w = new Date(w.getTime() + 7 * dayMs)) bins.push({from: w, to: new Date(w.getTime() + 7 * dayMs), label: "uge " + isoWeek(w), long: `Uge ${isoWeek(w)} (fra ${dShort(w)})`}); }
+  else { for(let d = new Date(D0); d <= D1; d = new Date(d.getTime() + dayMs)) bins.push({from: d, to: new Date(d.getTime() + dayMs), label: dShort(d), long: d.toLocaleDateString("da-DK", {weekday: "long", day: "numeric", month: "long"})}); }
+  const binOf = key => { const t = new Date(key + "T12:00"); return bins.findIndex(b => t >= b.from && t < b.to); };
+  const pctTxt = v => (Math.round(v * 10) / 10).toLocaleString("da-DK") + " %";
+  function hbars(rowsIn, total){ // rows: {label, parts:[{k, v}], n, title}
+    const max = Math.max(1, ...rowsIn.map(r => r.n));
+    return `<div class="hbars">${rowsIn.map(r => `<span class="lab" title="${esc(r.label)}">${esc(r.label)}</span>
+      <span class="trk${r.go ? " go" : ""}" ${r.go ? `data-go="${esc(r.go)}"` : ""} title="${esc(r.title || "")}" style="width:${(r.n / (total ? max : max) * 100).toFixed(1)}%">${r.parts.filter(p => p.v).map(p => `<i style="flex:${p.v};background:${p.c}"></i>`).join("")}</span>
+      <span class="num">${r.right}</span>`).join("")}</div>`;
+  }
+  const stLegend = `<div class="clegend">${ORDER.map(k => `<span><span class="dot" style="background:${C[k]}"></span>${L[k]}</span>`).join("")}</div>`;
+  function charts(s){
+    const n = s.length, done = s.filter(p => p.st === "done").length, out = [];
+    // 1. Places reported done at least once, over time (share of the places shown)
+    const first = s.map(p => (p.dd || [])[0]).filter(Boolean), cum = bins.map(() => 0);
+    first.forEach(k => { const i = binOf(k); if(i >= 0) cum[i]++; }); for(let i = 1; i < cum.length; i++) cum[i] += cum[i - 1];
+    if(bins.length >= 2 && n){
+      const pts = cum.map((v, i) => [i / (bins.length - 1) * 100, 100 - v / n * 100]);
+      const line = pts.map((q, i) => (i ? "L" : "M") + q[0].toFixed(2) + " " + q[1].toFixed(2)).join("");
+      const last = cum[cum.length - 1] / n * 100;
+      out.push(`<div class="chart"><h3>Steder meldt færdig mindst én gang</h3><div class="sub">Andel af ${n} steder, ${byWeek ? "uge for uge" : "dag for dag"} siden opgaven blev oprettet</div>
+        <div class="hero"><b>${pctTxt(last)}</b><span class="muted">${cum[cum.length - 1]} af ${n} steder</span></div>
+        <div class="area">${[0, 50, 100].map(v => `<span class="yl" style="top:${100 - v}%">${v} %</span>`).join("")}
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            ${[0, 50, 100].map(v => `<line x1="0" x2="100" y1="${100 - v}" y2="${100 - v}" stroke="var(--line)" stroke-width="1" vector-effect="non-scaling-stroke"/>`).join("")}
+            <path d="${line}L100 100L0 100Z" fill="${C.done}" fill-opacity=".35"/>
+            <path d="${line}" fill="none" stroke="${EDGE.done}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>
+          ${bins.map((b, i) => `<span class="hit" style="left:${(i - 0.5) / (bins.length - 1) * 100}%;width:${100 / (bins.length - 1)}%" title="${esc(b.long)}: ${cum[i]} af ${n} (${pctTxt(cum[i] / n * 100)})"></span>`).join("")}</div>
+        <div class="xl"><span>${esc(bins[0].label)}</span>${bins.length > 2 ? `<span>${esc(bins[Math.floor(bins.length / 2)].label)}</span>` : ""}<span>${esc(bins[bins.length - 1].label)}</span></div></div>`);
+    }
+    // 2. Reports of done per week (or day): a place done on 3 days counts 3 times
+    const per = bins.map(() => 0); s.forEach(p => (p.dd || []).forEach(k => { const i = binOf(k); if(i >= 0) per[i]++; }));
+    const tot = per.reduce((a, b) => a + b, 0);
+    if(bins.length && tot){
+      const mx = Math.max(...per), best = per.indexOf(mx), every = Math.ceil(bins.length / 8);
+      out.push(`<div class="chart"><h3>Meldt færdig ${byWeek ? "pr. uge" : "pr. dag"}</h3><div class="sub">${tot} gange i alt; et sted, der er meldt færdigt på tre dage, tæller tre gange</div>
+        <div class="cols" style="margin-top:14px;--done:${C.done};--done-edge:${EDGE.done}">${per.map((v, i) => `<div style="height:${(v / mx * 100).toFixed(1)}%;${v ? "" : "background:transparent"}" title="${esc(bins[i].long)}: ${v}">${i === best ? `<span>${v}</span>` : ""}</div>`).join("")}</div>
+        <div class="xl" style="margin-left:0">${bins.map((b, i) => i % every === 0 || i === bins.length - 1 ? `<span>${esc(b.label)}</span>` : "").join("")}</div></div>`);
+    }
+    // 3. Progress per type, 4. per street (top 10): status split
+    const split = (list, key, max) => { const m = new Map(); list.forEach(p => { const k = p[key], q = m.get(k) || {done: 0, doing: 0, blocked: 0, todo: 0, n: 0}; q[p.st]++; q.n++; m.set(k, q); });
+      const all = [...m].sort((a, b) => b[1].n - a[1].n); return {rows: all.slice(0, max).map(([k, q]) => ({label: k, n: q.n, go: k, parts: ORDER.map(st => ({v: q[st], c: C[st]})), right: `${q.done}/${q.n}`, title: `${k}: ${ORDER.map(st => `${q[st]} ${L[st].toLowerCase()}`).join(", ")}`})), more: all.length - max}; };
+    const ty = split(s, "t", 12);
+    if(ty.rows.length > 1) out.push(`<div class="chart" data-k="type"><h3>Fremdrift pr. type</h3><div class="sub">Færdige ud af alle; tryk for at se typen på kortet</div>${stLegend}${hbars(ty.rows)}${ty.more > 0 ? `<div class="small">+ ${ty.more} typer mere</div>` : ""}</div>`);
+    const st = split(s, "sk", 10);
+    if(st.rows.length > 1) out.push(`<div class="chart" data-k="street"><h3>Fremdrift pr. vej</h3><div class="sub">De ${Math.min(10, st.rows.length)} veje med flest steder; tryk for at se vejen på kortet</div>${stLegend}${hbars(st.rows)}${st.more > 0 ? `<div class="small">+ ${st.more} veje mere i tabellen pr. vej</div>` : ""}</div>`);
+    // 5. Why places are blocked
+    const bl = new Map(); s.filter(p => p.st === "blocked").forEach(p => bl.set(p.r || "Andet", (bl.get(p.r || "Andet") || 0) + 1));
+    if(bl.size) out.push(`<div class="chart"><h3>Hvorfor blokeret</h3><div class="sub">${[...bl.values()].reduce((a, b) => a + b, 0)} blokerede steder efter årsag</div>${hbars([...bl].sort((a, b) => b[1] - a[1]).map(([k, v]) => ({label: (D.reasonIcon[k] || "") + k, n: v, parts: [{v, c: C.blocked}], right: v, title: `${k}: ${v}`})))}</div>`);
+    $("charts").innerHTML = out.join("") || `<p class="small">Ingen data at vise endnu${F.st || F.street || F.type ? " i dette udsnit" : ""}.</p>`;
+    $("charts").querySelectorAll("[data-go]").forEach(b => b.onclick = () => { const k = b.closest(".chart").dataset.k;
+      if(k === "type"){ F.type = b.dataset.go; $("fType").value = F.type; } else { F.street = b.dataset.go; $("fStreet").value = F.street; } apply(true); scrollMap(); });
+  }
+  // ---- contents bar: one chip per section shown; the current section is highlighted while scrolling ----
+  function toc(){
+    const secs = [...document.querySelectorAll("[data-toc]")].filter(e => !e.hidden);
+    secs.forEach((e, i) => { if(!e.id) e.id = "s-" + i; });
+    $("toc").innerHTML = `<b>Indhold:</b>` + secs.map(e => `<a href="#${e.id}">${esc(e.dataset.toc)}</a>`).join("");
+    const links = [...$("toc").querySelectorAll("a")];
+    if("IntersectionObserver" in window){ const io = new IntersectionObserver(es => es.forEach(en => { if(!en.isIntersecting) return;
+        links.forEach(a => a.classList.toggle("on", a.getAttribute("href") === "#" + en.target.id));
+        const on = links.find(a => a.classList.contains("on")); if(on) on.scrollIntoView({block: "nearest", inline: "nearest"}); }), {rootMargin: "-70px 0px -60% 0px"});
+      secs.forEach(e => io.observe(e)); }
   }
   const scrollMap = () => wrap.scrollIntoView({behavior: "smooth", block: "center"});
   function renderList(){
@@ -1273,7 +1384,7 @@ tr.on{background:#e6efff}
   window.addEventListener("afterprint", () => { printing = false; draw(); });
   // Print the whole list, not just the first rows
   window.addEventListener("beforeprint", () => { printing = true; listN = Infinity; renderList(); });
-  apply(false); fit(all);
+  apply(false); fit(all); toc();
 })();
 </script>
 </template>
@@ -5033,10 +5144,10 @@ function reportData({t, rows, since, logFail, about = "", notes = [], pinList = 
     pics: picData,
     pins: pinList.filter(x=>x.text.trim()).map(x=>({n:x.n, x:Math.round(x.x*10)/10, y:Math.round(x.y*10)/10, d:x.day ? longDate(x.day) : "", t:x.text.trim()})),
     foot: `Lavet med Holdkort ${longDate(today())}. Hvad, hvor og hvilken dag: ingen navne eller klokkeslæt; noter, pins og billeder er valgt og gennemset af den, der lavede rapporten. "Meldt færdig" tæller de dage, et sted er meldt færdigt siden opgaven blev oprettet (${longDate(since)}), også i andre opgaver.${logFail ? " Historikken kunne ikke hentes, så tallene for meldt færdig er ufuldstændige." : ""}`,
-    sinceShort: dayShort(since), colors: {done:COLORS.done, doing:COLORS.doing, blocked:COLORS.blocked, todo:COLORS.todo},
+    sinceShort: dayShort(since), sinceKey: since, colors: {done:COLORS.done, doing:COLORS.doing, blocked:COLORS.blocked, todo:COLORS.todo},
     edge: {done:DONE_EDGE, todo:"#8f2626", doing:"#9a6b00", blocked:"#000"}, labels: {done:LABEL.done, doing:LABEL.doing, blocked:LABEL.blocked, todo:LABEL.todo},
     reasonIcon: {"Bil parkeret":"🚗 ", "Vejarbejde":"🚧 "}, wms: WMS_URL, wmsService: WMS_SERVICE, wmsLayer: LAYER_ORTO, outline,
-    places: rows.map(r=>({t:r.name, s:r.street, w:r.where, st:r.st, r:r.reason || "", dk:r.day, d:r.day ? dayShort(r.day) : "", n:r.done.length, lk:r.last, l:r.last ? dayShort(r.last) : "", ...geo(r.f.getGeometry())}))};
+    places: rows.map(r=>({t:r.name, s:r.street, w:r.where, st:r.st, r:r.reason || "", dk:r.day, d:r.day ? dayShort(r.day) : "", n:r.done.length, dd:r.done, lk:r.last, l:r.last ? dayShort(r.last) : "", ...geo(r.f.getGeometry())}))};
 }
 function reportHtml(d){
   const json = JSON.stringify(d).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029"); // can't close the script tag
