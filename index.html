@@ -1282,7 +1282,7 @@ tr.on{background:#e6efff}
   <header class="noprint"><div class="row"><button class="btn ghost" id="btnReportClose">‹ Tilbage</button><div class="grow"><div class="eyebrow">Rapport til kommunen</div><h2 id="reportTitle"></h2></div></div></header>
   <div class="body" id="reportBody"></div>
   <footer class="noprint">
-    <div class="muted" style="font-size:13px">Rapporten har ingen navne eller klokkeslæt. Noter og pins står med, som de er skrevet: ret dem, hvis de nævner en person; et tomt felt kommer ikke med. Billeder kommer kun med, hvis du sætter flueben. Tjek også opgavens navn.</div>
+    <div class="muted" style="font-size:13px">Rapporten har ingen navne eller klokkeslæt. Noter og pins står med, som de er skrevet: ret dem, hvis de nævner en person; et tomt felt kommer ikke med. Fjern fluebenet ved billeder, der ikke skal med. Tjek også opgavens navn.</div>
     <div class="twobtn"><button class="btn" id="btnReportFile">⬇ Hent som fil</button><button class="btn primary" id="btnReportPrint">🖨 Gem som PDF</button></div>
   </footer>
 </div>
@@ -4937,13 +4937,13 @@ async function showReport(){
     if(!error){ const by = new Map(); data.forEach(r=>{ const v = String(r.note).trim(); if(!v) return; const a = by.get(r.element_id) || []; a.push(v); by.set(r.element_id, a); });
       openPins.forEach((p, i)=>{ const a = by.get("pin:"+p.id); if(a) pinList[i].text = a.join("\n"); }); }
   } catch(e){ console.error(e); } }
-  // Photos (2026-11-26, Captain): shown with a tick, none ticked, so only photos picked here (no faces, no number plates) go in.
+  // Photos (2026-11-26, Captain): all ticked (the crew is told not to photograph faces or number plates); untick one to leave it out.
   // A photo taken with several places marked is one photo. Not in the anonymous version (it has no photos).
   const pics = [];
   if(!ANON && sb){ try{
     const {data, error} = await sb.from("element_log").select("element_id,photo,day,id").eq("task_id", t.id).not("photo", "is", null).order("day").order("id").limit(500);
     if(!error){ const byRow = new Map(rows.map(r=>[r.id, r])), seen = new Map();
-      data.forEach(r=>{ const q = seen.get(r.photo); if(q){ q.ids.push(r.element_id); return; } const x = {path:r.photo, day:r.day, ids:[r.element_id], on:false}; seen.set(r.photo, x); pics.push(x); });
+      data.forEach(r=>{ const q = seen.get(r.photo); if(q){ q.ids.push(r.element_id); return; } const x = {path:r.photo, day:r.day, ids:[r.element_id], on:true}; seen.set(r.photo, x); pics.push(x); });
       pics.forEach(x=>{ const pn = openPins.findIndex(p=>"pin:"+p.id===x.ids[0]);
         if(x.ids[0]===taskKey(t)) x.cap = "Hele opgaven";
         else if(pn >= 0) x.cap = `Pin ${pn+1}`;
@@ -4992,8 +4992,8 @@ async function showReport(){
     ${pinList.length ? `<section><h3>Pins</h3>${pinList.map((x, i)=>`<div class="rnote" data-box="pin${i}" style="--c:#d32f2f">
         <div><span class="pin">${x.n}</span>${x.day ? `<span class="small">sat ${esc(longDate(x.day))}</span>` : ""}</div>
         <textarea class="redit" data-k="pin" data-i="${i}" rows="2" aria-label="Pin ${x.n}">${esc(x.text)}</textarea><div class="ponly">${esc(x.text)}</div></div>`).join("")}</section>` : ""}
-    ${pics.length ? `<section class="rempty" data-box="pics"><h3>Billeder</h3><p class="small noprint" style="margin:0 0 8px">Sæt flueben ved de billeder, der skal med. Vælg ikke billeder, hvor man kan se ansigter eller nummerplader.</p>
-      <div class="rpics">${pics.map((x, i)=>`<label class="rpic"><span class="tick"><input type="checkbox" data-pic="${i}"> Med i rapporten</span><img src="${esc(x.url)}" loading="lazy" alt=""><span class="small">${esc(x.cap)}</span></label>`).join("")}</div></section>` : ""}
+    ${pics.length ? `<section data-box="pics"><h3>Billeder</h3><p class="small noprint" style="margin:0 0 8px">Alle billeder er med. Fjern fluebenet ved et billede, der ikke skal med.</p>
+      <div class="rpics">${pics.map((x, i)=>`<label class="rpic on"><span class="tick"><input type="checkbox" checked data-pic="${i}"> Med i rapporten</span><img src="${esc(x.url)}" loading="lazy" alt=""><span class="small">${esc(x.cap)}</span></label>`).join("")}</div></section>` : ""}
     <section><h3>Pr. vej</h3><table class="rtab"><thead><tr><th>Vej</th><th class="n">Steder</th><th class="n">Færdig</th><th class="n">Blok.</th><th class="n">Sidst færdig</th></tr></thead><tbody>
       ${streetRows.map(([k, q])=>`<tr><td>${esc(k)}</td><td class="n">${q.n}</td><td class="n">${q.done}</td><td class="n">${q.blocked || ""}</td><td class="n">${q.last ? esc(dayShort(q.last)) : "–"}</td></tr>`).join("")}</tbody></table></section>
     ${n <= REPORT_LIST_MAX ? `<section><h3>Hvert sted</h3><table class="rtab"><thead><tr><th>Sted</th><th>Status</th><th class="n">Meldt færdig</th></tr></thead><tbody>
