@@ -403,6 +403,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .rtab .st{white-space:nowrap}
 .rtab .st i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
 .rpt .small{font-size:13px;color:var(--ink2)}
+.rpt textarea.redit{width:100%;min-height:60px;resize:vertical;font:inherit;font-size:15px}
+.rpt .ponly{display:none;white-space:pre-wrap}
+.rpt .rnote{border-left:4px solid var(--c,var(--line));padding:2px 0 2px 10px;margin:10px 0;display:flex;flex-direction:column;gap:4px}
+.rpt .rnote .pin{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#d32f2f;color:#fff;font-size:12px;font-weight:700;margin-right:6px}
 @media (max-width:420px){.rtiles{grid-template-columns:repeat(2,1fr)}}
 @media print{
   @page{margin:14mm}
@@ -415,6 +419,10 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   .rpt *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .rpt tr,.rpt .rtiles,.rpt svg{break-inside:avoid}
   .rpt section{break-inside:auto}
+  .rpt textarea.redit{display:none}
+  .rpt .ponly{display:block}
+  .rpt .rempty{display:none}
+  .rpt .rnote{break-inside:avoid}
 }
 </style>
 </head>
@@ -1025,6 +1033,10 @@ tbody tr.go:hover{background:var(--paper)}
 tr.on{background:#e6efff}
 .small{font-size:13px;color:var(--ink2)}
 .foot{font-size:13px;color:var(--ink2)}
+.about{white-space:pre-wrap;margin:0}
+.note{border-left:4px solid var(--c);padding:2px 0 2px 10px;margin:10px 0}
+.note .x{white-space:pre-wrap;margin-top:2px}
+.pinno{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#d32f2f;color:#fff;font-size:12px;font-weight:700;margin-right:6px}
 @media (max-width:520px){.tiles{grid-template-columns:repeat(2,1fr)} main{padding:12px}}
 @media print{
   @page{margin:12mm}
@@ -1042,6 +1054,7 @@ tr.on{background:#e6efff}
     <div><h1 id="name"></h1><div class="meta" id="meta"></div></div>
     <button class="btn primary noprint" id="print">🖨 Gem som PDF</button>
   </div>
+  <div class="card" id="aboutCard" hidden><h2>Om opgaven</h2><p class="about" id="about"></p></div>
   <div class="card">
     <div class="tiles" id="tiles"></div>
     <div class="bar" id="bar"></div>
@@ -1057,7 +1070,7 @@ tr.on{background:#e6efff}
     <h2>Kort</h2>
     <div class="mapwrap" id="wrap">
       <svg id="map" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Kort over stederne efter status">
-        <g id="bg"></g><g id="out"></g><g id="feat"></g><g id="sel"></g><g id="lab"></g>
+        <g id="bg"></g><g id="out"></g><g id="feat"></g><g id="sel"></g><g id="pins"></g><g id="lab"></g>
       </svg>
       <div class="maptop"><button id="bgBtn" aria-pressed="true">🛰 Luftfoto</button></div>
       <div class="mapbtns"><button id="zin" aria-label="Zoom ind">+</button><button id="zout" aria-label="Zoom ud">−</button><button id="zall" aria-label="Vis alle steder" style="font-size:16px">⤢</button></div>
@@ -1068,7 +1081,8 @@ tr.on{background:#e6efff}
     <div id="info" class="small" style="margin-top:10px">Tryk på et sted på kortet for at se status og datoer. Træk for at flytte, knib eller rul for at zoome.</div>
   </div>
   <div class="card" id="typeCard"><h2>Pr. type</h2><table><thead><tr><th>Type</th><th class="n">Steder</th><th class="n">Færdig</th></tr></thead><tbody id="types"></tbody></table></div>
-  <div class="card"><h2>Blokeret</h2><div id="blocked"></div></div>
+  <div class="card"><h2>Blokeret</h2><div id="blocked"></div><div id="notes"></div></div>
+  <div class="card" id="pinCard" hidden><h2>Pins</h2><div class="small noprint" style="margin-bottom:6px">Tryk på en pin for at se den på kortet.</div><div id="pinList"></div></div>
   <div class="card"><h2>Pr. vej</h2><div class="small noprint" style="margin-bottom:6px">Tryk på en vej for at se den på kortet.</div>
     <table><thead><tr><th>Vej</th><th class="n">Steder</th><th class="n">Færdig</th><th class="n">Blok.</th><th class="n">Sidst færdig</th></tr></thead><tbody id="streets"></tbody></table></div>
   <div class="card"><h2>Hvert sted</h2>
@@ -1093,6 +1107,11 @@ tr.on{background:#e6efff}
   $("meta").innerHTML = D.meta.map(m => `<span>${esc(m)}</span>`).join("");
   $("foot").textContent = D.foot;
   $("print").onclick = () => print();
+  if(D.about){ $("aboutCard").hidden = false; $("about").textContent = D.about; }
+  const NOTES = D.notes || [], PINS = D.pins || [];
+  $("notes").innerHTML = NOTES.length ? `<p style="margin:12px 0 0"><b>Noter ved de blokerede steder</b></p>` + NOTES.map(x => `<div class="note" style="--c:${D.colors.blocked}"><b>${esc(x.t)}</b>${x.w ? ` <span class="small">${esc(x.w)}</span>` : ""} <span class="small">· ${esc(x.r)}</span><div class="x">${esc(x.x)}</div></div>`).join("") : "";
+  $("pinCard").hidden = !PINS.length;
+  $("pinList").innerHTML = PINS.map(x => `<div class="note" style="--c:#d32f2f;cursor:pointer" data-pin="${x.n}"><span class="pinno">${x.n}</span>${x.d ? `<span class="small">sat ${esc(x.d)}</span>` : ""}<div class="x">${esc(x.t)}</div></div>`).join("");
 
   // ---- filters ----
   const F = {st:null, street:"", type:""};
@@ -1109,7 +1128,15 @@ tr.on{background:#e6efff}
   // ---- map: EPSG:25832 metres, y flipped in the SVG ----
   const svg = $("map"), wrap = $("wrap");
   let cx = 0, cy = 0, res = 1, sel = -1, bgOn = true;
-  const all = P.length ? P.reduce((a, p) => [Math.min(a[0], p.b[0]), Math.min(a[1], p.b[1]), Math.max(a[2], p.b[2]), Math.max(a[3], p.b[3])], [Infinity, Infinity, -Infinity, -Infinity]) : (D.outline ? D.outlineBox : [0, 0, 100, 100]);
+  const all1 = (D.pins || []).reduce((a, q) => [Math.min(a[0], q.x), Math.min(a[1], q.y), Math.max(a[2], q.x), Math.max(a[3], q.y)],
+    P.reduce((a, p) => [Math.min(a[0], p.b[0]), Math.min(a[1], p.b[1]), Math.max(a[2], p.b[2]), Math.max(a[3], p.b[3])], [Infinity, Infinity, -Infinity, -Infinity]));
+  const all = isFinite(all1[0]) ? all1 : (D.outline ? D.outline.flat().reduce((a, c) => [Math.min(a[0], c[0]), Math.min(a[1], c[1]), Math.max(a[2], c[0]), Math.max(a[3], c[1])], [Infinity, Infinity, -Infinity, -Infinity]) : [0, 0, 100, 100]);
+  // Pins: red numbered dots, same numbers as the list
+  const pinEls = (D.pins || []).map(q => { const g = document.createElementNS(NS, "g"), c = document.createElementNS(NS, "circle"), t = document.createElementNS(NS, "text");
+    c.setAttribute("fill", "#d32f2f"); c.setAttribute("stroke", "#fff"); c.setAttribute("vector-effect", "non-scaling-stroke"); c.setAttribute("stroke-width", "2.5");
+    t.textContent = q.n; t.setAttribute("text-anchor", "middle"); t.setAttribute("fill", "#fff"); t.setAttribute("font-weight", "700"); t.setAttribute("font-family", "system-ui,sans-serif"); t.setAttribute("dy", ".35em");
+    g.append(c, t); $("pins").appendChild(g); return {q, c, t}; });
+  document.querySelectorAll("[data-pin]").forEach(d => d.onclick = () => { const q = (D.pins || []).find(p => p.n == d.dataset.pin); if(!q) return; fit([q.x - 40, q.y - 40, q.x + 40, q.y + 40]); scrollMap(); });
   const size = () => [wrap.clientWidth || 600, wrap.clientHeight || 400];
   function fit(b){ const [w, h] = size(), bw = Math.max(b[2] - b[0], 30), bh = Math.max(b[3] - b[1], 30);
     cx = (b[0] + b[2]) / 2; cy = (b[1] + b[3]) / 2; res = Math.max(bw / (w - 60), bh / (h - 60), 0.05); draw(); }
@@ -1156,6 +1183,7 @@ tr.on{background:#e6efff}
     const [w, h] = size();
     svg.setAttribute("viewBox", `${cx - w * res / 2} ${-cy - h * res / 2} ${w * res} ${h * res}`); wrap.style.setProperty("--ar", (w / h).toFixed(4));
     const r = 5.5 * res; dots.forEach(d => d.setAttribute("r", r));
+    pinEls.forEach(({q, c, t}) => { c.setAttribute("cx", q.x); c.setAttribute("cy", -q.y); c.setAttribute("r", 10 * res); t.setAttribute("x", q.x); t.setAttribute("y", -q.y); t.setAttribute("font-size", 12 * res); });
     // Labels: font follows the zoom, and only as many as don't crowd each other
     const fs = 13 * res, used = [];
     labs.forEach(l => { const box = [l.x - l.t.textContent.length * fs * 0.3, l.y - fs, l.x + l.t.textContent.length * fs * 0.3, l.y + fs];
@@ -1273,12 +1301,12 @@ tr.on{background:#e6efff}
 })();
 </script>
 </template>
-<!-- Rapport til kommunen (2026-11-18): what, where and when for a task; no names, no clock times, no notes, no photos -->
+<!-- Rapport til kommunen (2026-11-18): what, where and when for a task; no names, no clock times, no photos; notes and pins only as edited on this screen (2026-11-26) -->
 <div class="panel" id="pReport" hidden>
   <header class="noprint"><div class="row"><button class="btn ghost" id="btnReportClose">‹ Tilbage</button><div class="grow"><div class="eyebrow">Rapport til kommunen</div><h2 id="reportTitle"></h2></div></div></header>
   <div class="body" id="reportBody"></div>
   <footer class="noprint">
-    <div class="muted" style="font-size:13px">Rapporten har ingen navne, klokkeslæt, noter eller billeder. Tjek at opgavens navn heller ikke nævner en person.</div>
+    <div class="muted" style="font-size:13px">Rapporten har ingen navne, klokkeslæt eller billeder. Noter og pins står med, som de er skrevet: ret dem, hvis de nævner en person. Et tomt felt kommer ikke med. Tjek også opgavens navn.</div>
     <div class="twobtn"><button class="btn" id="btnReportFile">⬇ Hent som fil</button><button class="btn primary" id="btnReportPrint">🖨 Gem som PDF</button></div>
   </footer>
 </div>
@@ -4868,9 +4896,10 @@ async function doneDays(ids, since){
   return m;
 }
 // The task's places as a small map on their own (no background map, so nothing else is in the picture), with street names
-function reportMap(rows, t){
+function reportMap(rows, t, pinList = []){
   const ext = ol.extent.createEmpty();
   rows.forEach(r=>ol.extent.extend(ext, r.f.getGeometry().getExtent()));
+  pinList.forEach(p=>ol.extent.extend(ext, [p.x, p.y, p.x, p.y]));
   const outline = !t.spots ? shapeGeom(t) : null; // drawn, but the map fits the places (a big rectangle with a few places left them tiny)
   if(ol.extent.isEmpty(ext) && outline) ol.extent.extend(ext, outline.getExtent());
   if(ol.extent.isEmpty(ext)) return "";
@@ -4897,6 +4926,9 @@ function reportMap(rows, t){
     if(line) out += `<path d="${line}" fill="none" stroke="${COLORS[s]}" stroke-width="4" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
     if(pts) out += `<g fill="${COLORS[s]}" stroke="${edge[s]}" stroke-width="1.5">${pts}</g>`;
   }
+  // Pins on top, numbered as in the list under the map
+  pinList.forEach(p=>{ const [x, y] = P([p.x, p.y]).split(" "), r = Math.max(W,H)/45;
+    out += `<g class="rpin" data-n="${p.n}"><circle cx="${x}" cy="${y}" r="${r}" fill="#d32f2f" stroke="#fff" stroke-width="2.5"/><text x="${x}" y="${y}" dy=".35em" text-anchor="middle" font-family="system-ui,sans-serif" font-weight="700" font-size="${r*1.2}" fill="#fff">${p.n}</text></g>`; });
   // Street names where most of the task's places are, so the reader knows where it is without a background map
   const by = new Map(); rows.forEach(r=>{ if(!r.street) return; const c = ol.extent.getCenter(r.f.getGeometry().getExtent()), q = by.get(r.street) || {n:0, x:0, y:0}; q.n++; q.x += c[0]; q.y += c[1]; by.set(r.street, q); });
   const labels = [...by].sort((a,b)=>b[1].n-a[1].n).slice(0, 14).map(([n, q])=>{ const [x, y] = P([q.x/q.n, q.y/q.n]).split(" ");
@@ -4924,9 +4956,21 @@ async function showReport(){
       street: streetOfF(f), where: placeBits(f), name: f.get("_own")!=null ? (f.get("_own") || "Eget punkt") : typeName(f.get("elementkode")), code: f.get("elementkode") || ""}; });
   let days = new Map(), logFail = false;
   try{ days = await doneDays(rows.map(r=>r.id), since); } catch(e){ console.error(e); logFail = true; }
+  // Notes on blocked places and the task's pins: free text can name people, so they are shown as edit boxes and go in
+  // the report only as edited here (an empty box is left out). The text about the task is kept on the phone per task.
+  const notes = rows.filter(r=>r.st==="blocked" && String(eff(r.id)?.note || "").trim())
+    .map(r=>({place:r.name, where:r.where, reason:r.reason, text:String(eff(r.id).note).trim()}));
+  const openPins = pins.filter(p=>p.task_id===t.id && !p.closed);
+  const pinList = openPins.map((p, i)=>({n:i+1, x:p.x, y:p.y, day:p.day || "", text:p.title || ""}));
+  if(openPins.length && sb){ try{ // the whole conversation, not just the start of the first note
+    const {data, error} = await sb.from("element_log").select("element_id,note,id").in("element_id", openPins.map(p=>"pin:"+p.id)).not("note", "is", null).order("id").limit(2000);
+    if(!error){ const by = new Map(); data.forEach(r=>{ const v = String(r.note).trim(); if(!v) return; const a = by.get(r.element_id) || []; a.push(v); by.set(r.element_id, a); });
+      openPins.forEach((p, i)=>{ const a = by.get("pin:"+p.id); if(a) pinList[i].text = a.join("\n"); }); }
+  } catch(e){ console.error(e); } }
+  const about = store.get("rptAbout:" + t.id, "");
   if($("pReport").hidden || task !== t) return;
   rows.forEach(r=>{ const s = new Set(days.get(r.id) || []); if(r.st==="done" && r.day) s.add(r.day); r.done = [...s].sort(); r.last = r.done.at(-1) || ""; });
-  lastReport = {t, rows, since, logFail};
+  lastReport = {t, rows, since, logFail, about, notes, pinList};
   const n = rows.length, c = {done:0, doing:0, blocked:0, todo:0}; rows.forEach(r=>c[r.st]++);
   const pct = k => n ? Math.round(c[k]/n*100) : 0;
   const stCell = s => `<span class="st"><i style="background:${COLORS[s]};${s==="done" ? `box-shadow:0 0 0 1px ${DONE_EDGE}` : ""}"></i>${LABEL[s]}</span>`;
@@ -4947,29 +4991,44 @@ async function showReport(){
       <div class="meta"><span>${esc(packCodes(t.codes || []) + scopeOf(t))}</span>
       <span>Opgaven oprettet ${esc(longDate(since))}${firstDone ? ` · første færdige ${esc(longDate(firstDone))}` : ""}</span>
       <span>Status pr. ${esc(longDate(today()))} · ${n} ${n===1 ? "sted" : "steder"}</span></div></div>
+    <section class="${about.trim() ? "" : "rempty"}" data-box="about"><h3>Om opgaven</h3>
+      <textarea class="redit" data-k="about" rows="3" placeholder="Skriv lidt om opgaven til kommunen, fx hvad der mangler og hvorfor. Skriv ingen navne.">${esc(about)}</textarea>
+      <div class="ponly">${esc(about)}</div></section>
     <div class="rtiles">${["done","doing","blocked","todo"].map(k=>`<div style="--c:${COLORS[k]}"><b>${c[k]}</b><span>${LABEL[k]} · ${pct(k)} %</span></div>`).join("")}</div>
     <div class="bar">${n ? ["done","doing","blocked","todo"].map(s=>`<i style="width:${c[s]/n*100}%;background:${COLORS[s]}"></i>`).join("") : ""}</div>
-    <section><h3>Kort</h3>${reportMap(rows, t)}
-      <div class="rlegend">${["done","doing","blocked","todo"].filter(k=>c[k]).map(k=>`<span><i style="background:${COLORS[k]}"></i>${LABEL[k]}</span>`).join("")}${!t.spots ? `<span>- - - opgavens område</span>` : ""}</div></section>
+    <section><h3>Kort</h3>${reportMap(rows, t, pinList)}
+      <div class="rlegend">${["done","doing","blocked","todo"].filter(k=>c[k]).map(k=>`<span><i style="background:${COLORS[k]}"></i>${LABEL[k]}</span>`).join("")}${pinList.length ? `<span><i style="background:#d32f2f"></i>Pin</span>` : ""}${!t.spots ? `<span>- - - opgavens område</span>` : ""}</div></section>
     ${types.size > 1 ? `<section><h3>Pr. type</h3><table class="rtab"><thead><tr><th>Type</th><th class="n">Steder</th><th class="n">Færdige</th></tr></thead><tbody>
       ${[...types].sort((a,b)=>b[1].n-a[1].n).map(([k, q])=>`<tr><td>${esc(k)}</td><td class="n">${q.n}</td><td class="n">${q.done}</td></tr>`).join("")}</tbody></table></section>` : ""}
     <section><h3>Blokeret</h3>${blocked.length ? [...reasons].map(([why, m])=>`<p><b>${REASON_IC[why] || ""}${esc(why)}</b>: ${(k=>`${k} ${k===1 ? "sted" : "steder"}`)([...m.values()].reduce((s, q)=>s + q.n, 0))}</p>
       <table class="rtab"><tbody>${[...m].sort((a,b)=>b[1].n-a[1].n).map(([k, q])=>`<tr><td>${esc(k)}</td><td class="n">${q.n} ${q.n===1 ? "sted" : "steder"}</td><td class="n">${q.last ? esc(dayShort(q.last)) : ""}</td></tr>`).join("")}</tbody></table>`).join("")
-      : `<p class="small">Ingen steder er blokeret.</p>`}</section>
+      : `<p class="small">Ingen steder er blokeret.</p>`}
+      ${notes.length ? `<p style="margin:12px 0 0"><b>Noter ved de blokerede steder</b></p>${notes.map((x, i)=>`<div class="rnote" data-box="note${i}" style="--c:${COLORS.blocked}">
+        <div><b>${esc(x.place)}</b>${x.where ? ` <span class="small">${esc(x.where)}</span>` : ""} <span class="small">· ${esc(x.reason)}</span></div>
+        <textarea class="redit" data-k="note" data-i="${i}" rows="2" aria-label="Note ved ${esc(x.place)}">${esc(x.text)}</textarea><div class="ponly">${esc(x.text)}</div></div>`).join("")}` : ""}</section>
+    ${pinList.length ? `<section><h3>Pins</h3>${pinList.map((x, i)=>`<div class="rnote" data-box="pin${i}" style="--c:#d32f2f">
+        <div><span class="pin">${x.n}</span>${x.day ? `<span class="small">sat ${esc(longDate(x.day))}</span>` : ""}</div>
+        <textarea class="redit" data-k="pin" data-i="${i}" rows="2" aria-label="Pin ${x.n}">${esc(x.text)}</textarea><div class="ponly">${esc(x.text)}</div></div>`).join("")}</section>` : ""}
     <section><h3>Pr. vej</h3><table class="rtab"><thead><tr><th>Vej</th><th class="n">Steder</th><th class="n">Færdig</th><th class="n">Blok.</th><th class="n">Sidst færdig</th></tr></thead><tbody>
       ${streetRows.map(([k, q])=>`<tr><td>${esc(k)}</td><td class="n">${q.n}</td><td class="n">${q.done}</td><td class="n">${q.blocked || ""}</td><td class="n">${q.last ? esc(dayShort(q.last)) : "–"}</td></tr>`).join("")}</tbody></table></section>
     ${n <= REPORT_LIST_MAX ? `<section><h3>Hvert sted</h3><table class="rtab"><thead><tr><th>Sted</th><th>Status</th><th class="n">Meldt færdig</th></tr></thead><tbody>
       ${list.map(r=>`<tr><td>${esc(r.name)}${r.where ? `<div class="small">${esc(r.where)}</div>` : ""}</td><td>${stCell(r.st)}${(r.st==="blocked" || r.st==="doing") ? `<div class="small">${[r.st==="blocked" ? esc(r.reason) : "", r.day ? `siden ${esc(dayShort(r.day))}` : ""].filter(Boolean).join(", ")}</div>` : ""}</td><td class="n">${times(r)}</td></tr>`).join("")}</tbody></table></section>`
       : `<p class="small">${n} steder er for mange til en liste over hvert sted; se tabellen pr. vej.</p>`}
     ${logFail ? `<p class="small">Historikken kunne ikke hentes, så "gange" og "sidst færdig" tæller kun det, opgaven viser nu.</p>` : ""}
-    <p class="small">Lavet med Holdkort. Kun hvad, hvor og hvilken dag: ingen navne, klokkeslæt, noter eller billeder. "Meldt færdig" tæller de dage, et sted er meldt færdigt siden opgaven blev oprettet (${esc(longDate(since))}), også i andre opgaver.</p>
+    <p class="small">Lavet med Holdkort. Hvad, hvor og hvilken dag: ingen navne, klokkeslæt eller billeder; noter og pins er gennemset af den, der lavede rapporten. "Meldt færdig" tæller de dage, et sted er meldt færdigt siden opgaven blev oprettet (${esc(longDate(since))}), også i andre opgaver.</p>
   </div>`;
+  // Edits go straight into the report (print and file); an emptied box is left out. The map pins stay numbered.
+  B.querySelectorAll("textarea.redit").forEach(a=>a.oninput = ()=>{ const v = a.value, k = a.dataset.k, box = a.closest("[data-box]");
+    if(k==="about"){ lastReport.about = v; store.set("rptAbout:" + t.id, v); }
+    else (k==="note" ? lastReport.notes : lastReport.pinList)[+a.dataset.i].text = v;
+    a.nextElementSibling.textContent = v; box.classList.toggle("rempty", !v.trim());
+    if(k==="pin"){ const g = B.querySelector(`.rpin[data-n="${lastReport.pinList[+a.dataset.i].n}"]`); if(g) g.style.display = v.trim() ? "" : "none"; } });
 }
 $("btnReport").onclick = showReport;
 $("btnReportClose").onclick = ()=>{ $("pReport").hidden = true; };
 // ⬇ Hent som fil: one stand-alone HTML file (the #rptTpl page plus the data), to email to the kommune. It opens in any browser
 // without a login; only the aerial photo behind the map needs the internet. Same data as the page: no names, times, notes or photos.
-function reportData({t, rows, since, logFail}){
+function reportData({t, rows, since, logFail, about = "", notes = [], pinList = []}){
   const r1 = v => Math.round(v*10)/10, pt = c => [r1(c[0]), r1(c[1])];
   const geo = g => { const ty = g.getType(), c = g.getCoordinates();
     if(ty==="Polygon") return {k:"A", g:c.map(r=>r.map(pt))};
@@ -4983,7 +5042,9 @@ function reportData({t, rows, since, logFail}){
   const firstDone = rows.flatMap(r=>r.done).sort()[0];
   return {name: t.name, made: today(),
     meta: [packCodes(t.codes || []) + scopeOf(t), `Opgaven oprettet ${longDate(since)}${firstDone ? ` · første færdige ${longDate(firstDone)}` : ""}`, `Status pr. ${longDate(today())} · ${rows.length} ${rows.length===1 ? "sted" : "steder"}`],
-    foot: `Lavet med Holdkort ${longDate(today())}. Kun hvad, hvor og hvilken dag: ingen navne, klokkeslæt, noter eller billeder. "Meldt færdig" tæller de dage, et sted er meldt færdigt siden opgaven blev oprettet (${longDate(since)}), også i andre opgaver.${logFail ? " Historikken kunne ikke hentes, så tallene for meldt færdig er ufuldstændige." : ""}`,
+    about: about.trim(), notes: notes.filter(x=>x.text.trim()).map(x=>({t:x.place, w:x.where, r:x.reason, x:x.text.trim()})),
+    pins: pinList.filter(x=>x.text.trim()).map(x=>({n:x.n, x:Math.round(x.x*10)/10, y:Math.round(x.y*10)/10, d:x.day ? longDate(x.day) : "", t:x.text.trim()})),
+    foot: `Lavet med Holdkort ${longDate(today())}. Hvad, hvor og hvilken dag: ingen navne, klokkeslæt eller billeder; noter og pins er gennemset af den, der lavede rapporten. "Meldt færdig" tæller de dage, et sted er meldt færdigt siden opgaven blev oprettet (${longDate(since)}), også i andre opgaver.${logFail ? " Historikken kunne ikke hentes, så tallene for meldt færdig er ufuldstændige." : ""}`,
     sinceShort: dayShort(since), colors: {done:COLORS.done, doing:COLORS.doing, blocked:COLORS.blocked, todo:COLORS.todo},
     edge: {done:DONE_EDGE, todo:"#8f2626", doing:"#9a6b00", blocked:"#000"}, labels: {done:LABEL.done, doing:LABEL.doing, blocked:LABEL.blocked, todo:LABEL.todo},
     reasonIcon: {"Bil parkeret":"🚗 ", "Vejarbejde":"🚧 "}, wms: WMS_URL, wmsService: WMS_SERVICE, wmsLayer: LAYER_ORTO, outline,
