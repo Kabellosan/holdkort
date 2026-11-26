@@ -5120,11 +5120,21 @@ async function showReport(){
     const {data, error} = await sb.from("element_log").select("element_id,photo,day,id").eq("task_id", t.id).not("photo", "is", null).order("day").order("id").limit(500);
     if(!error){ const byRow = new Map(rows.map(r=>[r.id, r])), seen = new Map();
       data.forEach(r=>{ const q = seen.get(r.photo); if(q){ q.ids.push(r.element_id); return; } const x = {path:r.photo, day:r.day, ids:[r.element_id], on:true}; seen.set(r.photo, x); pics.push(x); });
+      // Photos of this task's places taken in another task (2026-11-26, Captain: "Alt med vanding" got its marks copied from older
+      // tasks, so the photo of a blocked tree was logged on the old task and never showed). From 60 days before the task was made.
+      const from = new Date(Date.parse(since) - 60*864e5).toISOString().slice(0, 10), ids = rows.map(r=>r.id), parts = [];
+      for(let i=0; i<ids.length; i+=100) parts.push(ids.slice(i, i+100));
+      for(let i=0; i<parts.length; i+=4){
+        const res = await Promise.all(parts.slice(i, i+4).map(p=>sb.from("element_log").select("element_id,photo,day,id").in("element_id", p).neq("task_id", t.id).gte("day", from).not("photo", "is", null).order("day").order("id").limit(1000)));
+        res.forEach(({data:d, error:e})=>{ if(e){ console.error(e); return; } d.forEach(r=>{ const q = seen.get(r.photo); if(q){ if(!q.ids.includes(r.element_id)) q.ids.push(r.element_id); return; }
+          const x = {path:r.photo, day:r.day, ids:[r.element_id], on:true, other:true}; seen.set(r.photo, x); pics.push(x); }); });
+      }
+      pics.sort((a, b)=>a.day < b.day ? -1 : a.day > b.day ? 1 : 0);
       pics.forEach(x=>{ const pn = openPins.findIndex(p=>"pin:"+p.id===x.ids[0]);
         if(x.ids[0]===taskKey(t)) x.cap = "Hele opgaven";
         else if(pn >= 0) x.cap = `Pin ${pn+1}`;
         else { const r = byRow.get(x.ids[0]); x.cap = r ? [r.name, r.where].filter(Boolean).join(" · ") : "Sted"; if(x.ids.length > 1) x.cap += ` og ${x.ids.length-1} ${x.ids.length===2 ? "sted" : "steder"} mere`; }
-        x.cap += ` · ${longDate(x.day)}`; x.url = photoUrl(x.path); }); }
+        x.cap += ` · ${longDate(x.day)}${x.other ? " (i en tidligere opgave)" : ""}`; x.url = photoUrl(x.path); }); }
   } catch(e){ console.error(e); } }
   const about = store.get("rptAbout:" + t.id, "");
   if($("pReport").hidden || task !== t) return;
