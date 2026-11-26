@@ -406,6 +406,12 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
 .rpt textarea.redit{width:100%;min-height:60px;resize:vertical;font:inherit;font-size:15px}
 .rpt .ponly{display:none;white-space:pre-wrap}
 .rpt .rnote{border-left:4px solid var(--c,var(--line));padding:2px 0 2px 10px;margin:10px 0;display:flex;flex-direction:column;gap:4px}
+.rpics{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.rpic{display:flex;flex-direction:column;gap:4px;border:3px solid var(--line);border-radius:12px;padding:6px;cursor:pointer;font-size:13px}
+.rpic.on{border-color:var(--moss2)}
+.rpic img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:8px;display:block;background:var(--paper)}
+.rpic .tick{display:flex;align-items:center;gap:6px;font-weight:600;font-size:14px}
+.rpic .tick input{width:22px;height:22px;margin:0}
 .rpt .rnote .pin{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#d32f2f;color:#fff;font-size:12px;font-weight:700;margin-right:6px}
 @media (max-width:420px){.rtiles{grid-template-columns:repeat(2,1fr)}}
 @media print{
@@ -423,6 +429,11 @@ input[type=text],input[type=search]{font:inherit;font-size:16px;min-height:50px;
   .rpt .ponly{display:block}
   .rpt .rempty{display:none}
   .rpt .rnote{break-inside:avoid}
+  .rpics{grid-template-columns:repeat(2,1fr)}
+  .rpic{border:0;padding:0;break-inside:avoid}
+  .rpic:not(.on){display:none}
+  .rpic .tick{display:none}
+  .rpic img{aspect-ratio:auto;max-height:110mm;object-fit:contain}
 }
 </style>
 </head>
@@ -1036,6 +1047,13 @@ tr.on{background:#e6efff}
 .about{white-space:pre-wrap;margin:0}
 .note{border-left:4px solid var(--c);padding:2px 0 2px 10px;margin:10px 0}
 .note .x{white-space:pre-wrap;margin-top:2px}
+.pics{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.pics figure{margin:0;display:flex;flex-direction:column;gap:4px;break-inside:avoid}
+.pics img{width:100%;border-radius:10px;display:block;cursor:zoom-in}
+.pics figcaption{font-size:13px;color:var(--ink2)}
+#big{position:fixed;inset:0;background:#000d;display:flex;align-items:center;justify-content:center;z-index:9;cursor:zoom-out}
+#big[hidden]{display:none}
+#big img{max-width:96vw;max-height:94vh}
 .pinno{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#d32f2f;color:#fff;font-size:12px;font-weight:700;margin-right:6px}
 @media (max-width:520px){.tiles{grid-template-columns:repeat(2,1fr)} main{padding:12px}}
 @media print{
@@ -1083,6 +1101,8 @@ tr.on{background:#e6efff}
   <div class="card" id="typeCard"><h2>Pr. type</h2><table><thead><tr><th>Type</th><th class="n">Steder</th><th class="n">Færdig</th></tr></thead><tbody id="types"></tbody></table></div>
   <div class="card"><h2>Blokeret</h2><div id="blocked"></div><div id="notes"></div></div>
   <div class="card" id="pinCard" hidden><h2>Pins</h2><div class="small noprint" style="margin-bottom:6px">Tryk på en pin for at se den på kortet.</div><div id="pinList"></div></div>
+  <div class="card" id="picCard" hidden><h2>Billeder</h2><div class="pics" id="pics"></div></div>
+  <div id="big" hidden><img alt=""></div>
   <div class="card"><h2>Pr. vej</h2><div class="small noprint" style="margin-bottom:6px">Tryk på en vej for at se den på kortet.</div>
     <table><thead><tr><th>Vej</th><th class="n">Steder</th><th class="n">Færdig</th><th class="n">Blok.</th><th class="n">Sidst færdig</th></tr></thead><tbody id="streets"></tbody></table></div>
   <div class="card"><h2>Hvert sted</h2>
@@ -1111,6 +1131,10 @@ tr.on{background:#e6efff}
   const NOTES = D.notes || [], PINS = D.pins || [];
   $("notes").innerHTML = NOTES.length ? `<p style="margin:12px 0 0"><b>Noter ved de blokerede steder</b></p>` + NOTES.map(x => `<div class="note" style="--c:${D.colors.blocked}"><b>${esc(x.t)}</b>${x.w ? ` <span class="small">${esc(x.w)}</span>` : ""} <span class="small">· ${esc(x.r)}</span><div class="x">${esc(x.x)}</div></div>`).join("") : "";
   $("pinCard").hidden = !PINS.length;
+  const PICS = D.pics || []; $("picCard").hidden = !PICS.length;
+  $("pics").innerHTML = PICS.map(x => `<figure><img src="${esc(x.src)}" alt=""><figcaption>${esc(x.cap)}</figcaption></figure>`).join("");
+  $("pics").querySelectorAll("img").forEach(i => i.onclick = () => { $("big").firstChild.src = i.src; $("big").hidden = false; });
+  $("big").onclick = () => { $("big").hidden = true; };
   $("pinList").innerHTML = PINS.map(x => `<div class="note" style="--c:#d32f2f;cursor:pointer" data-pin="${x.n}"><span class="pinno">${x.n}</span>${x.d ? `<span class="small">sat ${esc(x.d)}</span>` : ""}<div class="x">${esc(x.t)}</div></div>`).join("");
 
   // ---- filters ----
@@ -1306,7 +1330,7 @@ tr.on{background:#e6efff}
   <header class="noprint"><div class="row"><button class="btn ghost" id="btnReportClose">‹ Tilbage</button><div class="grow"><div class="eyebrow">Rapport til kommunen</div><h2 id="reportTitle"></h2></div></div></header>
   <div class="body" id="reportBody"></div>
   <footer class="noprint">
-    <div class="muted" style="font-size:13px">Rapporten har ingen navne, klokkeslæt eller billeder. Noter og pins står med, som de er skrevet: ret dem, hvis de nævner en person. Et tomt felt kommer ikke med. Tjek også opgavens navn.</div>
+    <div class="muted" style="font-size:13px">Rapporten har ingen navne eller klokkeslæt. Noter og pins står med, som de er skrevet: ret dem, hvis de nævner en person; et tomt felt kommer ikke med. Billeder kommer kun med, hvis du sætter flueben. Tjek også opgavens navn.</div>
     <div class="twobtn"><button class="btn" id="btnReportFile">⬇ Hent som fil</button><button class="btn primary" id="btnReportPrint">🖨 Gem som PDF</button></div>
   </footer>
 </div>
@@ -4967,10 +4991,23 @@ async function showReport(){
     if(!error){ const by = new Map(); data.forEach(r=>{ const v = String(r.note).trim(); if(!v) return; const a = by.get(r.element_id) || []; a.push(v); by.set(r.element_id, a); });
       openPins.forEach((p, i)=>{ const a = by.get("pin:"+p.id); if(a) pinList[i].text = a.join("\n"); }); }
   } catch(e){ console.error(e); } }
+  // Photos (2026-11-26, Captain): shown with a tick, none ticked, so only photos picked here (no faces, no number plates) go in.
+  // A photo taken with several places marked is one photo. Not in the anonymous version (it has no photos).
+  const pics = [];
+  if(!ANON && sb){ try{
+    const {data, error} = await sb.from("element_log").select("element_id,photo,day,id").eq("task_id", t.id).not("photo", "is", null).order("day").order("id").limit(500);
+    if(!error){ const byRow = new Map(rows.map(r=>[r.id, r])), seen = new Map();
+      data.forEach(r=>{ const q = seen.get(r.photo); if(q){ q.ids.push(r.element_id); return; } const x = {path:r.photo, day:r.day, ids:[r.element_id], on:false}; seen.set(r.photo, x); pics.push(x); });
+      pics.forEach(x=>{ const pn = openPins.findIndex(p=>"pin:"+p.id===x.ids[0]);
+        if(x.ids[0]===taskKey(t)) x.cap = "Hele opgaven";
+        else if(pn >= 0) x.cap = `Pin ${pn+1}`;
+        else { const r = byRow.get(x.ids[0]); x.cap = r ? [r.name, r.where].filter(Boolean).join(" · ") : "Sted"; if(x.ids.length > 1) x.cap += ` og ${x.ids.length-1} ${x.ids.length===2 ? "sted" : "steder"} mere`; }
+        x.cap += ` · ${longDate(x.day)}`; x.url = photoUrl(x.path); }); }
+  } catch(e){ console.error(e); } }
   const about = store.get("rptAbout:" + t.id, "");
   if($("pReport").hidden || task !== t) return;
   rows.forEach(r=>{ const s = new Set(days.get(r.id) || []); if(r.st==="done" && r.day) s.add(r.day); r.done = [...s].sort(); r.last = r.done.at(-1) || ""; });
-  lastReport = {t, rows, since, logFail, about, notes, pinList};
+  lastReport = {t, rows, since, logFail, about, notes, pinList, pics};
   const n = rows.length, c = {done:0, doing:0, blocked:0, todo:0}; rows.forEach(r=>c[r.st]++);
   const pct = k => n ? Math.round(c[k]/n*100) : 0;
   const stCell = s => `<span class="st"><i style="background:${COLORS[s]};${s==="done" ? `box-shadow:0 0 0 1px ${DONE_EDGE}` : ""}"></i>${LABEL[s]}</span>`;
@@ -5009,15 +5046,19 @@ async function showReport(){
     ${pinList.length ? `<section><h3>Pins</h3>${pinList.map((x, i)=>`<div class="rnote" data-box="pin${i}" style="--c:#d32f2f">
         <div><span class="pin">${x.n}</span>${x.day ? `<span class="small">sat ${esc(longDate(x.day))}</span>` : ""}</div>
         <textarea class="redit" data-k="pin" data-i="${i}" rows="2" aria-label="Pin ${x.n}">${esc(x.text)}</textarea><div class="ponly">${esc(x.text)}</div></div>`).join("")}</section>` : ""}
+    ${pics.length ? `<section class="rempty" data-box="pics"><h3>Billeder</h3><p class="small noprint" style="margin:0 0 8px">Sæt flueben ved de billeder, der skal med. Vælg ikke billeder, hvor man kan se ansigter eller nummerplader.</p>
+      <div class="rpics">${pics.map((x, i)=>`<label class="rpic"><span class="tick"><input type="checkbox" data-pic="${i}"> Med i rapporten</span><img src="${esc(x.url)}" loading="lazy" alt=""><span class="small">${esc(x.cap)}</span></label>`).join("")}</div></section>` : ""}
     <section><h3>Pr. vej</h3><table class="rtab"><thead><tr><th>Vej</th><th class="n">Steder</th><th class="n">Færdig</th><th class="n">Blok.</th><th class="n">Sidst færdig</th></tr></thead><tbody>
       ${streetRows.map(([k, q])=>`<tr><td>${esc(k)}</td><td class="n">${q.n}</td><td class="n">${q.done}</td><td class="n">${q.blocked || ""}</td><td class="n">${q.last ? esc(dayShort(q.last)) : "–"}</td></tr>`).join("")}</tbody></table></section>
     ${n <= REPORT_LIST_MAX ? `<section><h3>Hvert sted</h3><table class="rtab"><thead><tr><th>Sted</th><th>Status</th><th class="n">Meldt færdig</th></tr></thead><tbody>
       ${list.map(r=>`<tr><td>${esc(r.name)}${r.where ? `<div class="small">${esc(r.where)}</div>` : ""}</td><td>${stCell(r.st)}${(r.st==="blocked" || r.st==="doing") ? `<div class="small">${[r.st==="blocked" ? esc(r.reason) : "", r.day ? `siden ${esc(dayShort(r.day))}` : ""].filter(Boolean).join(", ")}</div>` : ""}</td><td class="n">${times(r)}</td></tr>`).join("")}</tbody></table></section>`
       : `<p class="small">${n} steder er for mange til en liste over hvert sted; se tabellen pr. vej.</p>`}
     ${logFail ? `<p class="small">Historikken kunne ikke hentes, så "gange" og "sidst færdig" tæller kun det, opgaven viser nu.</p>` : ""}
-    <p class="small">Lavet med Holdkort. Hvad, hvor og hvilken dag: ingen navne, klokkeslæt eller billeder; noter og pins er gennemset af den, der lavede rapporten. "Meldt færdig" tæller de dage, et sted er meldt færdigt siden opgaven blev oprettet (${esc(longDate(since))}), også i andre opgaver.</p>
+    <p class="small">Lavet med Holdkort. Hvad, hvor og hvilken dag: ingen navne eller klokkeslæt; noter, pins og billeder er valgt og gennemset af den, der lavede rapporten. "Meldt færdig" tæller de dage, et sted er meldt færdigt siden opgaven blev oprettet (${esc(longDate(since))}), også i andre opgaver.</p>
   </div>`;
   // Edits go straight into the report (print and file); an emptied box is left out. The map pins stay numbered.
+  B.querySelectorAll("[data-pic]").forEach(c=>c.onchange = ()=>{ lastReport.pics[+c.dataset.pic].on = c.checked; c.closest(".rpic").classList.toggle("on", c.checked);
+    B.querySelector('[data-box="pics"]').classList.toggle("rempty", !lastReport.pics.some(x=>x.on)); });
   B.querySelectorAll("textarea.redit").forEach(a=>a.oninput = ()=>{ const v = a.value, k = a.dataset.k, box = a.closest("[data-box]");
     if(k==="about"){ lastReport.about = v; store.set("rptAbout:" + t.id, v); }
     else (k==="note" ? lastReport.notes : lastReport.pinList)[+a.dataset.i].text = v;
@@ -5028,7 +5069,7 @@ $("btnReport").onclick = showReport;
 $("btnReportClose").onclick = ()=>{ $("pReport").hidden = true; };
 // ⬇ Hent som fil: one stand-alone HTML file (the #rptTpl page plus the data), to email to the kommune. It opens in any browser
 // without a login; only the aerial photo behind the map needs the internet. Same data as the page: no names, times, notes or photos.
-function reportData({t, rows, since, logFail, about = "", notes = [], pinList = []}){
+function reportData({t, rows, since, logFail, about = "", notes = [], pinList = []}, picData = []){
   const r1 = v => Math.round(v*10)/10, pt = c => [r1(c[0]), r1(c[1])];
   const geo = g => { const ty = g.getType(), c = g.getCoordinates();
     if(ty==="Polygon") return {k:"A", g:c.map(r=>r.map(pt))};
@@ -5043,8 +5084,9 @@ function reportData({t, rows, since, logFail, about = "", notes = [], pinList = 
   return {name: t.name, made: today(),
     meta: [packCodes(t.codes || []) + scopeOf(t), `Opgaven oprettet ${longDate(since)}${firstDone ? ` · første færdige ${longDate(firstDone)}` : ""}`, `Status pr. ${longDate(today())} · ${rows.length} ${rows.length===1 ? "sted" : "steder"}`],
     about: about.trim(), notes: notes.filter(x=>x.text.trim()).map(x=>({t:x.place, w:x.where, r:x.reason, x:x.text.trim()})),
+    pics: picData,
     pins: pinList.filter(x=>x.text.trim()).map(x=>({n:x.n, x:Math.round(x.x*10)/10, y:Math.round(x.y*10)/10, d:x.day ? longDate(x.day) : "", t:x.text.trim()})),
-    foot: `Lavet med Holdkort ${longDate(today())}. Hvad, hvor og hvilken dag: ingen navne, klokkeslæt eller billeder; noter og pins er gennemset af den, der lavede rapporten. "Meldt færdig" tæller de dage, et sted er meldt færdigt siden opgaven blev oprettet (${longDate(since)}), også i andre opgaver.${logFail ? " Historikken kunne ikke hentes, så tallene for meldt færdig er ufuldstændige." : ""}`,
+    foot: `Lavet med Holdkort ${longDate(today())}. Hvad, hvor og hvilken dag: ingen navne eller klokkeslæt; noter, pins og billeder er valgt og gennemset af den, der lavede rapporten. "Meldt færdig" tæller de dage, et sted er meldt færdigt siden opgaven blev oprettet (${longDate(since)}), også i andre opgaver.${logFail ? " Historikken kunne ikke hentes, så tallene for meldt færdig er ufuldstændige." : ""}`,
     sinceShort: dayShort(since), colors: {done:COLORS.done, doing:COLORS.doing, blocked:COLORS.blocked, todo:COLORS.todo},
     edge: {done:DONE_EDGE, todo:"#8f2626", doing:"#9a6b00", blocked:"#000"}, labels: {done:LABEL.done, doing:LABEL.doing, blocked:LABEL.blocked, todo:LABEL.todo},
     reasonIcon: {"Bil parkeret":"🚗 ", "Vejarbejde":"🚧 "}, wms: WMS_URL, wmsService: WMS_SERVICE, wmsLayer: LAYER_ORTO, outline,
@@ -5055,9 +5097,20 @@ function reportHtml(d){
   const body = $("rptTpl").innerHTML.replace("/*HK-DATA*/null", ()=>json);
   return `<!doctype html>\n<html lang="da"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(d.name)} · rapport</title></head><body>\n${body}</body></html>\n`;
 }
-$("btnReportFile").onclick = ()=>{
+// A picked photo made smaller for the file (1000 px on the long side), so a report with many photos can still be emailed
+async function smallPic(url){
+  const b = await (await fetch(url)).blob(), im = await createImageBitmap(b), k = Math.min(1, 1000 / Math.max(im.width, im.height));
+  const c = document.createElement("canvas"); c.width = Math.round(im.width*k); c.height = Math.round(im.height*k);
+  c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); im.close?.();
+  return c.toDataURL("image/jpeg", 0.72);
+}
+$("btnReportFile").onclick = async ()=>{
   if(!lastReport){ toast("Vent til rapporten er færdig.", 2500); return; }
-  const html = reportHtml(reportData(lastReport));
+  const picked = (lastReport.pics || []).filter(x=>x.on), picData = [];
+  if(picked.length){ toast(`Gør ${picked.length} ${picked.length===1 ? "billede" : "billeder"} klar …`, 20000);
+    for(const x of picked){ try{ picData.push({src: await smallPic(x.url), cap: x.cap}); } catch(e){ console.error(e); } }
+    if(picData.length < picked.length) toast(`${picked.length - picData.length} billeder kunne ikke hentes og er ikke med.`, 5000); }
+  const html = reportHtml(reportData(lastReport, picData));
   const name = `Rapport ${lastReport.t.name} ${today()}`.replace(/[\\/:*?"<>|]+/g, "-").trim() + ".html";
   const u = URL.createObjectURL(new Blob([html], {type:"text/html"})), a = document.createElement("a");
   a.href = u; a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u), 60000);
