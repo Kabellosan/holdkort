@@ -1038,6 +1038,9 @@ tr.on{background:#e6efff}
 .hbars .num{font-variant-numeric:tabular-nums;color:var(--ink2);text-align:right}
 .hbars .go{cursor:pointer}
 .clegend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--ink2)}
+.ipics{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.ipics img{width:96px;height:72px;object-fit:cover;border-radius:8px;cursor:zoom-in;display:block}
+.pics figcaption a{color:var(--moss);font-weight:600;cursor:pointer;text-decoration:underline}
 .pinno{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#d32f2f;color:#fff;font-size:12px;font-weight:700;margin-right:6px}
 @media (max-width:520px){.tiles{grid-template-columns:repeat(2,1fr)} main{padding:12px}}
 @media print{
@@ -1079,7 +1082,7 @@ tr.on{background:#e6efff}
     <h2>Kort</h2>
     <div class="mapwrap" id="wrap">
       <svg id="map" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Kort over stederne efter status">
-        <g id="bg"></g><g id="out"></g><g id="feat"></g><g id="sel"></g><g id="pins"></g><g id="lab"></g>
+        <g id="bg"></g><g id="out"></g><g id="feat"></g><g id="sel"></g><g id="cams"></g><g id="pins"></g><g id="lab"></g>
       </svg>
       <div class="maptop"><button id="bgBtn" aria-pressed="true">🛰 Luftfoto</button></div>
       <div class="mapbtns"><button id="zin" aria-label="Zoom ind">+</button><button id="zout" aria-label="Zoom ud">−</button><button id="zall" aria-label="Vis alle steder" style="font-size:16px">⤢</button></div>
@@ -1123,8 +1126,11 @@ tr.on{background:#e6efff}
   $("notes").innerHTML = NOTES.length ? `<p style="margin:12px 0 0"><b>Noter ved de blokerede steder</b></p>` + NOTES.map(x => `<div class="note" style="--c:${D.colors.blocked}"><b>${esc(x.t)}</b>${x.w ? ` <span class="small">${esc(x.w)}</span>` : ""} <span class="small">· ${esc(x.r)}</span><div class="x">${esc(x.x)}</div></div>`).join("") : "";
   $("pinCard").hidden = !PINS.length;
   const PICS = D.pics || []; $("picCard").hidden = !PICS.length;
-  $("pics").innerHTML = PICS.map(x => `<figure><img src="${esc(x.src)}" alt=""><figcaption>${esc(x.cap)}</figcaption></figure>`).join("");
-  $("pics").querySelectorAll("img").forEach(i => i.onclick = () => { $("big").firstChild.src = i.src; $("big").hidden = false; });
+  const picsAt = new Map(); PICS.forEach((x, k) => (x.p || []).forEach(i => { const a = picsAt.get(i) || []; a.push(k); picsAt.set(i, a); }));
+  const big = src => { $("big").firstChild.src = src; $("big").hidden = false; };
+  $("pics").innerHTML = PICS.map((x, k) => `<figure><img src="${esc(x.src)}" alt=""><figcaption>${esc(x.cap)}${(x.p || []).length ? ` · <a data-show="${k}">Vis på kortet</a>` : ""}</figcaption></figure>`).join("");
+  $("pics").querySelectorAll("img").forEach(i => i.onclick = () => big(i.src));
+  $("pics").querySelectorAll("[data-show]").forEach(a => a.onclick = () => { select(PICS[+a.dataset.show].p[0], true); scrollMap(); });
   $("big").onclick = () => { $("big").hidden = true; };
   $("pinList").innerHTML = PINS.map(x => `<div class="note" style="--c:#d32f2f;cursor:pointer" data-pin="${x.n}"><span class="pinno">${x.n}</span>${x.d ? `<span class="small">sat ${esc(x.d)}</span>` : ""}<div class="x">${esc(x.t)}</div></div>`).join("");
 
@@ -1151,6 +1157,8 @@ tr.on{background:#e6efff}
     c.setAttribute("fill", "#d32f2f"); c.setAttribute("stroke", "#fff"); c.setAttribute("vector-effect", "non-scaling-stroke"); c.setAttribute("stroke-width", "2.5");
     t.textContent = q.n; t.setAttribute("text-anchor", "middle"); t.setAttribute("fill", "#fff"); t.setAttribute("font-weight", "700"); t.setAttribute("font-family", "system-ui,sans-serif"); t.setAttribute("dy", ".35em");
     g.append(c, t); $("pins").appendChild(g); return {q, c, t}; });
+  // 📷 above every place that has a photo in the report
+  const camEls = [...picsAt.keys()].map(i => { const t = document.createElementNS(NS, "text"); t.textContent = "📷"; t.setAttribute("text-anchor", "middle"); t.style.pointerEvents = "none"; $("cams").appendChild(t); return {i, t}; });
   document.querySelectorAll("[data-pin]").forEach(d => d.onclick = () => { const q = (D.pins || []).find(p => p.n == d.dataset.pin); if(!q) return; fit([q.x - 40, q.y - 40, q.x + 40, q.y + 40]); scrollMap(); });
   const size = () => [wrap.clientWidth || 600, wrap.clientHeight || 400];
   function fit(b){ const [w, h] = size(), bw = Math.max(b[2] - b[0], 30), bh = Math.max(b[3] - b[1], 30);
@@ -1198,6 +1206,7 @@ tr.on{background:#e6efff}
     const [w, h] = size();
     svg.setAttribute("viewBox", `${cx - w * res / 2} ${-cy - h * res / 2} ${w * res} ${h * res}`); wrap.style.setProperty("--ar", (w / h).toFixed(4));
     const r = 5.5 * res; dots.forEach(d => d.setAttribute("r", r));
+    camEls.forEach(({i, t}) => { const b = P[i].b; t.setAttribute("x", (b[0] + b[2]) / 2); t.setAttribute("y", -b[3] - 4 * res); t.setAttribute("font-size", 15 * res); t.style.display = keep(P[i]) ? "" : "none"; });
     pinEls.forEach(({q, c, t}) => { c.setAttribute("cx", q.x); c.setAttribute("cy", -q.y); c.setAttribute("r", 10 * res); t.setAttribute("x", q.x); t.setAttribute("y", -q.y); t.setAttribute("font-size", 12 * res); });
     // Labels: font follows the zoom, and only as many as don't crowd each other
     const fs = 13 * res, used = [];
@@ -1255,7 +1264,9 @@ tr.on{background:#e6efff}
     const p = P[i];
     $("info").innerHTML = `<div style="font-size:16px;color:var(--ink)"><b>${esc(p.t)}</b></div>${p.w ? `<div>${esc(p.w)}</div>` : ""}
       <div style="margin-top:4px;color:var(--ink)"><span class="dot" style="background:${C[p.st]}"></span><span class="st">${L[p.st]}</span>${p.r ? `: ${esc(p.r)}` : ""}${p.d && p.st !== "todo" ? ` · siden ${esc(p.d)}` : ""}</div>
-      <div>${p.n ? `Meldt færdig ${p.n === 1 ? "1 gang" : p.n + " gange"} siden ${esc(D.sinceShort)}, sidst ${esc(p.l)}` : `Ikke meldt færdig siden ${esc(D.sinceShort)}`}</div>`;
+      <div>${p.n ? `Meldt færdig ${p.n === 1 ? "1 gang" : p.n + " gange"} siden ${esc(D.sinceShort)}, sidst ${esc(p.l)}` : `Ikke meldt færdig siden ${esc(D.sinceShort)}`}</div>
+      ${(picsAt.get(i) || []).length ? `<div class="ipics">${picsAt.get(i).map(k => `<img src="${esc(PICS[k].src)}" alt="Billede fra stedet" title="${esc(PICS[k].cap)}">`).join("")}</div>` : ""}`;
+    $("info").querySelectorAll(".ipics img").forEach(m => m.onclick = () => big(m.src));
     if(zoom){ const b = p.b, pad = 40; fit([b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad]); }
   }
   const shownBox = () => { const s = P.filter(keep); if(!s.length) return all;
@@ -5141,7 +5152,8 @@ function reportData({t, rows, since, logFail, about = "", notes = [], pinList = 
   return {name: t.name, made: today(),
     meta: [packCodes(t.codes || []) + scopeOf(t), `Opgaven oprettet ${longDate(since)}${firstDone ? ` · første færdige ${longDate(firstDone)}` : ""}`, `Status pr. ${longDate(today())} · ${rows.length} ${rows.length===1 ? "sted" : "steder"}`],
     about: about.trim(), notes: notes.filter(x=>x.text.trim()).map(x=>({t:x.place, w:x.where, r:x.reason, x:x.text.trim()})),
-    pics: picData,
+    pics: (()=>{ const at = new Map(rows.map((r, i)=>[r.id, i])); // photo → the places it shows, by index in places
+      return picData.map(x=>({src:x.src, cap:x.cap, p:(x.ids || []).map(id=>at.get(id)).filter(i=>i != null)})); })(),
     pins: pinList.filter(x=>x.text.trim()).map(x=>({n:x.n, x:Math.round(x.x*10)/10, y:Math.round(x.y*10)/10, d:x.day ? longDate(x.day) : "", t:x.text.trim()})),
     foot: `Lavet med Holdkort ${longDate(today())}. Hvad, hvor og hvilken dag: ingen navne eller klokkeslæt; noter, pins og billeder er valgt og gennemset af den, der lavede rapporten. "Meldt færdig" tæller de dage, et sted er meldt færdigt siden opgaven blev oprettet (${longDate(since)}), også i andre opgaver.${logFail ? " Historikken kunne ikke hentes, så tallene for meldt færdig er ufuldstændige." : ""}`,
     sinceShort: dayShort(since), sinceKey: since, colors: {done:COLORS.done, doing:COLORS.doing, blocked:COLORS.blocked, todo:COLORS.todo},
@@ -5165,7 +5177,7 @@ $("btnReportFile").onclick = async ()=>{
   if(!lastReport){ toast("Vent til rapporten er færdig.", 2500); return; }
   const picked = (lastReport.pics || []).filter(x=>x.on), picData = [];
   if(picked.length){ toast(`Gør ${picked.length} ${picked.length===1 ? "billede" : "billeder"} klar …`, 20000);
-    for(const x of picked){ try{ picData.push({src: await smallPic(x.url), cap: x.cap}); } catch(e){ console.error(e); } }
+    for(const x of picked){ try{ picData.push({src: await smallPic(x.url), cap: x.cap, ids: x.ids}); } catch(e){ console.error(e); } }
     if(picData.length < picked.length) toast(`${picked.length - picData.length} billeder kunne ikke hentes og er ikke med.`, 5000); }
   const html = reportHtml(reportData(lastReport, picData));
   const name = `Rapport ${lastReport.t.name} ${today()}`.replace(/[\\/:*?"<>|]+/g, "-").trim() + ".html";
